@@ -1,0 +1,56 @@
+{
+  "name": "voice-over-translation",
+  "version": "1.0.0",
+  "author": "Toil",
+  "license": "MIT",
+  "description": "A small extension that adds a Yandex Browser video translation to other browsers",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Acobat12/voice-over-translation.git"
+  },
+  "keywords": [
+    "cli",
+    "vot",
+    "voice-over-translation"
+  ],
+  "devDependencies": {
+    "@toil/translate": "^1.0.8",
+    "@types/bun": "^1.3.9",
+    "@vot.js/core": "^2.4.12",
+    "crx3": "^2.0.0",
+    "lefthook": "^2.1.1",
+    "lightningcss": "^1.31.1",
+    "npm-run-all2": "^8.0.4",
+    "sass": "^1.97.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-monkey": "^7.1.9",
+    "zip-a-folder": "^4.0.4"
+  },
+  "scripts": {
+    "test": "bun test",
+    "test:unit": "bun test",
+    "test:unit:watch": "bun test --watch",
+    "test:ui": "vite build --config vite.test-ui.config.ts",
+    "build": "vite build --config vite.config.ts",
+    "build:min": "vite build --mode minify --config vite.config.ts",
+    "build:all": "npx run-p build build:min",
+    "build:ext": "vite build --config vite.extension.config.ts",
+    "build:chrome": "vite build --mode chrome --config vite.extension.config.ts",
+    "build:firefox": "vite build --mode firefox --config vite.extension.config.ts",
+    "build:dev": "vite build --mode development --config vite.config.ts",
+    "dev": "vite dev",
+    "format": "bunx @biomejs/biome check --write --unsafe ./src",
+    "gen:wiki": "bun run ./scripts/wiki-gen/index.js",
+    "localize": "bunx \"@toil/localize-tui\""
+  },
+  "dependencies": {
+    "@toil/gm-types": "^1.0.4",
+    "@vot.js/ext": "^2.4.12",
+    "@vot.js/shared": "^2.4.12",
+    "bowser": "^2.14.1",
+    "chaimu": "^1.0.6",
+    "lit-html": "^3.3.2"
+  }
+}

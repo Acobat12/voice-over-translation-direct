@@ -1,0 +1,157 @@
+@use "../mixins" as shared;
+@use "./buttons/mixins" as button;
+
+.vot-segmented-button {
+  --vot-helper-theme-rgb: var(--vot-onsurface-rgb, 0, 0, 0);
+  --vot-helper-theme: rgba(var(--vot-helper-theme-rgb), 0.87);
+
+  // IMPORTANT (NicoNico and similar sites): some host pages/scripts aggressively
+  // write inline styles like `opacity: 0; pointer-events: none; touch-action: none;`
+  // to elements they don't recognize.
+  //
+  // We intentionally *own* these properties via author CSS + `!important` and
+  // drive state using a class. This way, external inline styles cannot make the
+  // button permanently invisible/non-interactive.
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  touch-action: none !important;
+  overflow: hidden;
+  position: absolute;
+  left: 50%;
+  top: 5rem;
+  transform: translate(-50%);
+  user-select: none;
+  display: flex;
+  align-items: center;
+  height: 36px;
+  max-width: 100vw;
+  background: rgb(var(--vot-surface-rgb, 255, 255, 255));
+  color: var(--vot-helper-theme);
+  fill: var(--vot-helper-theme);
+  border: 1px solid var(--vot-border-color) !important;
+  border-radius: var(--vot-radius-s) !important;
+  box-shadow: var(--vot-shadow-1) !important;
+  @include shared.vot-font-family;
+  font-size: 16px;
+  line-height: 1.5;
+  cursor: default;
+  transition: opacity var(--vot-duration-slow) var(--vot-easing-standard);
+  z-index: 2147483647;
+
+  &.vot-segmented-button--hidden {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  & * {
+    box-sizing: border-box !important;
+  }
+
+  & .vot-separator {
+    width: 1px;
+    height: 50%;
+    background: rgba(var(--vot-helper-theme-rgb), 0.1);
+  }
+
+  & .vot-segment {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    padding: 0 var(--vot-space-2) !important;
+    background-color: transparent;
+    color: inherit;
+    transition: background-color var(--vot-duration-fast) var(--vot-easing-standard);
+    border: none !important;
+
+    // Prevent default UA focus outline (it gets clipped by overflow and shows as stripes).
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+
+    // Fallback: show focus ring on :focus (for browsers without :focus-visible),
+    // but hide it for pointer focus when :focus-visible is supported.
+    &:focus {
+      outline: none;
+      box-shadow: inset 0 0 0 2px var(--vot-focus-ring-color);
+    }
+
+    &:focus:not(:focus-visible) {
+      box-shadow: none;
+    }
+
+    @include button.vot-button-layers(rgb(var(--vot-helper-theme-rgb)));
+    @include button.vot-button-layer-hover(0.04);
+    @include button.vot-button-layer-active(0.16);
+
+    &-only-icon {
+      @extend .vot-segment;
+      min-width: 36px;
+      padding: 0 !important;
+    }
+
+    &-label {
+      margin-left: var(--vot-space-2) !important;
+      white-space: nowrap;
+      color: inherit;
+      font-weight: 400 !important;
+    }
+  }
+
+  &[data-status="success"] .vot-translate-button {
+    color: rgb(var(--vot-primary-rgb, 33, 150, 243));
+    fill: rgb(var(--vot-primary-rgb, 33, 150, 243));
+  }
+
+  &[data-status="error"] .vot-translate-button {
+    color: #f28b82;
+    fill: #f28b82;
+  }
+
+  &[data-loading="true"] {
+    #vot-loading-icon {
+      display: block !important;
+    }
+
+    #vot-translate-icon {
+      display: none !important;
+    }
+  }
+
+  &[data-direction="column"] {
+    flex-direction: column;
+    height: fit-content;
+
+    & .vot-segment-label {
+      display: none;
+    }
+
+    & > .vot-segment-only-icon,
+    & > .vot-segment {
+      padding: 8px !important;
+    }
+
+    .vot-separator {
+      height: 1px;
+      width: 50%;
+    }
+  }
+
+  &[data-position="left"] {
+    left: 50px;
+    top: 12.5vh;
+  }
+
+  &[data-position="right"] {
+    left: auto;
+    right: 0;
+    top: 12.5vh;
+  }
+
+  & svg {
+    width: 24px;
+    fill: inherit;
+    stroke: inherit;
+  }
+}
