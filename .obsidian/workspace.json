@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "README-EN.md",
+                "file": "README.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "README-EN"
+              "title": "README"
             }
           }
         ]
@@ -183,10 +183,16 @@
       "bases:Создать новую базу": false
     }
   },
-  "active": "dfa13082311797d8",
+  "active": "42c3e717ec5da508",
   "lastOpenFiles": [
-    "Pasted image 20260322022316.png",
+    "README-EN.md",
+    "images/popup.png",
+    "images",
+    "Новая папка",
+    "popup.png",
     "README.md",
+    "image 20260322022316.png",
+    "Pasted image 20260322022316.png",
     "Pasted image 20260322022241.png",
     "Pasted image 20260322022035.png"
   ]
