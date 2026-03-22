@@ -300,5 +300,5 @@ Tested in the following userscript manager extensions:
 Please refer to the [contributing guide](./CONTRIBUTING.md).
 
 ![example btn](https://github.com/ilyhalight/voice-over-translation/blob/master/img/example_en.png "btn")
-
+![[Pasted image 20260322022316.png]]
 > Based on [sodapng/voice-over-translation](https://github.com/sodapng/voice-over-translation) project (license MIT)

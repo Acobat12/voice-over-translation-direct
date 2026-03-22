@@ -301,4 +301,6 @@ bun install
 
 ![example btn](https://github.com/ilyhalight/voice-over-translation/blob/master/img/example.png "btn")
 
+![[Pasted image 20260322022241.png]]
+
 > Основано на проекте [sodapng/voice-over-translation](https://github.com/sodapng/voice-over-translation) (license MIT)
