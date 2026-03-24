@@ -1583,7 +1583,7 @@ export class VideoHandler {
       host === "youtube" ||
       host === "invidious" ||
       host === "piped" ||
-      host === "yandexDisk"
+      host === "yandexdisk"
     );
   }
   /**

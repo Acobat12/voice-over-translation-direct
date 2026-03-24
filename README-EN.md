@@ -127,6 +127,13 @@ Voice-over translation is now available beyond [Yandex Browser][yabrowser-link].
 2. The extension cannot translate videos longer than 4 hours (translator API limitation)
 3. For stable audio-download flow, use up-to-date and supported userscript managers (for example, Tampermonkey or Violentmonkey)
 
+
+### Yandex Disk and Google Drive
+
+- **Yandex Disk:** if a video is stored inside a public folder, it is more reliable to open the **file itself** and click **Share** for that file specifically. Public links to an individual file usually work better than links to a file inside a shared public folder.
+- **Translation persistence:** after a successful translation, the result is usually kept in the service cache, so repeated runs for the same video may finish faster.
+- **Google Drive:** on Google Drive, translation may open through a **popup window** with the player. If your browser blocks popups, allow them for Google Drive.
+
 ## List of supported sites:
 
 You can find the full list of supported websites and their specific limitations in the **[wiki][vot-supported-sites]**.
