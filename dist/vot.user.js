@@ -7,8 +7,8 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot
-// @version         1.11.3
-// @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat
+// @version         1.11.4
+// @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
 // @description:es  Una pequeña extensión que agrega una traducción de voz en off de un video de Yandex Browser a otros navegadores
@@ -21,8 +21,8 @@
 // @homepageURL     https://github.com/Acobat12/voice-over-translation
 // @source          https://github.com/Acobat12/voice-over-translation.git
 // @supportURL      https://github.com/Acobat12/voice-over-translation/issues
-// @downloadURL     https://raw.githubusercontent.com/Acobat12/voice-over-translation/master/dist/vot.user.js
-// @updateURL       https://raw.githubusercontent.com/Acobat12/voice-over-translation/master/dist/vot.user.js
+// @downloadURL     https://raw.githubusercontent.com/Acobat12/voice-over-translation/my-code/dist/vot.user.js
+// @updateURL       https://raw.githubusercontent.com/Acobat12/voice-over-translation/my-code/dist/vot.user.js
 // @match           *://oauth.yandex.com/*
 // @match           *://oauth.yandex.ru/*
 // @match           *://*.youtube.com/*
