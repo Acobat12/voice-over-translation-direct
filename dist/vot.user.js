@@ -83,6 +83,8 @@
 // @match           *://disk.yandex.tm/*
 // @match           *://disk.yandex.uz/*
 // @match           *://disk.360.yandex.ru/*
+// @match           *://drive.google.com/*
+// @match           *://docs.google.com/*
 // @match           *://youtube.googleapis.com/embed/*
 // @match           *://*.banned.video/*
 // @match           *://*.madmaxworld.tv/*
@@ -5506,7 +5508,31 @@ string() {
       class GoogleDriveHelper extends BaseHelper {
         getPlayerData() {
           const playerEl = document.querySelector("#movie_player");
-          return playerEl?.getVideoData?.call() ?? void 0;
+          return playerEl?.getVideoData?.call(playerEl) ?? void 0;
+        }
+        normalizeTitle(value) {
+          if (typeof value !== "string") return void 0;
+          const normalized = value.replace(/\s*-\s*Google Drive\s*$/i, "").replace(/\s*-\s*Google Диск\s*$/i, "").trim();
+          return normalized || void 0;
+        }
+        getPageTitle() {
+          const exactDriveTitle = this.normalizeTitle(
+            Array.from(
+              document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span')
+            ).map((el) => el.textContent?.trim() ?? "").find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text))
+          );
+          const metaTitle = this.normalizeTitle(
+            document.querySelector('meta[property="og:title"], meta[name="title"]')?.getAttribute("content")
+          );
+          const headingTitle = this.normalizeTitle(
+            document.querySelector("h1, [role='heading'], div[role='heading']")?.textContent
+          );
+          const docTitle = this.normalizeTitle(document.title);
+          return exactDriveTitle || metaTitle || headingTitle || docTitle;
+        }
+        getVideoTitle() {
+          const playerTitle = this.normalizeTitle(this.getPlayerData()?.title);
+          return playerTitle || this.getPageTitle();
         }
         async getVideoId(_url) {
           return this.getPlayerData()?.video_id;
@@ -12828,10 +12854,13 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
       );
       const sharedLanguageStateByVideoId = new Map();
       function getGoogleDrivePageTitle() {
+        const exactDriveTitle = Array.from(
+          document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span')
+        ).map((el) => el.textContent?.trim() ?? "").find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text)) || "";
         const metaTitle = document.querySelector('meta[property="og:title"], meta[name="title"]')?.getAttribute("content")?.trim() || "";
-        const headerTitle = document.querySelector('h1, [role="heading"], [data-tooltip]')?.textContent?.trim() || "";
+        const headerTitle = document.querySelector('h1, [role="heading"], div[role="heading"], [data-tooltip]')?.textContent?.trim() || "";
         const docTitle = String(document.title || "").trim();
-        const raw = metaTitle || headerTitle || docTitle;
+        const raw = exactDriveTitle || metaTitle || headerTitle || docTitle;
         if (!raw) return void 0;
         return raw.replace(/\s*-\s*Google Drive\s*$/i, "").replace(/\s*-\s*Google Диск\s*$/i, "").trim();
       }
@@ -12845,6 +12874,14 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         if (typeof value !== "string") return void 0;
         const normalized = value.replace(/\s*-\s*Google Drive\s*$/i, "").replace(/\s*-\s*Google Диск\s*$/i, "").trim();
         return normalized || void 0;
+      }
+      async function getStoredGoogleDriveTitle(videoId) {
+        try {
+          const storedTitle = await votStorage.get(`googledrive:title:${videoId}`);
+          return normalizeGoogleDriveTitle(storedTitle);
+        } catch {
+          return void 0;
+        }
       }
       function inferSubtitleFormatFromUrl(url) {
         const normalized = url.split(/[?#]/u, 1)[0]?.toLowerCase() ?? "";
@@ -13153,9 +13190,10 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
               getGoogleDriveTrackSubtitles(this.videoHandler.video)
             );
             const pageTitle = normalizeGoogleDriveTitle(getGoogleDrivePageTitle());
+            const storedTitle = await getStoredGoogleDriveTitle(videoId);
             const safeTitle = normalizeGoogleDriveTitle(title);
             const safeLocalizedTitle = normalizeGoogleDriveTitle(localizedTitle);
-            const resolvedGoogleDriveTitle = !isBadGoogleDriveTitle(safeTitle) ? safeTitle : !isBadGoogleDriveTitle(pageTitle) ? pageTitle : !isBadGoogleDriveTitle(safeLocalizedTitle) ? safeLocalizedTitle : void 0;
+            const resolvedGoogleDriveTitle = !isBadGoogleDriveTitle(safeTitle) ? safeTitle : !isBadGoogleDriveTitle(storedTitle) ? storedTitle : !isBadGoogleDriveTitle(pageTitle) ? pageTitle : !isBadGoogleDriveTitle(safeLocalizedTitle) ? safeLocalizedTitle : void 0;
             if (resolvedGoogleDriveTitle) {
               title = resolvedGoogleDriveTitle;
               if (isBadGoogleDriveTitle(localizedTitle)) {
@@ -13192,7 +13230,7 @@ videoId,
             title,
             localizedTitle,
             description,
-            downloadTitle: this.videoHandler.site.host === "googledrive" ? title ?? localizedTitle ?? videoId : localizedTitle ?? title ?? videoId
+            downloadTitle: this.videoHandler.site.host === "googledrive" ? normalizeGoogleDriveTitle(title) ?? normalizeGoogleDriveTitle(localizedTitle) ?? normalizeGoogleDriveTitle(getGoogleDrivePageTitle()) ?? videoId : localizedTitle ?? title ?? videoId
           };
           if (sharedLanguageState.lastLoggedDetectedLanguage !== detectedLanguage) {
             console.log("[VOT] Detected language:", detectedLanguage);
@@ -24073,7 +24111,7 @@ votSettingsView;
           }
           const downloadButton = overlayView.downloadTranslationButton;
           const downloadUrl = videoHandler.downloadTranslationUrl;
-          const filename = this.data.downloadWithName ? clearFileName(videoHandler.videoData.downloadTitle) : `translation_${videoHandler.videoData.videoId}`;
+          const filename = this.data.downloadWithName ? clearFileName(videoHandler.getDownloadBaseName()) : `translation_${videoHandler.videoData.videoId}`;
           const isMobile = this.isLikelyMobileDownloadContext();
           const saveOptions = { preferShare: isMobile };
           const setProgress = (progress) => {
@@ -24126,7 +24164,7 @@ votSettingsView;
               type: "text/plain"
             }
           );
-          const filename = this.data.downloadWithName ? clearFileName(videoHandler.videoData.downloadTitle) : `subtitles_${videoHandler.videoData.videoId}`;
+          const filename = this.data.downloadWithName ? clearFileName(videoHandler.getDownloadBaseName()) : `subtitles_${videoHandler.videoData.videoId}`;
           const targetFilename = `${filename}.${subsFormat}`;
           const isMobile = this.isLikelyMobileDownloadContext();
           const saveOptions = { preferShare: isMobile };
@@ -29833,6 +29871,16 @@ syncVolumeWrapper(fromType, newVolume) {
 getVideoData() {
           return this.videoManager.getVideoData();
         }
+        sanitizeDownloadName(value) {
+          return value.replace(/\.[^.]+$/, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, " ").trim();
+        }
+        getDownloadBaseName() {
+          const fromDownloadTitle = typeof this.videoData?.downloadTitle === "string" && this.videoData.downloadTitle.trim() ? this.videoData.downloadTitle : void 0;
+          const fromVideoData = typeof this.videoData?.title === "string" && this.videoData.title.trim() ? this.videoData.title : void 0;
+          const fromCurrentVideoTitle = typeof this.videoData?.videoTitle === "string" && this.videoData.videoTitle.trim() ? this.videoData.videoTitle : void 0;
+          const raw = fromDownloadTitle || fromVideoData || fromCurrentVideoTitle || `translation-${this.videoData?.videoId ?? "audio"}`;
+          return this.sanitizeDownloadName(raw);
+        }
 videoValidator() {
           return this.videoManager.videoValidator();
         }
@@ -30108,6 +30156,50 @@ releaseExtraEvents = releaseExtraEvents;
       const videosWrappers = new WeakMap();
       let servicesCache = null;
       const bootState = getOrCreateBootState();
+      function extractGoogleDriveFileIdFromUrl(url) {
+        try {
+          const parsed = new URL(url, globalThis.location.origin);
+          const pathname = parsed.pathname;
+          return /\/file\/d\/([^/]+)/.exec(pathname)?.[1] || /\/videos\/d\/([^/]+)/.exec(pathname)?.[1] || /\/d\/([^/]+)/.exec(pathname)?.[1];
+        } catch {
+          return void 0;
+        }
+      }
+      function normalizeGoogleDriveStoredTitle(value) {
+        if (typeof value !== "string") return void 0;
+        const normalized = value.replace(/\s*-\s*Google Drive\s*$/i, "").replace(/\s*-\s*Google Диск\s*$/i, "").trim();
+        return normalized || void 0;
+      }
+      function getGoogleDriveTopFrameTitle() {
+        const exactDriveTitle = Array.from(
+          document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span')
+        ).map((el) => el.textContent?.trim() ?? "").find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text)) || "";
+        const headingTitle = document.querySelector('h1, [role="heading"], div[role="heading"]')?.textContent?.trim() || "";
+        const metaTitle = document.querySelector('meta[property="og:title"], meta[name="title"]')?.getAttribute("content")?.trim() || "";
+        const docTitle = String(document.title || "").trim();
+        return normalizeGoogleDriveStoredTitle(
+          exactDriveTitle || headingTitle || metaTitle || docTitle
+        );
+      }
+      async function persistGoogleDriveTopFrameTitleIfNeeded() {
+        const host = globalThis.location.hostname;
+        if (host !== "drive.google.com" && host !== "docs.google.com") {
+          return;
+        }
+        const fileId = extractGoogleDriveFileIdFromUrl(globalThis.location.href);
+        if (!fileId) {
+          return;
+        }
+        const title = getGoogleDriveTopFrameTitle();
+        if (!title) {
+          return;
+        }
+        try {
+          await votStorage.set(`googledrive:title:${fileId}`, title);
+        } catch (error2) {
+          console.warn("[VOT] failed to persist Google Drive title", error2);
+        }
+      }
       function getFrameContext() {
         return {
           frame: isIframe() ? "iframe" : "top",
@@ -30141,6 +30233,7 @@ releaseExtraEvents = releaseExtraEvents;
         return matched;
       }
       async function main() {
+        await persistGoogleDriveTopFrameTitleIfNeeded();
         const iframeMode = isIframe();
         const bootstrapMode = resolveBootstrapMode({
           isIframe: isIframe(),

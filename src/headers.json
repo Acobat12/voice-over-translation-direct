@@ -66,6 +66,8 @@
     "*://disk.yandex.tm/*",
     "*://disk.yandex.uz/*",
     "*://disk.360.yandex.ru/*",
+    "*://drive.google.com/*",
+    "*://docs.google.com/*",
     "*://youtube.googleapis.com/embed/*",
     "*://*.banned.video/*",
     "*://*.madmaxworld.tv/*",

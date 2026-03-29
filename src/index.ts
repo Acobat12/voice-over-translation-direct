@@ -51,6 +51,7 @@ import {
   fnv1a32ToKeyPart,
   stableStringify,
 } from "./utils/utils";
+import { votStorage } from "./utils/storage";
 import { VideoObserver } from "./utils/VideoObserver";
 import VOTLocalizedError from "./utils/VOTLocalizedError";
 import {
@@ -1273,7 +1274,40 @@ getPreferAudio() {
   getVideoData() {
     return this.videoManager.getVideoData();
   }
+  sanitizeDownloadName(value: string): string {
+    return value
+      .replace(/\.[^.]+$/, "")
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
 
+  getDownloadBaseName(): string {
+    const fromDownloadTitle =
+      typeof this.videoData?.downloadTitle === "string" &&
+      this.videoData.downloadTitle.trim()
+        ? this.videoData.downloadTitle
+        : undefined;
+
+    const fromVideoData =
+      typeof this.videoData?.title === "string" && this.videoData.title.trim()
+        ? this.videoData.title
+        : undefined;
+
+    const fromCurrentVideoTitle =
+      typeof (this.videoData as any)?.videoTitle === "string" &&
+      (this.videoData as any).videoTitle.trim()
+        ? (this.videoData as any).videoTitle
+        : undefined;
+
+    const raw =
+      fromDownloadTitle ||
+      fromVideoData ||
+      fromCurrentVideoTitle ||
+      `translation-${this.videoData?.videoId ?? "audio"}`;
+
+    return this.sanitizeDownloadName(raw);
+  }
   /**
    * Validates the video.
    * @returns {Promise<boolean>} True if valid.
@@ -1706,7 +1740,82 @@ const videoObserver = new VideoObserver(videoObserverChecker);
 const videosWrappers = new WeakMap<HTMLVideoElement, VideoHandler>();
 let servicesCache: ServiceConf[] | null = null;
 const bootState = getOrCreateBootState();
+function extractGoogleDriveFileIdFromUrl(url: string): string | undefined {
+  try {
+    const parsed = new URL(url, globalThis.location.origin);
+    const pathname = parsed.pathname;
 
+    return (
+      /\/file\/d\/([^/]+)/.exec(pathname)?.[1] ||
+      /\/videos\/d\/([^/]+)/.exec(pathname)?.[1] ||
+      /\/d\/([^/]+)/.exec(pathname)?.[1]
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeGoogleDriveStoredTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value
+    .replace(/\s*-\s*Google Drive\s*$/i, "")
+    .replace(/\s*-\s*Google Диск\s*$/i, "")
+    .trim();
+
+  return normalized || undefined;
+}
+
+function getGoogleDriveTopFrameTitle(): string | undefined {
+  const exactDriveTitle =
+    Array.from(
+      document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span'),
+    )
+      .map((el) => el.textContent?.trim() ?? "")
+      .find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text)) || "";
+
+  const headingTitle =
+    document
+      .querySelector('h1, [role="heading"], div[role="heading"]')
+      ?.textContent
+      ?.trim() || "";
+
+  const metaTitle =
+    document
+      .querySelector('meta[property="og:title"], meta[name="title"]')
+      ?.getAttribute("content")
+      ?.trim() || "";
+
+  const docTitle = String(document.title || "").trim();
+
+  return normalizeGoogleDriveStoredTitle(
+    exactDriveTitle || headingTitle || metaTitle || docTitle,
+  );
+}
+
+async function persistGoogleDriveTopFrameTitleIfNeeded(): Promise<void> {
+  const host = globalThis.location.hostname;
+
+  if (host !== "drive.google.com" && host !== "docs.google.com") {
+    return;
+  }
+
+  const fileId = extractGoogleDriveFileIdFromUrl(globalThis.location.href);
+  if (!fileId) {
+    return;
+  }
+
+  const title = getGoogleDriveTopFrameTitle();
+  if (!title) {
+    return;
+  }
+
+  try {
+    await votStorage.set(`googledrive:title:${fileId}`, title);
+  } catch (error) {
+    console.warn("[VOT] failed to persist Google Drive title", error);
+  }
+}
 function getFrameContext() {
   return {
     frame: isIframe() ? "iframe" : "top",
@@ -1769,6 +1878,7 @@ function findContainer(
  * Main function to start the extension.
  */
 async function main(): Promise<void> {
+  await persistGoogleDriveTopFrameTitleIfNeeded();
   const iframeMode = isIframe();
   const bootstrapMode = resolveBootstrapMode({
     isIframe: isIframe(),

@@ -472,7 +472,7 @@ private settingsEventsBound = false;
     const downloadButton = overlayView.downloadTranslationButton;
     const downloadUrl = videoHandler.downloadTranslationUrl;
     const filename = this.data.downloadWithName
-      ? clearFileName(videoHandler.videoData.downloadTitle)
+      ? clearFileName(videoHandler.getDownloadBaseName())
       : `translation_${videoHandler.videoData.videoId}`;
     const isMobile = this.isLikelyMobileDownloadContext();
     const saveOptions: DownloadBlobOptions = { preferShare: isMobile };
@@ -545,7 +545,7 @@ private settingsEventsBound = false;
       },
     );
     const filename = this.data.downloadWithName
-      ? clearFileName(videoHandler.videoData.downloadTitle)
+      ? clearFileName(videoHandler.getDownloadBaseName())
       : `subtitles_${videoHandler.videoData.videoId}`;
     const targetFilename = `${filename}.${subsFormat}`;
     const isMobile = this.isLikelyMobileDownloadContext();
