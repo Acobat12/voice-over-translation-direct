@@ -1,4 +1,5 @@
 import VOTClient, { VOTWorkerClient } from "@vot.js/ext/client";
+
 import type { ServiceConf } from "@vot.js/ext/types/service";
 import { getService } from "@vot.js/ext/utils/videoData";
 import { availableLangs, availableTTS } from "@vot.js/shared/consts";

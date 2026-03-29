@@ -5,6 +5,7 @@ import type { SubtitleDescriptor } from "../../subtitles/types";
 import debug from "../../utils/debug";
 import { proxifyYandexSubtitlesUrl } from "./proxyShared";
 
+
 type IndexedSubtitleDescriptor = {
   descriptor: SubtitleDescriptor;
   index: number;

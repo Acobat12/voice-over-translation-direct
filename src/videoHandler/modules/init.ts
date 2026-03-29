@@ -1,4 +1,5 @@
 import { localizationProvider } from "../../localization/localizationProvider";
+
 import {
   actualCompatVersion,
   defaultAutoHideDelay,

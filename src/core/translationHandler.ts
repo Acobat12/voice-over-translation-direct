@@ -20,6 +20,7 @@ import { formatTranslationEta } from "../utils/timeFormatting";
 import VOTLocalizedError from "../utils/VOTLocalizedError";
 import { notifyTranslationFailureIfNeeded } from "../videoHandler/modules/translationShared";
 
+
 type VotClientErrorShape = {
   name?: unknown;
   message?: unknown;

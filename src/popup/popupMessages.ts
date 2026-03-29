@@ -3,6 +3,7 @@ export type PopupOption = {
   label: string;
 };
 
+
 export type MainToPopupMessage = {
   source: "vot-main";
   type: "overlay-state";

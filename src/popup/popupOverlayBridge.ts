@@ -1,5 +1,6 @@
 import type { MainToPopupMessage, PopupOption } from "./popupMessages";
 
+
 type PopupState = MainToPopupMessage["payload"];
 
 type PopupGeometry = {

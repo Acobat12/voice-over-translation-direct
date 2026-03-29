@@ -2,6 +2,7 @@ import YoutubeHelper from "@vot.js/ext/helpers/youtube";
 import { getVideoData } from "@vot.js/ext/utils/videoData";
 import votConfig from "@vot.js/shared/config";
 import { availableLangs } from "@vot.js/shared/consts";
+
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 
 import type { VideoHandler } from "..";

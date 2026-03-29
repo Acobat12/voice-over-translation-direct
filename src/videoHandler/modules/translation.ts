@@ -10,6 +10,7 @@ import { GM_fetch } from "../../utils/gm";
 import { clamp } from "../../utils/utils";
 import VOTLocalizedError from "../../utils/VOTLocalizedError";
 import type { VideoData } from "../shared";
+
 import {
   computeSmartDuckingStep,
   initSmartDuckingRuntime,
