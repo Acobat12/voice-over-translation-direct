@@ -157,21 +157,28 @@ export async function init(this: VideoHandler) {
   this.uiManager.initUIEvents();
 
   if (shouldUsePopupOverlayWindow()) {
-    this.popupOverlayBridge = new PopupOverlayBridge();
+    const popupBridge =
+      (globalThis as any).__votPopupOverlayBridge ??
+      new PopupOverlayBridge();
+
+    (globalThis as any).__votPopupOverlayBridge = popupBridge;
+    this.popupOverlayBridge = popupBridge;
+    this.popupOverlayBridge.setOwner(this.popupOwnerId);
     this.popupOverlayBridge.bind();
-    this.popupOverlayBridge.open();
     this.popupOverlayBridge.setHandlers({
       onTranslate: () => {
+        if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+          return;
+        }
         void this.uiManager.handleTranslationBtnClick();
       },
       onTurnOff: () => {
+        if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+          return;
+        }
         void this.stopTranslation();
       },
-      onSettings: () => {
-        this.overlayVisibility?.cancel?.();
-        this.overlayVisibility?.show?.();
-        this.uiManager.votSettingsView?.open?.();
-      },
+      
       onDownload: () => {
         void (this.uiManager as any).handleDownloadTranslationClick?.();
       },

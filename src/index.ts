@@ -230,6 +230,7 @@ export class VideoHandler {
   uiManager!: UIManager;
   overlayVisibility!: OverlayVisibilityController;
   popupOverlayBridge?: PopupOverlayBridge;
+  private readonly popupOwnerId = Math.random().toString(36).slice(2);
   overlayVisibilityTargetsAbortController?: AbortController;
   translationOrchestrator!: TranslationOrchestrator;
   lifecycleController!: VideoLifecycleController;
@@ -880,7 +881,18 @@ getPreferAudio() {
       return;
     }
 
-    this.popupOverlayBridge?.open();
+    if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+      return;
+    }
+    
+    if (!this.popupOverlayBridge.isOpen()) {
+      try {
+        this.popupOverlayBridge.open();
+      } catch (error) {
+        console.warn("[VOT] popup open skipped", error);
+        return;
+      }
+    }
 
     const overlayView = this.uiManager.votOverlayView;
     const fromLangValue = this.videoData?.detectedLanguage ?? this.translateFromLang ?? "auto";
@@ -1641,10 +1653,15 @@ getPreferAudio() {
     }
     this.interactionChecker?.destroy();
     this.uiManager.release();
-    if (shouldUsePopupOverlayWindow()) {
-      this.popupOverlayBridge?.close();
-      this.popupOverlayBridge = undefined;
+
+    if (
+      shouldUsePopupOverlayWindow() &&
+      this.popupOverlayBridge?.isOwner(this.popupOwnerId)
+    ) {
+      this.popupOverlayBridge.close();
     }
+
+    this.popupOverlayBridge = undefined;
   }
 
   /**
@@ -1752,6 +1769,7 @@ function findContainer(
  * Main function to start the extension.
  */
 async function main(): Promise<void> {
+  const iframeMode = isIframe();
   const bootstrapMode = resolveBootstrapMode({
     isIframe: isIframe(),
     href: String(globalThis.location.href || ""),
@@ -1762,6 +1780,11 @@ async function main(): Promise<void> {
     logBootstrap("Skipping bootstrap for non-runnable iframe");
     return;
   }
+
+  if (iframeMode && document.visibilityState === "hidden") {
+    logBootstrap("Skipping hidden iframe bootstrap");
+    return;
+  } 
 
   logBootstrap("Loading extension");
   if (bootstrapMode === "top-full") {
@@ -1783,22 +1806,30 @@ async function main(): Promise<void> {
   videoObserver.enable();
 }
 
-if (bootState.status === "booting" || bootState.status === "booted") {
-  logBootstrap("bootstrap already initialized, skipping duplicate run", {
-    status: bootState.status,
-  });
-} else {
-  const runBootstrap = async () => {
-    try {
-      await main();
-      bootState.status = "booted";
-    } catch (e) {
-      bootState.status = "failed";
-      bootState.error = e;
-      console.error("[VOT]", e);
-    }
-  };
+const DOM_BOOTSTRAP_ATTR = "data-vot-bootstrap-active";
 
-  bootState.status = "booting";
-  bootState.promise = runBootstrap();
+if (document.documentElement.hasAttribute(DOM_BOOTSTRAP_ATTR)) {
+  logBootstrap("dom bootstrap already initialized, skipping duplicate run");
+} else {
+  document.documentElement.setAttribute(DOM_BOOTSTRAP_ATTR, "1");
+
+  if (bootState.status === "booting" || bootState.status === "booted") {
+    logBootstrap("bootstrap already initialized, skipping duplicate run", {
+      status: bootState.status,
+    });
+  } else {
+    const runBootstrap = async () => {
+      try {
+        await main();
+        bootState.status = "booted";
+      } catch (e) {
+        bootState.status = "failed";
+        bootState.error = e;
+        console.error("[VOT]", e);
+      }
+    };
+
+    bootState.status = "booting";
+    bootState.promise = runBootstrap();
+  }
 }

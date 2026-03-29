@@ -32,6 +32,28 @@ type SiteContainerMatch = {
 
 const boundObservers = new WeakSet<VideoObserver>();
 
+function isRenderableVideo(video: HTMLVideoElement): boolean {
+  if (!video.isConnected) {
+    return false;
+  }
+
+  const rect = video.getBoundingClientRect();
+  if (rect.width < 64 || rect.height < 64) {
+    return false;
+  }
+
+  const style = globalThis.getComputedStyle(video);
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    Number(style.opacity || "1") === 0
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 export function bindObserverListeners(
   options: BindObserverListenersOptions,
 ): void {
@@ -147,16 +169,40 @@ export function bindObserverListeners(
         return;
       }
       const { site, container } = match;
-
+      if (
+        (site.host === "googledrive" ||
+          globalThis.location.hostname === "youtube.googleapis.com") &&
+        !isRenderableVideo(video)
+      ) {
+        return;
+      }
       const activeVideoForContainer = containerOwners.get(container);
       if (activeVideoForContainer && activeVideoForContainer !== video) {
         if (activeVideoForContainer.isConnected) {
-          pendingVideoByContainer.set(container, video);
-          return;
-        }
+          const activeRect = activeVideoForContainer.getBoundingClientRect();
+          const nextRect = video.getBoundingClientRect();
 
-        await releaseVideoHandler(activeVideoForContainer, "stale container");
-        clearContainerOwner(activeVideoForContainer);
+          const activeArea = activeRect.width * activeRect.height;
+          const nextArea = nextRect.width * nextRect.height;
+
+          if (
+            site.host === "googledrive" ||
+            globalThis.location.hostname === "youtube.googleapis.com"
+          ) {
+            if (nextArea <= activeArea) {
+              return;
+            }
+
+            await releaseVideoHandler(activeVideoForContainer, "smaller duplicate");
+            clearContainerOwner(activeVideoForContainer);
+          } else {
+            pendingVideoByContainer.set(container, video);
+            return;
+          }
+        } else {
+          await releaseVideoHandler(activeVideoForContainer, "stale container");
+          clearContainerOwner(activeVideoForContainer);
+        }
       }
 
       const videoHandler = createVideoHandler(

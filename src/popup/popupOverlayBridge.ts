@@ -15,6 +15,7 @@ export class PopupOverlayBridge {
   private popup: Window | null = null;
   private isBound = false;
   private geometrySaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private ownerId: string | null = null;
 
   private onTranslate?: () => void;
   private onTurnOff?: () => void;
@@ -36,15 +37,30 @@ export class PopupOverlayBridge {
 
   open(): void {
     if (this.popup && !this.popup.closed) {
-      this.popup.focus();
+      try {
+        this.popup.focus();
+      } catch {
+        // ignore
+      }
       return;
     }
 
     const geometry = this.readGeometry();
     const features = this.buildPopupFeatures(geometry);
-    this.popup = window.open("", "vot_overlay", features);
 
-    if (!this.popup) return;
+    let popup: Window | null = null;
+    try {
+      popup = window.open("about:blank", "vot_overlay", features);
+    } catch (error) {
+      console.warn("[VOT] popup open failed", error);
+      return;
+    }
+
+    if (!popup) {
+      return;
+    }
+
+    this.popup = popup;
 
     const doc = this.popup.document;
     doc.title = "VOT";
@@ -436,7 +452,15 @@ export class PopupOverlayBridge {
     if (this.isBound) return;
     this.isBound = true;
   }
-
+  setOwner(ownerId: string): void {
+    this.ownerId = ownerId;
+  }
+  isOpen(): boolean {
+    return Boolean(this.popup && !this.popup.closed);
+  }
+  isOwner(ownerId: string): boolean {
+    return this.ownerId === ownerId;
+  }
   setHandlers(options: {
     onTranslate?: () => void;
     onTurnOff?: () => void;

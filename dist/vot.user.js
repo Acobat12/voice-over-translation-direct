@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot
-// @version         1.11.4.2
+// @version         1.11.5
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -9685,7 +9685,7 @@ get isSupportOnlyLS() {
         return buildVersion || scriptVersion || "unknown";
       }
       function getRuntimeLocaleVersion() {
-        const buildVersion = String("1.11.4.2");
+        const buildVersion = String("1.11.5");
         const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
         return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
       }
@@ -9945,6 +9945,20 @@ locale;
         }
       }
       const boundObservers = new WeakSet();
+      function isRenderableVideo(video) {
+        if (!video.isConnected) {
+          return false;
+        }
+        const rect = video.getBoundingClientRect();
+        if (rect.width < 64 || rect.height < 64) {
+          return false;
+        }
+        const style = globalThis.getComputedStyle(video);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || "1") === 0) {
+          return false;
+        }
+        return true;
+      }
       function bindObserverListeners(options) {
         const {
           videoObserver: videoObserver2,
@@ -10029,14 +10043,30 @@ locale;
               return;
             }
             const { site, container } = match;
+            if ((site.host === "googledrive" || globalThis.location.hostname === "youtube.googleapis.com") && !isRenderableVideo(video)) {
+              return;
+            }
             const activeVideoForContainer = containerOwners.get(container);
             if (activeVideoForContainer && activeVideoForContainer !== video) {
               if (activeVideoForContainer.isConnected) {
-                pendingVideoByContainer.set(container, video);
-                return;
+                const activeRect = activeVideoForContainer.getBoundingClientRect();
+                const nextRect = video.getBoundingClientRect();
+                const activeArea = activeRect.width * activeRect.height;
+                const nextArea = nextRect.width * nextRect.height;
+                if (site.host === "googledrive" || globalThis.location.hostname === "youtube.googleapis.com") {
+                  if (nextArea <= activeArea) {
+                    return;
+                  }
+                  await releaseVideoHandler(activeVideoForContainer, "smaller duplicate");
+                  clearContainerOwner(activeVideoForContainer);
+                } else {
+                  pendingVideoByContainer.set(container, video);
+                  return;
+                }
+              } else {
+                await releaseVideoHandler(activeVideoForContainer, "stale container");
+                clearContainerOwner(activeVideoForContainer);
               }
-              await releaseVideoHandler(activeVideoForContainer, "stale container");
-              clearContainerOwner(activeVideoForContainer);
             }
             const videoHandler = createVideoHandler(
               video,
@@ -25746,6 +25776,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         popup = null;
         isBound = false;
         geometrySaveTimer = null;
+        ownerId = null;
         onTranslate;
         onTurnOff;
         onSettings;
@@ -25765,13 +25796,25 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         onSmartDuckingChange;
         open() {
           if (this.popup && !this.popup.closed) {
-            this.popup.focus();
+            try {
+              this.popup.focus();
+            } catch {
+            }
             return;
           }
           const geometry = this.readGeometry();
           const features = this.buildPopupFeatures(geometry);
-          this.popup = window.open("", "vot_overlay", features);
-          if (!this.popup) return;
+          let popup = null;
+          try {
+            popup = window.open("about:blank", "vot_overlay", features);
+          } catch (error2) {
+            console.warn("[VOT] popup open failed", error2);
+            return;
+          }
+          if (!popup) {
+            return;
+          }
+          this.popup = popup;
           const doc = this.popup.document;
           doc.title = "VOT";
           while (doc.firstChild) doc.removeChild(doc.firstChild);
@@ -26136,6 +26179,15 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           if (this.isBound) return;
           this.isBound = true;
         }
+        setOwner(ownerId) {
+          this.ownerId = ownerId;
+        }
+        isOpen() {
+          return Boolean(this.popup && !this.popup.closed);
+        }
+        isOwner(ownerId) {
+          return this.ownerId === ownerId;
+        }
         setHandlers(options) {
           this.onTranslate = options.onTranslate;
           this.onTurnOff = options.onTurnOff;
@@ -26472,20 +26524,23 @@ useAudioDownload: isSupportGMXhr,
         this.uiManager.initUI();
         this.uiManager.initUIEvents();
         if (shouldUsePopupOverlayWindow()) {
-          this.popupOverlayBridge = new PopupOverlayBridge();
+          const popupBridge = globalThis.__votPopupOverlayBridge ?? new PopupOverlayBridge();
+          globalThis.__votPopupOverlayBridge = popupBridge;
+          this.popupOverlayBridge = popupBridge;
+          this.popupOverlayBridge.setOwner(this.popupOwnerId);
           this.popupOverlayBridge.bind();
-          this.popupOverlayBridge.open();
           this.popupOverlayBridge.setHandlers({
             onTranslate: () => {
+              if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+                return;
+              }
               void this.uiManager.handleTranslationBtnClick();
             },
             onTurnOff: () => {
+              if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+                return;
+              }
               void this.stopTranslation();
-            },
-            onSettings: () => {
-              this.overlayVisibility?.cancel?.();
-              this.overlayVisibility?.show?.();
-              this.uiManager.votSettingsView?.open?.();
             },
             onDownload: () => {
               void this.uiManager.handleDownloadTranslationClick?.();
@@ -29169,6 +29224,7 @@ interactionChecker;
         uiManager;
         overlayVisibility;
         popupOverlayBridge;
+        popupOwnerId = Math.random().toString(36).slice(2);
         overlayVisibilityTargetsAbortController;
         translationOrchestrator;
         lifecycleController;
@@ -29566,7 +29622,17 @@ transformBtn(status, text) {
           if (!shouldUsePopupOverlayWindow()) {
             return;
           }
-          this.popupOverlayBridge?.open();
+          if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+            return;
+          }
+          if (!this.popupOverlayBridge.isOpen()) {
+            try {
+              this.popupOverlayBridge.open();
+            } catch (error2) {
+              console.warn("[VOT] popup open skipped", error2);
+              return;
+            }
+          }
           const overlayView = this.uiManager.votOverlayView;
           const fromLangValue = this.videoData?.detectedLanguage ?? this.translateFromLang ?? "auto";
           const toLangValue = this.videoData?.responseLanguage ?? this.translateToLang ?? "ru";
@@ -30004,10 +30070,10 @@ async release() {
           }
           this.interactionChecker?.destroy();
           this.uiManager.release();
-          if (shouldUsePopupOverlayWindow()) {
-            this.popupOverlayBridge?.close();
-            this.popupOverlayBridge = void 0;
+          if (shouldUsePopupOverlayWindow() && this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
+            this.popupOverlayBridge.close();
           }
+          this.popupOverlayBridge = void 0;
         }
 collectReportInfo() {
           const info = getEnvironmentInfo();
@@ -30075,6 +30141,7 @@ releaseExtraEvents = releaseExtraEvents;
         return matched;
       }
       async function main() {
+        const iframeMode = isIframe();
         const bootstrapMode = resolveBootstrapMode({
           isIframe: isIframe(),
           href: String(globalThis.location.href || ""),
@@ -30082,6 +30149,10 @@ releaseExtraEvents = releaseExtraEvents;
         });
         if (bootstrapMode === "skip") {
           logBootstrap("Skipping bootstrap for non-runnable iframe");
+          return;
+        }
+        if (iframeMode && document.visibilityState === "hidden") {
+          logBootstrap("Skipping hidden iframe bootstrap");
           return;
         }
         logBootstrap("Loading extension");
@@ -30100,23 +30171,29 @@ releaseExtraEvents = releaseExtraEvents;
         });
         videoObserver.enable();
       }
-      if (bootState.status === "booting" || bootState.status === "booted") {
-        logBootstrap("bootstrap already initialized, skipping duplicate run", {
-          status: bootState.status
-        });
+      const DOM_BOOTSTRAP_ATTR = "data-vot-bootstrap-active";
+      if (document.documentElement.hasAttribute(DOM_BOOTSTRAP_ATTR)) {
+        logBootstrap("dom bootstrap already initialized, skipping duplicate run");
       } else {
-        const runBootstrap = async () => {
-          try {
-            await main();
-            bootState.status = "booted";
-          } catch (e2) {
-            bootState.status = "failed";
-            bootState.error = e2;
-            console.error("[VOT]", e2);
-          }
-        };
-        bootState.status = "booting";
-        bootState.promise = runBootstrap();
+        document.documentElement.setAttribute(DOM_BOOTSTRAP_ATTR, "1");
+        if (bootState.status === "booting" || bootState.status === "booted") {
+          logBootstrap("bootstrap already initialized, skipping duplicate run", {
+            status: bootState.status
+          });
+        } else {
+          const runBootstrap = async () => {
+            try {
+              await main();
+              bootState.status = "booted";
+            } catch (e2) {
+              bootState.status = "failed";
+              bootState.error = e2;
+              console.error("[VOT]", e2);
+            }
+          };
+          bootState.status = "booting";
+          bootState.promise = runBootstrap();
+        }
       }
 
     })
