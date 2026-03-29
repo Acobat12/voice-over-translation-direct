@@ -1,5 +1,4 @@
 import VOTClient, { VOTWorkerClient } from "@vot.js/ext/client";
-
 import type { ServiceConf } from "@vot.js/ext/types/service";
 import { getService } from "@vot.js/ext/utils/videoData";
 import { availableLangs, availableTTS } from "@vot.js/shared/consts";
@@ -219,6 +218,7 @@ export class VideoHandler {
   subtitlesWidget?: SubtitlesWidget;
 
   activeTranslation: { key: string; promise: Promise<unknown> } | null = null;
+  lastTranslationVideoId: string | null = null;
   /**
    * In-flight async teardown for translation/audio player cleanup.
    * New translation starts should wait for this to avoid clear/init races.
@@ -717,15 +717,21 @@ export class VideoHandler {
    * Determines if audio should be preferred.
    * @returns {boolean} True if audio is preferred.
    */
-  getPreferAudio() {
-    // If we cannot reliably use AudioContext, prefer the legacy path.
-    if (!this.getAudioContext()) return true;
-    if (!this.data) return true;
-    if (!this.data.newAudioPlayer) return true;
-    if (this.videoData?.isStream) return true; // Prefer old player path for streams.
-    if (this.data.newAudioPlayer && !this.data.onlyBypassMediaCSP) return false;
-    return !this.site.needBypassCSP;
-  }
+getPreferAudio() {
+  const hasAudioContext = Boolean(this.getAudioContext());
+  const data = this.data;
+
+  if (!hasAudioContext) return true;
+  if (!data) return true;
+
+  if (this.site.needBypassCSP) return false;
+
+  if (this.videoData?.isStream) return false;
+  if (!data.newAudioPlayer) return true;
+  if (!data.onlyBypassMediaCSP) return false;
+
+  return true;
+}
 
   /**
    * Creates the audio player.
@@ -887,12 +893,12 @@ export class VideoHandler {
     const translationVolume = Number(
       overlayView?.translationVolumeSlider?.value ?? this.data?.defaultVolume ?? 100,
     );
+    const selectedSubtitlesValue = overlayView?.subtitlesSelect
+     ? Array.from(overlayView.subtitlesSelect.selectedValues)[0] 
+     : undefined;
+
     const subtitlesEnabled = Boolean(
-      this.yandexSubtitles ||
-        (overlayView?.subtitlesSelect &&
-          overlayView.subtitlesSelect.title?.textContent &&
-          overlayView.subtitlesSelect.title.textContent !==
-            localizationProvider.get("VOTSubtitlesDisabled")),
+      this.yandexSubtitles && selectedSubtitlesValue && selectedSubtitlesValue !== "disabled",
     );
     const fromLangOptions = ["auto", ...availableLangs].map((value) => ({
       value,
@@ -910,6 +916,7 @@ export class VideoHandler {
         overlayView?.votButton?.label?.textContent ??
         localizationProvider.get("translateVideo"),
       canDownload: Boolean(this.downloadTranslationUrl),
+      canDownloadSubtitles: Boolean(this.yandexSubtitles),
       hint: "Popup mode for Google-hosted players.",
       fromLangLabel,
       toLangLabel,
@@ -1473,6 +1480,7 @@ export class VideoHandler {
       status: isSuccess ? "success" : "none",
       label: isSuccess ? "Turn off" : localizationProvider.get("translateVideo"),
       canDownload: Boolean(this.downloadTranslationUrl),
+      canDownloadSubtitles: Boolean(this.yandexSubtitles),
       hint: this.downloadTranslationUrl
         ? "Translated audio is ready for download."
         : "Waiting for translated audio.",

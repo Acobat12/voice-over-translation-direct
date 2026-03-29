@@ -1,6 +1,5 @@
 import type { ServiceConf } from "@vot.js/ext/types/service";
 
-
 export type OverlayMountTargets = {
   base: HTMLElement;
   root: HTMLElement;
@@ -24,11 +23,12 @@ export function resolveOverlayMountTargets(input: {
 }): OverlayMountTargets {
   const base = resolveOverlayBaseContainer(input.container, input.site);
   const root = input.fullscreenRoot ?? base;
+  const subtitlesMountContainer = input.site.host === "googledrive" ? input.fullscreenRoot ?? document.body : root;
 
   return {
     base,
     root,
     portalContainer: base,
-    subtitlesMountContainer: root,
+    subtitlesMountContainer,
   };
 }

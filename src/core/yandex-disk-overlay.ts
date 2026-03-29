@@ -1,5 +1,4 @@
 export function installYandexDiskOverlayPatch(): void {
-  if (!location.hostname.includes("disk.yandex.")) return;
 
   let patchedHost: Element | null = null;
   let hideTimer: number | null = null;

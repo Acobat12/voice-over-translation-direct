@@ -1,6 +1,5 @@
 import type { MainToPopupMessage, PopupOption } from "./popupMessages";
 
-
 type PopupState = MainToPopupMessage["payload"];
 
 type PopupGeometry = {
@@ -21,6 +20,7 @@ export class PopupOverlayBridge {
   private onTurnOff?: () => void;
   private onSettings?: () => void;
   private onDownload?: () => void;
+  private onDownloadSubtitles?: () => void;
   private onToggleSubtitles?: () => void;
   private onVideoVolumeChange?: (value: number) => void;
   private onTranslationVolumeChange?: (value: number) => void;
@@ -296,7 +296,10 @@ export class PopupOverlayBridge {
     const downloadBtn = doc.createElement("button");
     downloadBtn.id = "vot-download-btn";
     downloadBtn.textContent = "Download MP3";
-    rowSecondary.append(subtitlesBtn, downloadBtn);
+    const downloadSubtitlesBtn = doc.createElement("button");
+    downloadSubtitlesBtn.id = "vot-download-subtitles-btn";
+    downloadSubtitlesBtn.textContent = "Download subtitles";
+    rowSecondary.append(subtitlesBtn, downloadBtn, downloadSubtitlesBtn);
 
     const videoVolumeField = doc.createElement("div");
     videoVolumeField.className = "vot-field";
@@ -374,6 +377,7 @@ export class PopupOverlayBridge {
       }
     });
     downloadBtn.addEventListener("click", () => this.onDownload?.());
+    downloadSubtitlesBtn.addEventListener("click", () => this.onDownloadSubtitles?.());
 
     subtitlesBtn.addEventListener("click", () => this.onToggleSubtitles?.());
     videoVolumeInput.addEventListener("input", () => {
@@ -438,6 +442,7 @@ export class PopupOverlayBridge {
     onTurnOff?: () => void;
     onSettings?: () => void;
     onDownload?: () => void;
+    onDownloadSubtitles?: () => void;
     onToggleSubtitles?: () => void;
     onVideoVolumeChange?: (value: number) => void;
     onTranslationVolumeChange?: (value: number) => void;
@@ -455,6 +460,7 @@ export class PopupOverlayBridge {
     this.onTurnOff = options.onTurnOff;
     this.onSettings = options.onSettings;
     this.onDownload = options.onDownload;
+    this.onDownloadSubtitles = options.onDownloadSubtitles;
     this.onToggleSubtitles = options.onToggleSubtitles;
     this.onVideoVolumeChange = options.onVideoVolumeChange;
     this.onTranslationVolumeChange = options.onTranslationVolumeChange;
@@ -475,6 +481,7 @@ export class PopupOverlayBridge {
     const mainBtn = this.getEl<HTMLButtonElement>("vot-main-btn");
     const subtitlesBtn = this.getEl<HTMLButtonElement>("vot-subtitles-btn");
     const downloadBtn = this.getEl<HTMLButtonElement>("vot-download-btn");
+    const downloadSubtitlesBtn = this.getEl<HTMLButtonElement>("vot-download-subtitles-btn");
     const statusEl = this.getEl<HTMLDivElement>("vot-status");
     const hintEl = this.getEl<HTMLDivElement>("vot-hint");
     const fromSelect = this.getEl<HTMLSelectElement>("vot-from-lang");
@@ -511,6 +518,12 @@ export class PopupOverlayBridge {
     if (downloadBtn) {
       downloadBtn.disabled = !payload.canDownload || isLoading;
       downloadBtn.title = payload.canDownload ? "Download translated audio" : "Translation audio is not available yet";
+    }
+    if (downloadSubtitlesBtn) {
+      downloadSubtitlesBtn.disabled = !payload.canDownloadSubtitles || isLoading;
+      downloadSubtitlesBtn.title = payload.canDownloadSubtitles
+        ? "Download subtitles"
+        : "Subtitles are not available yet";
     }
     if (statusEl) statusEl.textContent = `Status: ${payload.status}`;
     if (hintEl) hintEl.textContent = payload.hint ?? "Popup mode for Google-hosted players.";

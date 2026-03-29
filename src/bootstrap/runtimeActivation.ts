@@ -56,7 +56,13 @@ export async function ensureRuntimeActivated(
       iframeInteractorBound = true;
       initIframeInteractor();
     }
-    installYandexDiskOverlayPatch();
+    function isYandexDiskHost(): boolean {
+      const host = globalThis.location.hostname.toLowerCase();
+      return host === "disk.yandex.ru" || host === "disk.yandex.com";
+    }
+    if (isYandexDiskHost()) {
+      installYandexDiskOverlayPatch();
+    }
     runtimeActivated = true;
   })();
 

@@ -1,5 +1,4 @@
 import { localizationProvider } from "../../localization/localizationProvider";
-
 import {
   actualCompatVersion,
   defaultAutoHideDelay,
@@ -176,10 +175,26 @@ export async function init(this: VideoHandler) {
       onDownload: () => {
         void (this.uiManager as any).handleDownloadTranslationClick?.();
       },
+      onDownloadSubtitles: () => {
+        void (this.uiManager as any).handleDownloadSubtitlesClick?.();
+      },
       onToggleSubtitles: () => {
-        void this.toggleSubtitlesForCurrentLangPair().finally(() => {
-          this.syncPopupOverlayState();
-        });
+        void (async () => {
+          try {
+            this.resetSubtitlesWidget();
+            await this.ensureSubtitlesForCurrentLangPair();
+            await this.toggleSubtitlesForCurrentLangPair();
+          } finally {
+            this.syncPopupOverlayState({
+              subtitlesEnabled: Boolean(
+                this.yandexSubtitles &&
+                Array.isArray(this.yandexSubtitles.subtitles) &&
+                this.yandexSubtitles.subtitles.length > 0
+              ),
+              canDownloadSubtitles: Boolean(this.yandexSubtitles),
+            });
+          }
+        })();
       },
       onFromLanguageChange: (value) => {
         if (this.videoData) {
@@ -275,18 +290,12 @@ export async function init(this: VideoHandler) {
       this.uiManager.votOverlayView.votButton.container.style.display = "none";
     }
 
-    if (this.uiManager.votOverlayView?.votMenu?.container) {
-      this.uiManager.votOverlayView.votMenu.container.style.display = "none";
-    }
-
     this.syncPopupOverlayState({
       status: "none",
       label: localizationProvider.get("translateVideo"),
       hint: "Popup mode for Google-hosted players.",
     });
-  } else if (this.uiManager.votOverlayView?.votButton?.container) {
-    this.uiManager.votOverlayView.votButton.container.hidden = true;
-  }
+  } 
 
   // Get video data and create player.
   this.createPlayer();

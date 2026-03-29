@@ -1,8 +1,8 @@
 {
   "name": "[VOT] - Voice Over Translation",
   "description": "A small extension that adds a Yandex Browser video translation to other browsers",
-  "version": "1.11.4",
-  "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat",
+  "version": "1.11.4.1",
+  "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12",
   "namespace": "vot",
   "icon": "https://translate.yandex.ru/icons/favicon.ico",
   "match": [
@@ -147,6 +147,7 @@
     "https://gist.githubusercontent.com/ilyhalight/6eb5bb4dffc7ca9e3c57d6933e2452f3/raw/7ab38af2228d0bed13912e503bc8a9ee4b11828d/gm-addstyle-polyfill.js"
   ],
   "connect": [
+    "cloud-api.yandex.com",
     "oauth.yandex.ru",
     "yandex.ru",
     "disk.yandex.kz",
@@ -170,13 +171,19 @@
     "timeweb.cloud",
     "raw.githubusercontent.com",
     "vimeo.com",
+    "vot.toil.cc",
+    "*.toil.cc",
     "toil.cc",
     "deno.dev",
     "onrender.com",
     "workers.dev",
+    "packaged-media.redd.it",
     "cloudflare-dns.com",
     "porntn.com",
     "youtube.com",
-    "googlevideo.com"
+    "googlevideo.com",
+    "vk.com",
+    "*.vk.com",
+    "*"
   ]
 }

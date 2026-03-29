@@ -33,7 +33,7 @@ export const authCallbackUrl = `${authCallbackOrigin}${authCallbackPath}`;
 
 export const avatarServerUrl = "https://avatars.mds.yandex.net/get-yapic";
 
-const repoPath = "Acobat12/voice-over-translation";
+const repoPath = "Acobat12/voice-over-translation-direct";
 export const contentUrl = `https://raw.githubusercontent.com/${repoPath}`;
 export const repositoryUrl = `https://github.com/${repoPath}`;
 

@@ -3,7 +3,6 @@ export type PopupOption = {
   label: string;
 };
 
-
 export type MainToPopupMessage = {
   source: "vot-main";
   type: "overlay-state";
@@ -20,6 +19,7 @@ export type MainToPopupMessage = {
     fromLangOptions?: PopupOption[];
     toLangOptions?: PopupOption[];
     subtitlesEnabled?: boolean;
+    canDownloadSubtitles?: boolean;
     videoVolume?: number;
     translationVolume?: number;
     canAdjustTranslationVolume?: boolean;

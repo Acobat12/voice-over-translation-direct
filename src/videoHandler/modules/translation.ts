@@ -1,3 +1,4 @@
+
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import { defaultAutoVolume } from "../../config/config";
 import { YANDEX_TTL_MS } from "../../core/cacheManager";
@@ -10,7 +11,6 @@ import { GM_fetch } from "../../utils/gm";
 import { clamp } from "../../utils/utils";
 import VOTLocalizedError from "../../utils/VOTLocalizedError";
 import type { VideoData } from "../shared";
-
 import {
   computeSmartDuckingStep,
   initSmartDuckingRuntime,
@@ -65,9 +65,9 @@ type ApplyTranslationSourceResult =
     };
 
 const SMART_DUCKING_TICK_MS = SMART_DUCKING_DEFAULT_CONFIG.tickMs;
-const AUDIO_PROBE_TIMEOUT_MS = 5_000;
-const AUDIO_PROBE_RETRY_DELAY_MS = 150;
-const AUDIO_PROBE_MAX_ATTEMPTS = 2;
+const AUDIO_PROBE_TIMEOUT_MS = 1200;
+const AUDIO_PROBE_RETRY_DELAY_MS = 100;
+const AUDIO_PROBE_MAX_ATTEMPTS = 1;
 
 type AudioPlayerLike = {
   audio?: HTMLMediaElement;
@@ -92,6 +92,17 @@ const smartDuckingAnalyserState = new WeakMap<
   VideoHandler,
   SmartDuckingAnalyserState
 >();
+
+function isMediaAbortError(error: unknown): boolean {
+  const name = String((error as { name?: unknown })?.name ?? "");
+  const message = String((error as { message?: unknown })?.message ?? error ?? "");
+
+  return (
+    name === "AbortError" ||
+    message.includes("The fetching process for the media resource was aborted") ||
+    message.includes("media resource was aborted by the user agent")
+  );
+}
 
 function isAudioNode(node: unknown): node is AudioNode {
   if (!node || typeof node !== "object") return false;
@@ -651,14 +662,46 @@ export async function validateAudioUrl(
   audioUrl: string,
   actionContext?: ActionContext,
 ): Promise<string> {
-  if (this.isActionStale(actionContext)) return audioUrl;
+  if (this.isActionStale(actionContext)) {
+    return audioUrl;
+  }
+
+  const rawUrl = String(audioUrl || "");
+  const directUrl = this.unproxifyAudio(rawUrl);
+  const normalizedInput = this.proxifyAudio(directUrl);
+
+  const currentSource =
+    this.audioPlayer?.player?.currentSrc ||
+    this.audioPlayer?.player?.src ||
+    "";
+
+  const normalizedCurrent = this.proxifyAudio(
+    this.unproxifyAudio(currentSource),
+  );
+
+  // Если уже стоит этот же источник — ничего не проверяем.
+  if (normalizedInput === normalizedCurrent) {
+    return audioUrl;
+  }
+
+  // Для Yandex Disk / Google Drive и yandex-tts mp3 не делаем probe вообще.
+  // Именно он чаще всего и даёт задержку перед стартом.
+  if (
+    this.site.host === "yandexdisk" ||
+    this.site.host === "googledrive" ||
+    this.isMultiMethodS3(rawUrl) ||
+    this.isMultiMethodS3(directUrl) ||
+    directUrl.includes("vtrans.s3-private.mds.yandex.net") ||
+    directUrl.includes("/tts/prod/")
+  ) {
+    return audioUrl;
+  }
 
   const isPrimaryUrlValid = await probeAudioUrl(this, audioUrl, actionContext);
   if (isPrimaryUrlValid) {
     return audioUrl;
   }
 
-  const directUrl = this.unproxifyAudio(audioUrl);
   if (directUrl !== audioUrl) {
     const isDirectUrlValid = await probeAudioUrl(
       this,
@@ -671,8 +714,6 @@ export async function validateAudioUrl(
     }
   }
 
-  // Keep the original URL and let updateTranslation() execute its own
-  // initialization fallback path.
   return audioUrl;
 }
 
@@ -760,21 +801,42 @@ export async function refreshTranslationAudio(
     this.videoData.translationHelp,
   );
   try {
+
     const translateRes = await requestApplyAndCacheTranslation(this, {
-      videoData: this.videoData,
-      requestLang: this.translateFromLang,
-      responseLang: this.translateToLang,
+      videoData,
+      requestLang: resolvedReqLang,
+      responseLang: resLang,
       translationHelp: normalizedTranslationHelp,
       actionContext,
-      cacheKey: this.getTranslationCacheKey(
-        videoId,
-        this.translateFromLang,
-        this.translateToLang,
-        normalizedTranslationHelp,
-      ),
-      cacheVideoId: videoId,
-      cacheRequestLang: this.translateFromLang,
-      cacheResponseLang: this.translateToLang,
+      cacheKey,
+      cacheVideoId: VIDEO_ID,
+      cacheRequestLang: resolvedReqLang,
+      cacheResponseLang: responseLang,
+      onBeforeCache: async () => {
+        const subsCacheKey = this.videoData
+          ? this.getSubtitlesCacheKey(
+              VIDEO_ID,
+              this.videoData.detectedLanguage,
+              this.videoData.responseLanguage,
+            )
+          : null;
+        const cachedSubs = subsCacheKey
+          ? this.cacheManager.getSubtitles(subsCacheKey)
+          : null;
+
+        if (
+          !cachedSubs?.some(
+            (item) =>
+              item.source === "yandex" &&
+              item.translatedFromLanguage === videoData.detectedLanguage &&
+              item.language === videoData.responseLanguage,
+          )
+        ) {
+          if (subsCacheKey) this.cacheManager.deleteSubtitles(subsCacheKey);
+          this.subtitles = [];
+          this.subtitlesCacheKey = null;
+        }
+      },
     });
     if (!translateRes) return;
   } finally {
@@ -847,8 +909,46 @@ async function applyTranslationSource(
 
   try {
     if (didSetSource) {
-      await handler.audioPlayer.init();
+      try {
+        await handler.audioPlayer.init();
+      } catch (error) {
+        if (!isMediaAbortError(error) || handler.isActionStale(actionContext)) {
+          throw error;
+        }
+
+        debug.log("[updateTranslation] transient media abort, retrying init once", {
+          sourceUrl,
+          error,
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 200));
+
+        if (handler.isActionStale(actionContext)) {
+          await rollbackStaleAppliedSourceIfStillCurrent(
+            handler,
+            appliedSourceUrl,
+          );
+          return {
+            status: "stale",
+            didSetSource,
+            appliedSourceUrl,
+          };
+        }
+
+        const currentSrc = String(
+          handler.audioPlayer.player.currentSrc ||
+            handler.audioPlayer.player.src ||
+            "",
+        );
+
+        if (!currentSrc) {
+          handler.audioPlayer.player.src = sourceUrl;
+        }
+
+        await handler.audioPlayer.init();
+      }
     }
+
     if (handler.isActionStale(actionContext)) {
       await rollbackStaleAppliedSourceIfStillCurrent(handler, appliedSourceUrl);
       return {
@@ -896,6 +996,138 @@ async function applyTranslationSource(
     };
   }
 }
+async function ensureTranslatedAudioStarted(
+  handler: VideoHandler,
+  actionContext?: ActionContext,
+  timeoutMs = 1500,
+): Promise<boolean> {
+  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const media = getPlayerMediaElement(player);
+
+  if (!player) return false;
+
+  const currentSrc = String(player.currentSrc || player.src || "");
+  if (!currentSrc) return false;
+
+  if (!media) {
+    return true;
+  }
+
+  if (!media.paused && media.readyState >= 2 && !media.error) {
+    return true;
+  }
+
+  return await new Promise<boolean>((resolve) => {
+    let done = false;
+
+    const finish = (value: boolean) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const onGood = () => finish(true);
+    const onBad = () => finish(false);
+
+    const timer = setTimeout(() => {
+      finish(!media.paused && media.readyState >= 2 && !media.error);
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      media.removeEventListener("playing", onGood);
+      media.removeEventListener("canplay", onGood);
+      media.removeEventListener("loadeddata", onGood);
+      media.removeEventListener("error", onBad);
+      //media.removeEventListener("abort", onBad);
+    };
+
+    media.addEventListener("playing", onGood, { once: true });
+    media.addEventListener("canplay", onGood, { once: true });
+    media.addEventListener("loadeddata", onGood, { once: true });
+    media.addEventListener("error", onBad, { once: true });
+    //media.addEventListener("abort", onBad, { once: true });
+
+    if (handler.isActionStale(actionContext)) {
+      finish(false);
+    }
+  });
+}
+
+function shouldRequireImmediateTranslatedStart(handler: VideoHandler): boolean {
+  const hostVideo = handler.video;
+  return Boolean(hostVideo && !hostVideo.paused && !hostVideo.ended);
+}
+
+async function recoverAfterMediaAbort(
+  handler: VideoHandler,
+  sourceUrl: string,
+  actionContext?: ActionContext,
+): Promise<boolean> {
+  try {
+    await handler.audioPlayer?.player?.clear();
+  } catch (err) {
+    debug.log("[updateTranslation] player.clear failed during recovery", err);
+  }
+
+  try {
+    if (handler.audioPlayer?.player) {
+      handler.audioPlayer.player.src = "";
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    handler.createPlayer();
+  } catch (err) {
+    debug.log("[updateTranslation] createPlayer failed during recovery", err);
+    return false;
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  if (handler.isActionStale(actionContext)) {
+    return false;
+  }
+
+  const retryResult = await applyTranslationSource(
+    handler,
+    sourceUrl,
+    actionContext,
+  );
+
+  if (retryResult.status !== "success") {
+    debug.log("[updateTranslation] recovery retry failed", retryResult);
+    return false;
+  }
+
+  if (shouldRequireImmediateTranslatedStart(handler)) {
+    const started = await ensureTranslatedAudioStarted(
+      handler,
+      actionContext,
+      1500,
+    );
+
+    if (!started) {
+      debug.log(
+        "[updateTranslation] recovery retry attached src but playback did not start",
+      );
+      return false;
+    }
+  } else {
+    debug.log(
+      "[updateTranslation] recovery succeeded while host video is paused; skip immediate start check",
+    );
+  }
+
+  handler.setupAudioSettings();
+  handler.transformBtn("success", localizationProvider.get("disableTranslate"));
+  handler.afterUpdateTranslation(sourceUrl);
+  return true;
+}
+
 
 export async function updateTranslation(
   this: VideoHandler,
@@ -976,17 +1208,100 @@ export async function updateTranslation(
 
   if (applyResult.status === "stale") return;
 
-  if (applyResult.status === "error") {
-    debug.log("this.audioPlayer.init() error", applyResult.error);
-    await rollbackStaleAppliedSourceIfStillCurrent(this, appliedSourceUrl);
-    const msg = toErrorMessage(applyResult.error);
-    this.transformBtn("error", msg);
-    return;
+if (applyResult.status === "error") {
+  debug.log("this.audioPlayer.init() error", applyResult.error);
+
+  if (isMediaAbortError(applyResult.error)) {
+    debug.log(
+      "[updateTranslation] media abort detected, recreating player and retrying once",
+      applyResult.error,
+    );
+
+    const recovered = await recoverAfterMediaAbort(
+      this,
+      nextAudioUrl,
+      actionContext,
+    );
+
+    if (recovered) {
+      return;
+    }
   }
 
-  this.setupAudioSettings();
-  this.transformBtn("success", localizationProvider.get("disableTranslate"));
-  this.afterUpdateTranslation(nextAudioUrl);
+  await rollbackStaleAppliedSourceIfStillCurrent(this, appliedSourceUrl);
+
+  try {
+    await this.audioPlayer?.player?.clear();
+  } catch (err) {
+    debug.log("[updateTranslation] player.clear failed", err);
+  }
+
+  try {
+    if (this.audioPlayer?.player) {
+      this.audioPlayer.player.src = "";
+    }
+  } catch {
+    // ignore
+  }
+
+  this.downloadTranslationUrl = null;
+
+  const msg = toErrorMessage(applyResult.error);
+  this.transformBtn("error", msg);
+
+  throw applyResult.error instanceof Error
+    ? applyResult.error
+    : new Error(msg);
+}
+
+if (shouldRequireImmediateTranslatedStart(this)) {
+  const started = await ensureTranslatedAudioStarted(
+    this,
+    actionContext,
+    1500,
+  );
+
+  if (!started) {
+    debug.log("[updateTranslation] audio source attached but playback did not start");
+
+    const recovered = await recoverAfterMediaAbort(
+      this,
+      nextAudioUrl,
+      actionContext,
+    );
+
+    if (recovered) {
+      return;
+    }
+
+    try {
+      await this.audioPlayer?.player?.clear();
+    } catch (err) {
+      debug.log("[updateTranslation] player.clear after no-start failed", err);
+    }
+
+    try {
+      if (this.audioPlayer?.player) {
+        this.audioPlayer.player.src = "";
+      }
+    } catch {
+      // ignore
+    }
+
+    this.downloadTranslationUrl = null;
+    this.transformBtn("error", "Translated audio did not start");
+    throw new Error("Translated audio did not start");
+  }
+} else {
+  debug.log(
+    "[updateTranslation] translated source attached while host video is paused; skip immediate start check",
+  );
+}
+
+this.setupAudioSettings();
+this.transformBtn("success", localizationProvider.get("disableTranslate"));
+this.afterUpdateTranslation(nextAudioUrl);
+
 }
 
 export async function translateFunc(
@@ -1000,20 +1315,21 @@ export async function translateFunc(
   await this.waitForPendingStopTranslate();
   debug.log("Run videoValidator");
   await this.videoValidator();
-  // Stream translation is currently disabled; keep this parameter for API compatibility.
 
-  // Ensure we don't start requests with a stale/aborted signal.
   if (this.actionsAbortController?.signal?.aborted) {
     this.resetActionsAbortController("translateFunc");
   }
+
   const overlayView = this.uiManager.votOverlayView;
   if (!overlayView?.votButton) {
     debug.log("[translateFunc] Overlay view missing, skipping translation");
     return;
   }
+
   overlayView.votButton.loading = true;
   this.hadAsyncWait = false;
   this.volumeOnStart = this.getVideoVolume();
+
   if (!VIDEO_ID) {
     debug.log("Skip translation - no VIDEO_ID resolved yet");
     await this.updateTranslationErrorMsg(
@@ -1022,6 +1338,7 @@ export async function translateFunc(
     );
     return;
   }
+
   const videoData = this.videoData;
   if (!videoData) {
     await this.updateTranslationErrorMsg(
@@ -1030,10 +1347,63 @@ export async function translateFunc(
     );
     return;
   }
+
+  const currentVideoId = VIDEO_ID;
+
+  if (this.lastTranslationVideoId !== currentVideoId) {
+    debug.log("[translateFunc] video changed, recreating player", {
+      prev: this.lastTranslationVideoId,
+      next: currentVideoId,
+    });
+   
+    this.resetActionsAbortController("translateFunc video changed");
+
+    try {
+      await this.audioPlayer?.player?.clear();
+    } catch (err) {
+      debug.log("[translateFunc] player.clear failed during video switch", err);
+    }
+
+    try {
+      if (this.audioPlayer?.player) {
+        this.audioPlayer.player.src = "";
+      }
+    } catch {
+      // ignore
+    }
+
+    try {
+      if (this.translationRefreshTimeout !== undefined) {
+        clearTimeout(this.translationRefreshTimeout);
+        this.translationRefreshTimeout = undefined;
+      }
+    } catch {
+      // ignore
+    }
+
+    this.downloadTranslationUrl = null;
+    this.activeTranslation = null;
+    this.hadAsyncWait = false;
+
+    stopSmartVolumeDucking(this, {
+      restoreVolume: this.smartVolumeDuckingBaseline ?? this.volumeOnStart,
+    });
+    this.smartVolumeDuckingBaseline = undefined;
+    try {
+      this.createPlayer();
+    } catch (err) {
+      debug.log("[translateFunc] createPlayer failed during video switch", err);
+    }
+
+    this.lastTranslationVideoId = currentVideoId;
+  }
+
   const normalizedTranslationHelp = normalizeTranslationHelp(translationHelp);
+  await this.videoManager.ensureDetectedLanguageForTranslation(videoData);
+  const resolvedRequestLang = requestLang === "auto" && videoData.detectedLanguage !== "auto" ? videoData.detectedLanguage : requestLang;
   const cacheKey = this.getTranslationCacheKey(
     VIDEO_ID,
-    requestLang,
+    resolvedRequestLang,
     responseLang,
     normalizedTranslationHelp,
   );
@@ -1056,8 +1426,8 @@ export async function translateFunc(
       debug.log("[translateFunc] Stale translation task - skipping");
       return;
     }
-    const reqLang = requestLang as RequestLang;
-    const resLang = responseLang as ResponseLang;
+    const reqLang = resolvedRequestLang;
+    const resLang = responseLang;
     const applyTranslationUrl = async (url: string) =>
       await updateTranslationAndSchedule({
         url,
@@ -1067,13 +1437,31 @@ export async function translateFunc(
           this.updateTranslation(nextUrl, ctx),
         scheduleTranslationRefresh: () => this.scheduleTranslationRefresh(),
       });
-    const cachedEntry = this.cacheManager.getTranslation(cacheKey);
-    if (cachedEntry?.url) {
-      const updated = await applyTranslationUrl(cachedEntry.url);
-      if (!updated) return;
+const cachedEntry = this.cacheManager.getTranslation(cacheKey);
+if (cachedEntry?.url) {
+  try {
+    const updated = await applyTranslationUrl(cachedEntry.url);
+    if (updated && this.hasActiveSource()) {
       debug.log("[translateFunc] Cached translation was received");
       return;
     }
+
+    debug.log(
+      "[translateFunc] Cached translation did not activate source, dropping cache and requesting fresh URL",
+    );
+  } catch (err) {
+    debug.log(
+      "[translateFunc] Cached translation failed, dropping cache and requesting fresh URL",
+      err,
+    );
+  }
+
+  if (typeof this.cacheManager.deleteTranslation === "function") {
+    this.cacheManager.deleteTranslation(cacheKey);
+  } else {
+    this.cacheManager.clear();
+  }
+}
     // Do not short-circuit on cached failures.
     // Users must be able to retry immediately (especially after changing
     // proxy settings or recovering from transient backend issues).
@@ -1086,7 +1474,7 @@ export async function translateFunc(
       actionContext,
       cacheKey,
       cacheVideoId: VIDEO_ID,
-      cacheRequestLang: requestLang,
+      cacheRequestLang: resolvedRequestLang,
       cacheResponseLang: responseLang,
       onBeforeCache: async () => {
         // Invalidate subtitles cache if there is no matching subtitle.
@@ -1129,18 +1517,20 @@ export async function translateFunc(
   };
 
   try {
-    return await translationPromise;
-  } catch (err) {
-    this.hadAsyncWait = notifyTranslationFailureIfNeeded({
-      aborted: this.actionsAbortController.signal.aborted,
-      translateApiErrorsEnabled: Boolean(this.data?.translateAPIErrors),
-      hadAsyncWait: this.hadAsyncWait,
-      videoId: VIDEO_ID,
-      error: err,
-      notify: (params) => this.notifier.translationFailed(params),
-    });
-    throw err;
-  } finally {
+  return await translationPromise;
+} catch (err) {
+  debug.log("[translateFunc] transient media abort", err);
+  
+  this.hadAsyncWait = notifyTranslationFailureIfNeeded({
+    aborted: this.actionsAbortController.signal.aborted,
+    translateApiErrorsEnabled: Boolean(this.data?.translateAPIErrors),
+    hadAsyncWait: this.hadAsyncWait,
+    videoId: VIDEO_ID,
+    error: err,
+    notify: (params) => this.notifier.translationFailed(params),
+  });
+  throw err;
+} finally {
     if (this.activeTranslation?.promise === translationPromise) {
       this.activeTranslation = null;
     }

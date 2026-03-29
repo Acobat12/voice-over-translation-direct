@@ -26,7 +26,7 @@ const EXTENSION_ASSET_FILES = [
 ] as const;
 
 const GITHUB_DIST_EXT_RAW_BASE =
-  "https://raw.githubusercontent.com/Acobat12/voice-over-translation/master/dist-ext";
+  "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext";
 const CHROME_UPDATES_MANIFEST_FILE = "vot-extension-chrome-updates.xml";
 const FIREFOX_UPDATES_MANIFEST_FILE = "vot-extension-firefox-updates.json";
 const FIREFOX_UPDATES_MANIFEST_URL = `${GITHUB_DIST_EXT_RAW_BASE}/${FIREFOX_UPDATES_MANIFEST_FILE}`;

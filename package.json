@@ -7,12 +7,12 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Acobat12/voice-over-translation.git"
+    "url": "git+https://github.com/Acobat12/voice-over-translation-direct.git"
   },
   "keywords": [
     "cli",
     "vot",
-    "voice-over-translation"
+    "voice-over-translation-direct"
   ],
   "devDependencies": {
     "@toil/translate": "^1.0.8",
