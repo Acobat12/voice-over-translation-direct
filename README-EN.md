@@ -1,4 +1,3 @@
-![[Pasted image 20260322022316.png]]# Voice Over Translation
 
 <!-- loaders links (website > github > store) -->
 
@@ -13,13 +12,13 @@
 
 <!-- FAQs / Wiki -->
 
-[firemonkey-how-to]: https://github.com/ilyhalight/voice-over-translation/wiki/%5BEN%5D-FAQ#%D0%BA%D0%B0%D0%BA-%D0%B8%D1%81%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D1%82%D1%8C-%D1%80%D0%B0%D1%81%D1%88%D0%B8%D1%80%D0%B5%D0%BD%D0%B8%D0%B5-%D1%81-firemonkey
-[user-js-and-css-how-to]: https://github.com/ilyhalight/voice-over-translation/wiki/%5BEN%5D-FAQ#%D0%BA%D0%B0%D0%BA-%D0%B8%D1%81%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D1%82%D1%8C-%D1%80%D0%B0%D1%81%D1%88%D0%B8%D1%80%D0%B5%D0%BD%D0%B8%D0%B5-%D1%81-user-js-and-css
+[firemonkey-how-to]: ./docs/FAQ-EN.md#installation-in-firemonkey
+[user-js-and-css-how-to]: ./docs/FAQ-EN.md#installation-in-user-javascript-and-css
 [devmode-enable]: https://www.tampermonkey.net/faq.php#Q209
 [opera-search-results-access]: https://help.opera.com/en/extensions/content-scripts/
-[vot-faq]: https://github.com/ilyhalight/voice-over-translation/wiki/%5BEN%5D-FAQ
-[vot-supported-sites]: https://github.com/ilyhalight/voice-over-translation/wiki/%5BEN%5D-Supported-sites
-[vot-wiki]: https://github.com/ilyhalight/voice-over-translation/wiki
+[vot-faq]: ./docs/FAQ-EN.md
+[vot-supported-sites]: ./docs/SUPPORTED-SITES-EN.md
+[vot-wiki]: ./docs
 
 <!-- Our servers -->
 
@@ -32,8 +31,8 @@
 
 <!-- Install / Build -->
 
-[vot-dist]: https://raw.githubusercontent.com/ilyhalight/voice-over-translation/master/dist/vot.user.js
-[vot-releases]: https://github.com/ilyhalight/voice-over-translation/releases
+[vot-dist]: https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist/vot.user.js
+[vot-releases]: https://github.com/Acobat12/voice-over-translation-direct/releases
 [nodejs-link]: https://nodejs.org
 [bun-link]: https://bun.sh/
 
@@ -47,12 +46,12 @@
 [vot-readme-ru]: README.md
 [vot-readme-en]: README-EN.md
 [vot-langs]: LANG_SUPPORT.md
-[vot-issues]: https://github.com/ilyhalight/voice-over-translation/issues
+[vot-issues]: https://github.com/Acobat12/voice-over-translation-direct/issues
 [votjs-link]: https://github.com/FOSWLY/vot.js
 [vot-cli-link]: https://github.com/FOSWLY/vot-cli
 [yabrowser-link]: https://browser.yandex.com
 [yatranslate-link]: https://translate.yandex.ru/
-[contributors-link]: https://github.com/ilyhalight/voice-over-translation/graphs/contributors
+[contributors-link]: https://github.com/Acobat12/voice-over-translation-direct/graphs/contributors
 
 <!-- Content -->
 
@@ -306,7 +305,7 @@ Tested in the following userscript manager extensions:
 
 Please refer to the [contributing guide](./CONTRIBUTING.md).
 
-![example btn](https://github.com/ilyhalight/voice-over-translation/blob/master/img/example_en.png "btn")
+![example btn](./img/example_en.png "btn")
 ![popup](images/popup.png)
 >
  Based on [sodapng/voice-over-translation](https://github.com/sodapng/voice-over-translation) project (license MIT)

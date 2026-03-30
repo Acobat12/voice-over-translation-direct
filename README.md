@@ -32,8 +32,8 @@
 
 <!-- Install / Build -->
 
-[vot-dist]: https://raw.githubusercontent.com/ilyhalight/voice-over-translation/master/dist/vot.user.js
-[vot-releases]: https://github.com/ilyhalight/voice-over-translation/releases
+[vot-dist]: https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist/vot.user.js
+[vot-releases]: https://github.com/Acobat12/voice-over-translation-direct/releases
 [nodejs-link]: https://nodejs.org
 [bun-link]: https://bun.sh/
 
@@ -47,12 +47,12 @@
 [vot-readme-ru]: README.md
 [vot-readme-en]: README-EN.md
 [vot-langs]: LANG_SUPPORT.md
-[vot-issues]: https://github.com/ilyhalight/voice-over-translation/issues
+[vot-issues]: https://github.com/Acobat12/voice-over-translation-direct/issues
 [votjs-link]: https://github.com/FOSWLY/vot.js
 [vot-cli-link]: https://github.com/FOSWLY/vot-cli
-[yabrowser-link]: https://yandex.ru/project/browser/streams/technology
+[yabrowser-link]: https://browser.yandex.com
 [yatranslate-link]: https://translate.yandex.ru/
-[contributors-link]: https://github.com/ilyhalight/voice-over-translation/graphs/contributors
+[contributors-link]: https://github.com/Acobat12/voice-over-translation-direct/graphs/contributors
 
 <!-- Content -->
 
