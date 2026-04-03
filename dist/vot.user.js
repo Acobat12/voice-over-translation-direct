@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot
-// @version         1.11.5
+// @version         1.11.5.1
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -6947,7 +6947,7 @@ string() {
           }
         }
         clearTitle(title) {
-          return title.replace(/(\.[^.]+)$/, "");
+          return String(title).replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "").trim();
         }
         getBodyHash(fileHash, sk) {
           const data = JSON.stringify({
@@ -9711,7 +9711,7 @@ get isSupportOnlyLS() {
         return buildVersion || scriptVersion || "unknown";
       }
       function getRuntimeLocaleVersion() {
-        const buildVersion = String("1.11.5");
+        const buildVersion = String("1.11.5.1");
         const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
         return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
       }
@@ -29872,7 +29872,7 @@ getVideoData() {
           return this.videoManager.getVideoData();
         }
         sanitizeDownloadName(value) {
-          return value.replace(/\.[^.]+$/, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, " ").trim();
+          return value.replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, " ").trim();
         }
         getDownloadBaseName() {
           const fromDownloadTitle = typeof this.videoData?.downloadTitle === "string" && this.videoData.downloadTitle.trim() ? this.videoData.downloadTitle : void 0;

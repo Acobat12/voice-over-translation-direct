@@ -1276,7 +1276,7 @@ getPreferAudio() {
   }
   sanitizeDownloadName(value: string): string {
     return value
-      .replace(/\.[^.]+$/, "")
+      .replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "")
       .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
       .replace(/\s+/g, " ")
       .trim();
