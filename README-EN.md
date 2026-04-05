@@ -65,6 +65,44 @@
 
 Voice-over translation is now available beyond [Yandex Browser][yabrowser-link]. Thanks to the **[Yandex.Translate][yatranslate-link]** team and all [contributors][contributors-link] helping improve this project.
 
+## Publishing local videos via Python and Cloudflare Tunnel
+
+For local `.mp4` / `.webm` / other video files, you can use the helper scripts `start_public_video.ps1` and `start_public_video.bat`.
+
+What the script does:
+- checks whether `python` and `cloudflared` are installed
+- starts a local HTTP server on `127.0.0.1:8000`
+- launches a Cloudflare Quick Tunnel for that server
+- extracts a public URL like `https://*.trycloudflare.com`
+- copies the URL to the clipboard
+- tries to open the URL in Chrome with DNS override
+- stops both `python` and `cloudflared` when the script exits
+
+### How to run
+
+1. Make sure Python is installed
+2. Make sure `cloudflared` is installed
+3. Put `start_public_video.ps1` and `start_public_video.bat` into the folder with your videos
+4. Run:
+
+```powershell
+.\start_public_video.bat
+```
+
+### What happens next
+
+- the script starts a local server on `http://127.0.0.1:8000`
+- creates a public `https://*.trycloudflare.com` URL
+- copies the URL to the clipboard
+- tries to open the URL in Chrome
+
+### Limitations
+
+- this uses **Cloudflare Quick Tunnel**, so the public URL changes every run
+- if the `trycloudflare.com` hostname has not fully propagated in DNS yet, it may not open immediately in every browser
+- opening is most reliable in Chrome with DNS override
+- when the script stops, both the tunnel and the local HTTP server are terminated
+
 ## Installing the extension:
 
 > [!WARNING]
