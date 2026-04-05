@@ -78,13 +78,14 @@ const FOSWLYTranslateAPI = new (class {
   ) {
     try {
       const res = await GM_fetch(`${foswlyTranslateUrl}${path}`, {
+        ...opts,
         timeout: 3000,
+        forceGmXhr: true,
         responseCache: {
           ttlMs: IMMUTABLE_API_CACHE_TTL_MS,
           cacheName: "vot-foswly-api-v1",
           allowStaleOnError: true,
-        },
-        ...opts,
+        },        
       });
 
       const data = (await res.json()) as T | FOSWLYErrorResponse;
@@ -157,6 +158,7 @@ const RustServerAPI = {
         method: "POST",
         body: text,
         timeout: 3000,
+        forceGmXhr: true,
         responseCache: {
           ttlMs: IMMUTABLE_API_CACHE_TTL_MS,
           cacheName: "vot-rust-detect-v1",

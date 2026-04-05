@@ -65,25 +65,29 @@
 
 Voice-over translation is now available beyond [Yandex Browser][yabrowser-link]. Thanks to the **[Yandex.Translate][yatranslate-link]** team and all [contributors][contributors-link] helping improve this project.
 
-## Publishing local videos via Python and Cloudflare Tunnel
+## Publishing local videos via Caddy and Cloudflare Tunnel
 
-For local `.mp4` / `.webm` / other video files, you can use the helper scripts `start_public_video.ps1` and `start_public_video.bat`.
+For local `.mp4` / `.webm` / `.mkv` / `.mov` / other video files, you can use the helper scripts `start_public_video.ps1` and `start_public_video.bat`.
+
+The scripts no longer require Python. They now use a local **Caddy** static server together with a public **Cloudflare Quick Tunnel**.
 
 What the script does:
-- checks whether `python` and `cloudflared` are installed
-- starts a local HTTP server on `127.0.0.1:8000`
+
+- checks whether `caddy` and `cloudflared` are available
+- if they are missing, downloads portable versions into the `.tools` folder
+- creates `player.html` for opening a single video
+- creates `index.html` with a list of video files in the current folder
+- starts a local server on `http://127.0.0.1:8000`
 - launches a Cloudflare Quick Tunnel for that server
 - extracts a public URL like `https://*.trycloudflare.com`
 - copies the URL to the clipboard
-- tries to open the URL in Chrome with DNS override
-- stops both `python` and `cloudflared` when the script exits
+- tries to open the URL in a browser
+- stops both `caddy` and `cloudflared` when the script exits
 
 ### How to run
 
-1. Make sure Python is installed
-2. Make sure `cloudflared` is installed
-3. Put `start_public_video.ps1` and `start_public_video.bat` into the folder with your videos
-4. Run:
+1. Put `start_public_video.ps1` and `start_public_video.bat` into the folder with your videos
+2. Run:
 
 ```powershell
 .\start_public_video.bat
@@ -91,17 +95,29 @@ What the script does:
 
 ### What happens next
 
-- the script starts a local server on `http://127.0.0.1:8000`
-- creates a public `https://*.trycloudflare.com` URL
-- copies the URL to the clipboard
-- tries to open the URL in Chrome
+- the script creates `index.html` and `player.html` next to your videos
+- the folder becomes available locally at `http://127.0.0.1:8000/`
+- a public `https://*.trycloudflare.com` URL is created
+- the URL is copied to the clipboard
+- when you want the whole folder view, use the tunnel root URL
+- a single video is opened through a URL like `player.html?src=/video.mp4`
+
+### Open a specific file directly
+
+If you want to open one specific file immediately, run the PowerShell script directly:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_public_video.ps1 -VideoFile "video.mp4"
+```
 
 ### Limitations
 
 - this uses **Cloudflare Quick Tunnel**, so the public URL changes every run
-- if the `trycloudflare.com` hostname has not fully propagated in DNS yet, it may not open immediately in every browser
-- opening is most reliable in Chrome with DNS override
-- when the script stops, both the tunnel and the local HTTP server are terminated
+- the DNS record for `*.trycloudflare.com` may take a short time to become reachable
+- startup speed depends not only on the tunnel, but also on how the browser begins reading the media file
+- when the script stops, both the local server and the tunnel are terminated
+- `index.html` only lists videos from the current script folder
+
 
 ## Installing the extension:
 

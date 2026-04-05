@@ -22,6 +22,8 @@ import { getHeaders } from "./utils";
 const YANDEX_API_HOST = "api.browser.yandex.ru";
 const GOOGLEVIDEO_HOST_SUFFIX = "googlevideo.com";
 const VOT_BACKEND_HOST_SUFFIX = "toil.cc";
+const WORKERS_DEV_HOST_SUFFIX = "workers.dev";
+const ONRENDER_HOST_SUFFIX = "onrender.com";
 const CLOUDFLARE_DNS_HOST = "cloudflare-dns.com";
 const HEADER_LINE_RE = /^([\w-]+):\s*(.+)$/;
 const URL_SCHEME_RE = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
@@ -83,16 +85,18 @@ function shouldUseGmXhr(
       lowerUrl.includes(YANDEX_API_HOST) ||
       lowerUrl.includes(GOOGLEVIDEO_HOST_SUFFIX) ||
       lowerUrl.includes(VOT_BACKEND_HOST_SUFFIX) ||
+      lowerUrl.includes(WORKERS_DEV_HOST_SUFFIX) ||
+      lowerUrl.includes(ONRENDER_HOST_SUFFIX) ||
       lowerUrl.includes(CLOUDFLARE_DNS_HOST)
     );
   }
 
-  // These endpoints are routinely blocked by page-world CORS. Going through
-  // native fetch first only adds noisy console errors and an extra failed hop.
   return (
     isHostOrSubdomain(host, YANDEX_API_HOST) ||
     isHostOrSubdomain(host, GOOGLEVIDEO_HOST_SUFFIX) ||
     isHostOrSubdomain(host, VOT_BACKEND_HOST_SUFFIX) ||
+    isHostOrSubdomain(host, WORKERS_DEV_HOST_SUFFIX) ||
+    isHostOrSubdomain(host, ONRENDER_HOST_SUFFIX) ||
     isHostOrSubdomain(host, CLOUDFLARE_DNS_HOST)
   );
 }

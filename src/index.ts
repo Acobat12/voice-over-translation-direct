@@ -824,6 +824,7 @@ getPreferAudio() {
       fetchFn: GM_fetch,
       fetchOpts: {
         signal: this.actionsAbortController.signal,
+        forceGmXhr: true,
       },
       apiToken: this.data?.account?.token,
       hostVOT: votBackendUrl,

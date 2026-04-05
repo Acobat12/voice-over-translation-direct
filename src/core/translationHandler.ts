@@ -121,6 +121,7 @@ type DownloadWaiter = {
 type YandexDiskResolvedTarget = {
   url: string;
   videoId: string;
+  host?: VideoData["host"];
 };
 
 export class VOTTranslationHandler {
@@ -148,12 +149,23 @@ private isDirectResolvedUploadVideoData(
   }
 
   const rawUrl = String(data.url || "");
+  if (!rawUrl.length || this.isYandexDiskDownloadUrl(rawUrl)) {
+    return false;
+  }
 
-  return (
-    (data.host === "yandexdisk") &&
-    rawUrl.length > 0 &&
-    !this.isYandexDiskDownloadUrl(rawUrl)
-  );
+  if (data.host === "yandexdisk") {
+    return true;
+  }
+
+  if (data.host === "custom") {
+    try {
+      return this.videoHandler.votClient.isDirectMediaUrl(rawUrl);
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
   private activeTranslationUrl?: string;
 
@@ -401,7 +413,38 @@ private getYandexDiskServiceVideoId(
   return fallbackPath || String(url || "");
 }
 
+private extractDirectMediaTargetFromVideo(): YandexDiskResolvedTarget | null {
+  const video = document.querySelector("video");
 
+  if (!(video instanceof HTMLVideoElement)) {
+    return null;
+  }
+
+  const candidates = [
+    video.currentSrc || "",
+    video.src || "",
+    video.getAttribute("src") || "",
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = this.normalizeUrlForRequest(candidate);
+    if (!normalized) continue;
+
+    try {
+      if (this.videoHandler.votClient.isDirectMediaUrl(normalized)) {
+        return {
+          url: normalized,
+          videoId: normalized,
+          host: "custom",
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return null;
+}
 private async resolveYandexDiskFolderFileTargetViaApi(
   parsed: ReturnType<VOTTranslationHandler["parseYandexDiskUrl"]>,
 ): Promise<YandexDiskResolvedTarget | null> {
@@ -488,24 +531,29 @@ private async resolveYandexDiskFolderFileTargetViaApi(
         videoId: serviceVideoId,
       };
     }
+    if (payload.type === "file" && typeof payload.file === "string" && payload.file) {
+      const directUrl = this.normalizeUrlForRequest(payload.file);
 
-    if (payload.type === "file") {
-      const fallbackUrl = this.normalizeUrlForRequest(
-        `${parsed.origin}${parsed.pathname}`,
-      );
-      const fallbackVideoId = parsed.pathname;
-
-      console.log("[VOT][yandexdisk] fallback to nested public page url", {
-        fallbackUrl,
-        fallbackVideoId,
-        public_url: payload.public_url,
-        short_url: payload.short_url,
+      console.log("[VOT][yandexdisk] use direct file url from API", {
+        directUrl,
+        relativePath,
       });
 
       return {
-        url: fallbackUrl,
-        videoId: fallbackVideoId,
+        url: directUrl,
+        videoId: directUrl,
+        host: "custom",
       };
+    }
+    if (payload.type === "file") {
+      console.log("[VOT][yandexdisk] API did not return usable public target, continue fallback chain", {
+        public_url: payload.public_url,
+        short_url: payload.short_url,
+        file: payload.file,
+        relativePath,
+      });
+
+      return null;
     }
   } catch (error) {
     console.log("[VOT][yandexdisk] failed to resolve public target via API", {
@@ -544,6 +592,151 @@ private isYandexDiskDownloadUrl(url: string): boolean {
     return false;
   }
 }
+
+private isYandexDiskStreamUrl(url: string): boolean {
+  return /^https:\/\/streaming\.disk\.yandex\.net\/.+\.m3u8(?:[?#].*)?$/i.test(
+    String(url || ""),
+  );
+}
+
+private extractYandexDiskStreamTargetFromPlayerState(): YandexDiskResolvedTarget | null {
+  const pick = (value: unknown): string | null => {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const normalized = this.normalizeUrlForRequest(value);
+    return this.isYandexDiskStreamUrl(normalized) ? normalized : null;
+  };
+
+  const visited = new WeakSet<object>();
+
+  const scan = (value: unknown, depth: number): string | null => {
+    if (depth < 0) {
+      return null;
+    }
+
+    const direct = pick(value);
+    if (direct) {
+      return direct;
+    }
+
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const obj = value as Record<string, unknown>;
+
+    if (visited.has(obj)) {
+      return null;
+    }
+    visited.add(obj);
+
+    const preferredKeys = [
+      "streamUrl",
+      "url",
+      "stream",
+      "streams",
+      "source",
+      "sources",
+      "controller",
+      "state",
+      "playerState",
+      "playerApiState",
+      "internalInitialConfig",
+      "config",
+      "store",
+      "redux",
+    ];
+
+    for (const key of preferredKeys) {
+      if (!(key in obj)) {
+        continue;
+      }
+
+      const found = scan(obj[key], depth - 1);
+      if (found) {
+        return found;
+      }
+    }
+
+    const values = Array.isArray(obj)
+      ? obj
+      : Object.keys(obj)
+          .slice(0, 50)
+          .map((key) => obj[key]);
+
+    for (const item of values) {
+      const found = scan(item, depth - 1);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  };
+
+  const w = globalThis as Record<string, unknown>;
+
+  for (const key of Object.keys(w)) {
+    if (!/player|state|store|redux|disk|video|ya|vh/i.test(key)) {
+      continue;
+    }
+
+    const found = scan(w[key], 6);
+    if (found) {
+      console.log("[VOT][yandexdisk] use stream url from deep player state", {
+        key,
+        url: found,
+      });
+
+      return {
+        url: found,
+        videoId: found,
+        host: "yandexdisk",
+      };
+    }
+  }
+
+  return null;
+}
+
+private extractYandexDiskStreamTargetFromPerformance(): YandexDiskResolvedTarget | null {
+  try {
+    const entries = performance.getEntriesByType("resource");
+
+    console.log("[VOT][yandexdisk] inspect performance resources", {
+      count: entries.length,
+    });
+
+    for (let i = entries.length - 1; i >= 0; i -= 1) {
+      const entry = entries[i];
+      const raw = String((entry as PerformanceResourceTiming)?.name || "");
+      const normalized = this.normalizeUrlForRequest(raw);
+
+      if (!this.isYandexDiskStreamUrl(normalized)) {
+        continue;
+      }
+
+      console.log("[VOT][yandexdisk] use stream url from performance", {
+        url: normalized,
+      });
+
+      return {
+        url: normalized,
+        videoId: normalized,
+        host: "yandexdisk",
+      };
+    }
+  } catch (error) {
+    console.log("[VOT][yandexdisk] failed to inspect performance resources", {
+      error,
+    });
+  }
+
+  return null;
+}
+
 private async buildYandexDiskVideoData(videoData: VideoData): Promise<VideoData> {
   const sourceUrl = this.getYandexDiskSourceUrl(videoData);
   const parsed = this.parseYandexDiskUrl(sourceUrl);
@@ -561,41 +754,57 @@ private async buildYandexDiskVideoData(videoData: VideoData): Promise<VideoData>
     return {
       ...videoData,
       url,
-      videoId: `/i/${parsed.fileId}`,
+      videoId: this.getYandexDiskServiceVideoId(url, parsed.pathname),
       host: "yandexdisk" as VideoData["host"],
     };
   }
 
-if (parsed.mode === "folderFile") {
-  const pageUrl = this.normalizeUrlForRequest(
-    `${parsed.origin}${parsed.pathname}`,
-  );
+  if (parsed.mode === "folderFile") {
+    const target = await this.resolveYandexDiskFolderFileTargetViaApi(parsed);
 
-  const target =
-    (await this.resolveYandexDiskFolderFileTargetViaApi(parsed)) ?? {
-      url: pageUrl,
-      videoId: parsed.pathname,
-    };
+    if (target) {
+      const normalizedUrl = this.normalizeUrlForRequest(target.url);
+      const serviceVideoId =
+        target.host === "custom"
+          ? normalizedUrl
+          : this.getYandexDiskServiceVideoId(normalizedUrl, parsed.pathname);
 
-  const normalizedUrl = this.normalizeUrlForRequest(target.url);
-  const serviceVideoId = this.getYandexDiskServiceVideoId(
-    normalizedUrl,
-    parsed.pathname,
-  );
+      console.log("[VOT][yandexdisk] resolved folder file target", {
+        sourceUrl,
+        resolvedUrl: normalizedUrl,
+        videoId: serviceVideoId,
+        host: target.host ?? "yandexdisk",
+      });
 
-  console.log("[VOT][yandexdisk] resolved folder file target", {
-    sourceUrl,
-    resolvedUrl: normalizedUrl,
-    videoId: serviceVideoId,
-  });
+      return {
+        ...videoData,
+        url: normalizedUrl,
+        videoId: serviceVideoId,
+        host: target.host ?? ("yandexdisk" as VideoData["host"]),
+      };
+    }
 
-  return {
-    ...videoData,
-    url: normalizedUrl,
-    videoId: serviceVideoId,
-    host: "yandexdisk" as VideoData["host"],
-  };
-}
+    const streamTarget = this.extractYandexDiskStreamTargetFromPlayerState();
+    if (streamTarget) {
+      return {
+        ...videoData,
+        url: streamTarget.url,
+        videoId: streamTarget.videoId,
+        host: "yandexdisk" as VideoData["host"],
+      };
+    }
+    const performanceStreamTarget =
+      this.extractYandexDiskStreamTargetFromPerformance();
+
+    if (performanceStreamTarget) {
+      return {
+        ...videoData,
+        url: performanceStreamTarget.url,
+        videoId: performanceStreamTarget.videoId,
+        host: "yandexdisk" as VideoData["host"],
+      };
+    }
+  }
 
   const directTarget = this.extractYandexDiskPublicTarget(sourceUrl);
   if (directTarget) {
@@ -614,6 +823,15 @@ if (parsed.mode === "folderFile") {
       url: mediaTarget.url,
       videoId: this.getYandexDiskServiceVideoId(mediaTarget.url, parsed.pathname),
       host: "yandexdisk" as VideoData["host"],
+    };
+  }
+  const directMediaTarget = this.extractDirectMediaTargetFromVideo();
+  if (directMediaTarget) {
+    return {
+      ...videoData,
+      url: directMediaTarget.url,
+      videoId: directMediaTarget.videoId,
+      host: "custom",
     };
   }
 
@@ -1272,25 +1490,31 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
       signal,
     );
   }
-private getYandexDiskSourceUrl(videoData: VideoData): string {
-  const currentUrl = String(videoData.url || "");
+  private getYandexDiskSourceUrl(videoData: VideoData): string {
+    const currentUrl = String(videoData.url || "");
 
-  if (currentUrl && !this.isYandexDiskDownloadUrl(currentUrl)) {
-    const parsedVideo = this.parseYandexDiskUrl(currentUrl);
-    if (parsedVideo.mode !== "unknown") {
-      return currentUrl;
+    if (currentUrl) {
+      if (this.isYandexDiskStreamUrl(currentUrl)) {
+        return currentUrl;
+      }
+
+      if (!this.isYandexDiskDownloadUrl(currentUrl)) {
+        const parsedVideo = this.parseYandexDiskUrl(currentUrl);
+        if (parsedVideo.mode !== "unknown") {
+          return currentUrl;
+        }
+      }
     }
+
+    const pageUrl = String(globalThis.location.href || "");
+    const parsedPage = this.parseYandexDiskUrl(pageUrl);
+
+    if (parsedPage.mode !== "unknown") {
+      return pageUrl;
+    }
+
+    return currentUrl || pageUrl;
   }
-
-  const pageUrl = String(globalThis.location.href || "");
-  const parsedPage = this.parseYandexDiskUrl(pageUrl);
-
-  if (parsedPage.mode !== "unknown") {
-    return pageUrl;
-  }
-
-  return currentUrl || pageUrl;
-}
   private waitForAudioDownloadCompletion(
     signal: AbortSignal,
     timeoutMs: number,

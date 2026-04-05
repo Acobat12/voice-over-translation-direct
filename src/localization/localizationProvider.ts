@@ -125,7 +125,9 @@ class LocalizationProvider {
   async checkUpdates(force = false): Promise<false | null | string> {
     debug.log("Check locale updates...");
     try {
-      const res = await GM_fetch(this.buildUrl(this.hashesUrl, "", force));
+      const res = await GM_fetch(this.buildUrl(this.hashesUrl, "", force), {
+        forceGmXhr: true,
+      });
       if (!res.ok) throw res.status;
 
       const hashes = await res.json();
@@ -176,6 +178,7 @@ class LocalizationProvider {
     try {
       const res = await GM_fetch(
         this.buildUrl(this.localesUrl, `/${this.lang}.json`, force),
+        { forceGmXhr: true },
       );
       if (!res.ok) throw res.status;
 
