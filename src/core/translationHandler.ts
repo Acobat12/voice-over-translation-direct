@@ -140,7 +140,21 @@ private normalizeUrlForRequest(raw: string): string {
   // Avoid spamming the fail-audio-js fallback for the same video URL.
   // In normal operation we should upload audio from the direct ytAudio path.
   private readonly requestedFailAudio = new Set<string>();
+private isDirectResolvedUploadVideoData(
+  data: VideoData | undefined,
+): data is VideoData {
+  if (!data) {
+    return false;
+  }
 
+  const rawUrl = String(data.url || "");
+
+  return (
+    (data.host === "yandexdisk") &&
+    rawUrl.length > 0 &&
+    !this.isYandexDiskDownloadUrl(rawUrl)
+  );
+}
   private activeTranslationUrl?: string;
 
   private parseYandexDiskUrl(rawUrl: string): {
@@ -613,7 +627,10 @@ if (parsed.mode === "folderFile") {
         ? "ytAudio"
         : this.videoHandler.site.host === "yandexdisk"
           ? "yandexDisk"
-          : "ytAudio";
+          : this.videoHandler.site.host === "custom"
+            ? "localFile"
+            : "ytAudio";
+          
 
     this.audioDownloader = new AudioDownloader(strategy as any);
     this.downloading = false;
@@ -761,17 +778,31 @@ console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy)
     this.rejectDownloadWaiters(error);
   }
 
-  private getCanonicalUrl(videoId: string) {
-    if (this.videoHandler.site.host === "youtube") {
-      return `https://youtu.be/${videoId}`;
-    }
-    if (this.videoHandler.site.host === "yandexdisk") {
-      return this.activeTranslationUrl || this.normalizeYandexDiskPublicUrl(
-        this.videoHandler.videoData?.url || globalThis.location.href,
-      );
-    }
-    return this.videoHandler.videoData?.url || globalThis.location.href;
+private getCanonicalUrl(videoId: string) {
+  if (this.videoHandler.site.host === "youtube") {
+    return `https://youtu.be/${videoId}`;
   }
+
+  if (this.videoHandler.site.host === "yandexdisk") {
+    return (
+      this.activeTranslationUrl ||
+      this.normalizeYandexDiskPublicUrl(
+        this.videoHandler.videoData?.url || globalThis.location.href,
+      )
+    );
+  }
+
+  if (this.videoHandler.site.host === "custom") {
+    return (
+      this.activeTranslationUrl ||
+      this.normalizeUrlForRequest(
+        String(this.videoHandler.videoData?.url || globalThis.location.href),
+      )
+    );
+  }
+
+  return this.videoHandler.videoData?.url || globalThis.location.href;
+}
 
   // Cancellation helpers live in utils/abort.ts.
 
@@ -834,6 +865,7 @@ console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy)
     });
   }
 private activeYandexDiskResolvedVideoData?: VideoData;
+
 async translateVideoYDImpl(
   videoData: VideoData,
   requestLang: RequestLang,
@@ -844,43 +876,58 @@ async translateVideoYDImpl(
 ): Promise<
   (TranslatedVideoTranslationResponse & { usedLivelyVoice: boolean }) | null
 > {
-  const cachedVideoData =
-    this.activeYandexDiskResolvedVideoData &&
-    this.activeYandexDiskResolvedVideoData.host === "yandexdisk" &&
-    !this.isYandexDiskDownloadUrl(String(this.activeYandexDiskResolvedVideoData.url || ""))
-      ? this.activeYandexDiskResolvedVideoData
-      : undefined;
+  let normalizedVideoData: VideoData;
 
-  const currentVideoData =
-    this.isResolvedYandexDiskVideoData(videoData) &&
-    !this.isYandexDiskDownloadUrl(String(videoData.url || ""))
-      ? videoData
-      : undefined;
+  if (this.videoHandler.site.host === "custom") {
+    normalizedVideoData = {
+      ...videoData,
+      url: this.normalizeUrlForRequest(
+        String(videoData.url || globalThis.location.href),
+      ),
+    };
+  } else {
+    const cachedVideoData =
+      this.activeYandexDiskResolvedVideoData &&
+      this.isDirectResolvedUploadVideoData(
+        this.activeYandexDiskResolvedVideoData,
+      )
+        ? this.activeYandexDiskResolvedVideoData
+        : undefined;
 
-  const yandexDiskVideoData =
-    cachedVideoData ||
-    currentVideoData ||
-    await this.buildYandexDiskVideoData(videoData);
+    const currentVideoData =
+      this.isDirectResolvedUploadVideoData(videoData)
+        ? videoData
+        : undefined;
 
-const normalizedVideoData = {
-  ...yandexDiskVideoData,
-  url: this.normalizeUrlForRequest(String(yandexDiskVideoData.url || "")),
-};
+    const resolvedVideoData =
+      cachedVideoData ||
+      currentVideoData ||
+      await this.buildYandexDiskVideoData(videoData);
 
-this.activeYandexDiskResolvedVideoData = normalizedVideoData;
-this.activeTranslationUrl = normalizedVideoData.url;
+    normalizedVideoData = {
+      ...resolvedVideoData,
+      url: this.normalizeUrlForRequest(
+        String(resolvedVideoData.url || ""),
+      ),
+    };
+  }
 
-console.log("[VOT][yandexdisk] translateVideoYDImpl input", {
-  url: normalizedVideoData.url,
-  videoId: normalizedVideoData.videoId,
-});
+  this.activeYandexDiskResolvedVideoData = normalizedVideoData;
+  this.activeTranslationUrl = normalizedVideoData.url;
+
+  console.log("[VOT][upload] translateVideoYDImpl input", {
+    host: normalizedVideoData.host,
+    url: normalizedVideoData.url,
+    videoId: normalizedVideoData.videoId,
+  });
 
   try {
     throwIfAborted(signal);
 
-const useLivelyVoice = !disableLivelyVoice &&
-  this.videoHandler.isLivelyVoiceAllowed(requestLang, responseLang) &&
-  Boolean(this.videoHandler.data?.useLivelyVoice);
+    const useLivelyVoice =
+      !disableLivelyVoice &&
+      this.videoHandler.isLivelyVoiceAllowed(requestLang, responseLang) &&
+      Boolean(this.videoHandler.data?.useLivelyVoice);
 
     const res = await this.videoHandler.votClient.translateVideo({
       videoData: normalizedVideoData,
@@ -898,7 +945,7 @@ const useLivelyVoice = !disableLivelyVoice &&
       throw new Error("Failed to get translation response");
     }
 
-    console.log("[VOT][yandexdisk] translate response", {
+    console.log("[VOT][upload] translate response", {
       translated: res.translated,
       status: res.status,
       remainingTime: res.remainingTime,
@@ -906,14 +953,14 @@ const useLivelyVoice = !disableLivelyVoice &&
     });
 
     if (
-  res.translated &&
-  (res.status === VideoTranslationStatus.FINISHED ||
-    res.status === VideoTranslationStatus.PART_CONTENT) &&
-  typeof res.url === "string" &&
-  res.url.length > 0
-) {
-  return { ...res, usedLivelyVoice: useLivelyVoice };
-}
+      res.translated &&
+      (res.status === VideoTranslationStatus.FINISHED ||
+        res.status === VideoTranslationStatus.PART_CONTENT) &&
+      typeof res.url === "string" &&
+      res.url.length > 0
+    ) {
+      return { ...res, usedLivelyVoice: useLivelyVoice };
+    }
 
     const message =
       res.message ?? localizationProvider.get("translationTakeFewMinutes");
@@ -936,7 +983,7 @@ const useLivelyVoice = !disableLivelyVoice &&
       this.downloading = true;
 
       await this.audioDownloader.runAudioDownload(
-        yandexDiskVideoData.videoId,
+        normalizedVideoData.videoId,
         res.translationId,
         signal,
       );
@@ -944,7 +991,7 @@ const useLivelyVoice = !disableLivelyVoice &&
       await this.waitForAudioDownloadCompletion(signal, 120000);
 
       return await this.translateVideoYDImpl(
-        yandexDiskVideoData,
+        normalizedVideoData,
         requestLang,
         responseLang,
         translationHelp,
@@ -962,7 +1009,7 @@ const useLivelyVoice = !disableLivelyVoice &&
       return this.scheduleRetry(
         () =>
           this.translateVideoYDImpl(
-            yandexDiskVideoData,
+            normalizedVideoData,
             requestLang,
             responseLang,
             translationHelp,
@@ -999,19 +1046,15 @@ const useLivelyVoice = !disableLivelyVoice &&
         this.videoHandler.data?.translateAPIErrors,
       ),
       hadAsyncWait: this.videoHandler.hadAsyncWait,
-      videoId: yandexDiskVideoData.videoId,
+      videoId: normalizedVideoData.videoId,
       error: err,
       notify: (params) =>
         this.videoHandler.notifier.translationFailed(params),
     });
 
-    console.error("[VOT][yandexdisk]", err);
+    console.error("[VOT][upload]", err);
     return null;
   }
-}
-private resetYandexDiskResolutionState() {
-  this.activeYandexDiskResolvedVideoData = undefined;
-  this.activeTranslationUrl = undefined;
 }
   async translateVideoImpl(
     videoData: VideoData,
@@ -1037,7 +1080,8 @@ private resetYandexDiskResolutionState() {
 
     let livelyDisabled = disableLivelyVoice;
 
-    if (this.videoHandler.site.host === "yandexdisk") {
+    if (this.videoHandler.site.host === "yandexdisk" ||
+  this.videoHandler.site.host === "custom") {
       return await this.translateVideoYDImpl(
         videoData,
         requestLangForApi,

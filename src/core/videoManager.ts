@@ -33,6 +33,8 @@ const FORCED_DETECTED_LANGUAGE_BY_HOST: Record<string, RequestLang> = {
   zdf: "de",
 };
 
+
+
 const YT_VOLUME_NOW_SELECTOR = ".ytp-volume-panel [aria-valuenow]";
 const MIN_DETECT_TEXT_LENGTH = 35;
 const MAX_SHARED_LANGUAGE_STATES = 500;
@@ -76,6 +78,18 @@ type ResolveDetectedLanguageResult = {
  * language detection requests.
  */
 const sharedLanguageStateByVideoId = new Map<string, SharedLanguageState>();
+
+function normalizeLocalTitleFromUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+
+  try {
+    const parsed = new URL(value, globalThis.location.href);
+    const lastSegment = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+    return lastSegment.replace(/\.[^.]+$/u, "").trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function getGoogleDrivePageTitle(): string | undefined {
   const exactDriveTitle =
@@ -612,7 +626,18 @@ if (this.videoHandler.site.host === "googledrive") {
     if (cacheLanguage) {
       this.setDetectedLanguageCache(videoId, cacheLanguage);
     }
+if (this.videoHandler.site.host === "custom") {
+  const localTitle =
+    normalizeLocalTitleFromUrl(url) ||
+    (typeof document.title === "string" ? document.title.trim() : undefined);
 
+  if (localTitle) {
+    title = localTitle;
+    if (!localizedTitle) {
+      localizedTitle = localTitle;
+    }
+  }
+}
     const videoData = {
       translationHelp,
       isStream,
@@ -637,7 +662,14 @@ if (this.videoHandler.site.host === "googledrive") {
         normalizeGoogleDriveTitle(getGoogleDrivePageTitle()) ??
         videoId
       )
-    : (localizedTitle ?? title ?? videoId),
+    : this.videoHandler.site.host === "custom"
+      ? (
+          normalizeLocalTitleFromUrl(url) ??
+          title ??
+          localizedTitle ??
+          videoId
+        )
+      : (localizedTitle ?? title ?? videoId),
     } satisfies RuntimeVideoData;
 
     if (sharedLanguageState.lastLoggedDetectedLanguage !== detectedLanguage) {

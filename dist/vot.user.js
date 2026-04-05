@@ -153,7 +153,20 @@
 // @match           *://video.bunnycdn.com/*
 // @match           *://*.weibo.com/*
 // @match           *://*/*.mp4*
+// @match           *://*/*.m4v*
 // @match           *://*/*.webm*
+// @match           *://*/*.mov*
+// @match           *://*/*.mkv*
+// @match           *://*/*.avi*
+// @match           *://*/*.ogv*
+// @match           file://*/*
+// @match           *://localhost/*
+// @match           *://127.0.0.1/*
+// @match           *://192.168.*/*
+// @match           *://*.trycloudflare.com/*
+// @match           *://*.ngrok-free.app/*
+// @match           *://*.ngrok-free.dev/*
+// @match           *://*.ngrok.app/*
 // @match           *://*.yewtu.be/*
 // @match           *://yt.artemislena.eu/*
 // @match           *://invidious.flokinet.to/*
@@ -223,8 +236,6 @@
 // @match           *://*.makertube.net/*
 // @match           *://*.coursehunter.net/*
 // @match           *://*.coursetrain.net/*
-// @exclude         file://*/*.mp4*
-// @exclude         file://*/*.webm*
 // @exclude         *://accounts.youtube.com/*
 // @require         https://gist.githubusercontent.com/ilyhalight/6eb5bb4dffc7ca9e3c57d6933e2452f3/raw/7ab38af2228d0bed13912e503bc8a9ee4b11828d/gm-addstyle-polyfill.js
 // @connect         cloud-api.yandex.com
@@ -3594,7 +3605,7 @@ string() {
         };
         isDirectMediaUrl(url) {
           if (!url) return false;
-          const directExtRe = /\.(mp4|m4v|m4a|webm|mp3|aac|ogg|wav)$/i;
+          const directExtRe = /\.(mp4|m4v|m4a|webm|mov|mkv|avi|ogv|mp3|aac|ogg|wav)$/i;
           const manifestExtRe = /\.(mpd|m3u8)$/i;
           try {
             const u2 = new URL(url);
@@ -3616,7 +3627,7 @@ string() {
             return false;
           } catch {
             const lower = String(url).toLowerCase();
-            if (/\.(mp4|m4v|m4a|webm|mp3|aac|ogg|wav)(?:$|[?#])/i.test(lower)) {
+            if (/\.(mp4|m4v|m4a|webm|mov|mkv|avi|ogv|mp3|aac|ogg|wav)(?:$|[?#])/i.test(lower)) {
               return true;
             }
             if (lower.includes(".mpd") || lower.includes(".m3u8") || lower.includes("dashplaylist.mpd")) {
@@ -3636,6 +3647,16 @@ string() {
         }
         isCustomLink(url) {
           return this.isDirectMediaUrl(url);
+        }
+        isBrowserOnlyLocalUrl(url) {
+          if (!url) return false;
+          try {
+            const u2 = new URL(url, globalThis.location.href);
+            const host = (u2.hostname || "").toLowerCase();
+            return u2.protocol === "file:" || host === "localhost" || host === "127.0.0.1" || /^192\.168\.\d{1,3}\.\d{1,3}$/i.test(host);
+          } catch {
+            return String(url || "").startsWith("file://");
+          }
         }
         resolveService(service, url) {
           let host = String(service || "").toLowerCase();
@@ -3930,7 +3951,7 @@ string() {
           const url = this.normalizeMediaUrl(rawUrl);
           const { videoId, host } = videoData2;
           const provider = extraOpts.useLivelyVoice ? "yandex_lively" : "yandex";
-          if (this.isDirectMediaUrl(url)) {
+          if (this.isDirectMediaUrl(url) && host !== "custom") {
             const primaryService = this.resolveService(host, url);
             const services2 = primaryService === "generic" ? ["generic"] : [... new Set([primaryService, "generic"])];
             let lastError;
@@ -3954,6 +3975,26 @@ string() {
                   err
                 });
               }
+            }
+            if (host === "custom") {
+              Logger.warn("Falling back from direct-media VOT to YA flow", {
+                url,
+                host,
+                videoId,
+                lastError
+              });
+              return await this.translateVideoYAImpl({
+                videoData: {
+                  ...videoData2,
+                  url
+                },
+                requestLang,
+                responseLang: responseLang2,
+                translationHelp,
+                headers,
+                extraOpts,
+                shouldSendFailedAudio
+              });
             }
             throw lastError ?? new VOTJSError("Direct media translation failed", {
               url,
@@ -4277,7 +4318,6 @@ string() {
           this.message = message;
         }
       }
-      const localLinkRe = /(file:\/\/(\/)?|(http(s)?:\/\/)(127\.0\.0\.1|localhost|192\.168\.(\d){1,3}\.(\d){1,3}))/;
       const sitesInvidious = [
         "yewtu.be",
         "yt.artemislena.eu",
@@ -4906,7 +4946,11 @@ string() {
         {
           host: VideoService.custom,
           url: "stub",
-          match: (url) => /([^.]+)\.(mp4|webm)/.test(url.pathname),
+          match: (url) => {
+            const href = url.href || "";
+            const host = (url.hostname || "").toLowerCase();
+            return url.protocol === "file:" || host === "localhost" || host === "127.0.0.1" || /^192\.168\.\d{1,3}\.\d{1,3}$/i.test(host) || host.endsWith(".trycloudflare.com") || host.endsWith(".ngrok-free.app") || host.endsWith(".ngrok-free.dev") || host.endsWith(".ngrok.app") || /\.(mp4|m4v|webm|mov|mkv|avi|ogv)(?:$|[?#])/i.test(href);
+          },
           rawResult: true
         }
       ];
@@ -7393,9 +7437,6 @@ string() {
         }
       }
       function getService() {
-        if (localLinkRe.exec(window.location.href)) {
-          return [];
-        }
         const hostname = window.location.hostname;
         const enteredURL = new URL(window.location.href);
         const isMatches = (match) => {
@@ -7408,9 +7449,44 @@ string() {
           }
           return false;
         };
-        return sites.filter((e2) => {
+        const matched = sites.filter((e2) => {
           return (Array.isArray(e2.match) ? e2.match.some(isMatches) : isMatches(e2.match)) && e2.host && e2.url;
         });
+        if (matched.length > 0) {
+          return matched;
+        }
+        const hasVideo = document.querySelector("video");
+        if (hasVideo) {
+          return [
+            {
+              host: VideoService.custom,
+              url: "stub",
+              rawResult: true
+            }
+          ];
+        }
+        return matched;
+      }
+      function isBrowserOnlyLocalUrl(value) {
+        if (!value) {
+          return true;
+        }
+        try {
+          const u2 = new URL(value, window.location.href);
+          const host = (u2.hostname || "").toLowerCase();
+          return u2.protocol === "file:" || u2.protocol === "blob:" || host === "localhost" || host === "127.0.0.1" || /^192\.168\.\d{1,3}\.\d{1,3}$/i.test(host);
+        } catch {
+          const raw = String(value || "");
+          return raw.startsWith("file://") || raw.startsWith("blob:");
+        }
+      }
+      function getCustomVideoSourceUrl() {
+        const video = document.querySelector("video");
+        if (!(video instanceof HTMLVideoElement)) {
+          return "";
+        }
+        const sourceEl = video.querySelector("source");
+        return video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "";
       }
       async function getVideoID(service, opts = {}) {
         const url = new URL(window.location.href);
@@ -7422,6 +7498,7 @@ string() {
         return serviceHost === VideoService.custom ? url.href : void 0;
       }
       async function getVideoData(service, opts = {}) {
+        const url = new URL(window.location.href);
         const videoId = await getVideoID(service, opts);
         if (!videoId) {
           throw new VideoDataError(`Entered unsupported link: "${service.host}"`);
@@ -7435,6 +7512,17 @@ string() {
           service.url = origin;
         }
         if (service.rawResult) {
+          if (service.host === VideoService.custom) {
+            const pageUrl = url.href;
+            const mediaUrl = getCustomVideoSourceUrl();
+            const preferredUrl = mediaUrl && !isBrowserOnlyLocalUrl(mediaUrl) ? mediaUrl : pageUrl;
+            return {
+              url: preferredUrl,
+              videoId: pageUrl,
+              host: service.host,
+              duration: void 0
+            };
+          }
           return {
             url: videoId,
             videoId,
@@ -11068,7 +11156,7 @@ locale;
           }
         };
       }
-      function makeSimpleFileId(size, chunkSize) {
+      function makeSimpleFileId$1(size, chunkSize) {
         return `yadisk_${size}_${chunkSize}_${Date.now()}`;
       }
       async function getAudioFromYandexDisk({
@@ -11098,8 +11186,71 @@ locale;
         }
         const chunkSize = 256 * 1024;
         const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-        const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
+        const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
         debug.log("[VOT] Yandex Disk strategy bytes:", bytes.byteLength);
+        return {
+          fileId,
+          mediaPartsLength,
+          async *getMediaBuffers() {
+            for (let start = 0; start < bytes.byteLength; start += chunkSize) {
+              const end = Math.min(start + chunkSize, bytes.byteLength);
+              yield bytes.subarray(start, end);
+            }
+          }
+        };
+      }
+      function makeSimpleFileId(size, chunkSize) {
+        return `local_${size}_${chunkSize}_${Date.now()}`;
+      }
+      async function fetchLocalMedia(src, signal) {
+        if (!src) {
+          throw new Error("[VOT] Local file: empty media src");
+        }
+        if (src.startsWith("blob:")) {
+          const res = await fetch(src, { signal });
+          if (!res.ok) {
+            throw new Error(
+              `[VOT] Local file: failed to fetch blob media: ${res.status}`
+            );
+          }
+          return res;
+        }
+        try {
+          const res = await fetch(src, { signal });
+          if (res.ok) {
+            return res;
+          }
+        } catch {
+        }
+        const gmRes = await GM_fetch(src, { signal, timeout: 0 });
+        if (!gmRes.ok) {
+          throw new Error(
+            `[VOT] Local file: failed to fetch media source: ${gmRes.status}`
+          );
+        }
+        return gmRes;
+      }
+      async function getAudioFromLocalFile({
+        signal
+      }) {
+        const video = document.querySelector("video");
+        if (!(video instanceof HTMLVideoElement)) {
+          throw new Error("[VOT] Local file: video element not found");
+        }
+        const sourceEl = video.querySelector("source");
+        const src = video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "";
+        if (!src) {
+          throw new Error("[VOT] Local file: empty video src");
+        }
+        const response = await fetchLocalMedia(src, signal);
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        if (!bytes.byteLength) {
+          throw new Error("[VOT] Local file: empty media bytes");
+        }
+        const chunkSize = 256 * 1024;
+        const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+        const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
         return {
           fileId,
           mediaPartsLength,
@@ -11114,7 +11265,8 @@ locale;
       const YT_AUDIO_STRATEGY = "ytAudio";
       const strategies = {
         [YT_AUDIO_STRATEGY]: getAudioFromYtAudio,
-        yandexDisk: getAudioFromYandexDisk
+        yandexDisk: getAudioFromYandexDisk,
+        localFile: getAudioFromLocalFile
       };
       function assertValidMediaPartsLength(mediaPartsLength) {
         if (!Number.isInteger(mediaPartsLength) || mediaPartsLength < 1) {
@@ -11427,6 +11579,13 @@ localizedMessage;
         }
 
 requestedFailAudio = new Set();
+        isDirectResolvedUploadVideoData(data) {
+          if (!data) {
+            return false;
+          }
+          const rawUrl = String(data.url || "");
+          return data.host === "yandexdisk" && rawUrl.length > 0 && !this.isYandexDiskDownloadUrl(rawUrl);
+        }
         activeTranslationUrl;
         parseYandexDiskUrl(rawUrl) {
           const fallback = String(rawUrl || globalThis.location.href || "");
@@ -11795,7 +11954,7 @@ requestedFailAudio = new Set();
         }
         constructor(videoHandler) {
           this.videoHandler = videoHandler;
-          const strategy = this.videoHandler.site.host === "youtube" ? "ytAudio" : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : "ytAudio";
+          const strategy = this.videoHandler.site.host === "youtube" ? "ytAudio" : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : this.videoHandler.site.host === "custom" ? "localFile" : "ytAudio";
           this.audioDownloader = new AudioDownloader2(strategy);
           this.downloading = false;
           this.audioDownloader.addEventListener("downloadedAudio", this.onDownloadedAudio).addEventListener("downloadedPartialAudio", this.onDownloadedPartialAudio).addEventListener("downloadAudioError", this.onDownloadAudioError);
@@ -11915,6 +12074,11 @@ requestedFailAudio = new Set();
               this.videoHandler.videoData?.url || globalThis.location.href
             );
           }
+          if (this.videoHandler.site.host === "custom") {
+            return this.activeTranslationUrl || this.normalizeUrlForRequest(
+              String(this.videoHandler.videoData?.url || globalThis.location.href)
+            );
+          }
           return this.videoHandler.videoData?.url || globalThis.location.href;
         }
 
@@ -11960,16 +12124,31 @@ isLivelyVoiceUnavailableError(value) {
         }
         activeYandexDiskResolvedVideoData;
         async translateVideoYDImpl(videoData2, requestLang, responseLang2, translationHelp = null, signal = NEVER_ABORTED_SIGNAL, disableLivelyVoice = false) {
-          const cachedVideoData = this.activeYandexDiskResolvedVideoData && this.activeYandexDiskResolvedVideoData.host === "yandexdisk" && !this.isYandexDiskDownloadUrl(String(this.activeYandexDiskResolvedVideoData.url || "")) ? this.activeYandexDiskResolvedVideoData : void 0;
-          const currentVideoData = this.isResolvedYandexDiskVideoData(videoData2) && !this.isYandexDiskDownloadUrl(String(videoData2.url || "")) ? videoData2 : void 0;
-          const yandexDiskVideoData = cachedVideoData || currentVideoData || await this.buildYandexDiskVideoData(videoData2);
-          const normalizedVideoData = {
-            ...yandexDiskVideoData,
-            url: this.normalizeUrlForRequest(String(yandexDiskVideoData.url || ""))
-          };
+          let normalizedVideoData;
+          if (this.videoHandler.site.host === "custom") {
+            normalizedVideoData = {
+              ...videoData2,
+              url: this.normalizeUrlForRequest(
+                String(videoData2.url || globalThis.location.href)
+              )
+            };
+          } else {
+            const cachedVideoData = this.activeYandexDiskResolvedVideoData && this.isDirectResolvedUploadVideoData(
+              this.activeYandexDiskResolvedVideoData
+            ) ? this.activeYandexDiskResolvedVideoData : void 0;
+            const currentVideoData = this.isDirectResolvedUploadVideoData(videoData2) ? videoData2 : void 0;
+            const resolvedVideoData = cachedVideoData || currentVideoData || await this.buildYandexDiskVideoData(videoData2);
+            normalizedVideoData = {
+              ...resolvedVideoData,
+              url: this.normalizeUrlForRequest(
+                String(resolvedVideoData.url || "")
+              )
+            };
+          }
           this.activeYandexDiskResolvedVideoData = normalizedVideoData;
           this.activeTranslationUrl = normalizedVideoData.url;
-          console.log("[VOT][yandexdisk] translateVideoYDImpl input", {
+          console.log("[VOT][upload] translateVideoYDImpl input", {
+            host: normalizedVideoData.host,
             url: normalizedVideoData.url,
             videoId: normalizedVideoData.videoId
           });
@@ -11990,7 +12169,7 @@ isLivelyVoiceUnavailableError(value) {
             if (!res) {
               throw new Error("Failed to get translation response");
             }
-            console.log("[VOT][yandexdisk] translate response", {
+            console.log("[VOT][upload] translate response", {
               translated: res.translated,
               status: res.status,
               remainingTime: res.remainingTime,
@@ -12011,13 +12190,13 @@ isLivelyVoiceUnavailableError(value) {
               this.videoHandler.hadAsyncWait = true;
               this.downloading = true;
               await this.audioDownloader.runAudioDownload(
-                yandexDiskVideoData.videoId,
+                normalizedVideoData.videoId,
                 res.translationId,
                 signal
               );
               await this.waitForAudioDownloadCompletion(signal, 12e4);
               return await this.translateVideoYDImpl(
-                yandexDiskVideoData,
+                normalizedVideoData,
                 requestLang,
                 responseLang2,
                 translationHelp,
@@ -12029,7 +12208,7 @@ isLivelyVoiceUnavailableError(value) {
               this.videoHandler.hadAsyncWait = true;
               return this.scheduleRetry(
                 () => this.translateVideoYDImpl(
-                  yandexDiskVideoData,
+                  normalizedVideoData,
                   requestLang,
                   responseLang2,
                   translationHelp,
@@ -12060,17 +12239,13 @@ isLivelyVoiceUnavailableError(value) {
                 this.videoHandler.data?.translateAPIErrors
               ),
               hadAsyncWait: this.videoHandler.hadAsyncWait,
-              videoId: yandexDiskVideoData.videoId,
+              videoId: normalizedVideoData.videoId,
               error: err,
               notify: (params) => this.videoHandler.notifier.translationFailed(params)
             });
-            console.error("[VOT][yandexdisk]", err);
+            console.error("[VOT][upload]", err);
             return null;
           }
-        }
-        resetYandexDiskResolutionState() {
-          this.activeYandexDiskResolvedVideoData = void 0;
-          this.activeTranslationUrl = void 0;
         }
         async translateVideoImpl(videoData2, requestLang, responseLang2, translationHelp = null, shouldSendFailedAudio = false, signal = NEVER_ABORTED_SIGNAL, disableLivelyVoice = false) {
           clearTimeout(this.videoHandler.autoRetry);
@@ -12080,7 +12255,7 @@ isLivelyVoiceUnavailableError(value) {
             responseLang2
           );
           let livelyDisabled = disableLivelyVoice;
-          if (this.videoHandler.site.host === "yandexdisk") {
+          if (this.videoHandler.site.host === "yandexdisk" || this.videoHandler.site.host === "custom") {
             return await this.translateVideoYDImpl(
               videoData2,
               requestLangForApi,
@@ -12853,6 +13028,16 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         availableLangs
       );
       const sharedLanguageStateByVideoId = new Map();
+      function normalizeLocalTitleFromUrl(value) {
+        if (typeof value !== "string") return void 0;
+        try {
+          const parsed = new URL(value, globalThis.location.href);
+          const lastSegment = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+          return lastSegment.replace(/\.[^.]+$/u, "").trim() || void 0;
+        } catch {
+          return void 0;
+        }
+      }
       function getGoogleDrivePageTitle() {
         const exactDriveTitle = Array.from(
           document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span')
@@ -13217,6 +13402,15 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
           if (cacheLanguage) {
             this.setDetectedLanguageCache(videoId, cacheLanguage);
           }
+          if (this.videoHandler.site.host === "custom") {
+            const localTitle = normalizeLocalTitleFromUrl(url) || (typeof document.title === "string" ? document.title.trim() : void 0);
+            if (localTitle) {
+              title = localTitle;
+              if (!localizedTitle) {
+                localizedTitle = localTitle;
+              }
+            }
+          }
           const videoData2 = {
             translationHelp,
             isStream,
@@ -13230,7 +13424,7 @@ videoId,
             title,
             localizedTitle,
             description,
-            downloadTitle: this.videoHandler.site.host === "googledrive" ? normalizeGoogleDriveTitle(title) ?? normalizeGoogleDriveTitle(localizedTitle) ?? normalizeGoogleDriveTitle(getGoogleDrivePageTitle()) ?? videoId : localizedTitle ?? title ?? videoId
+            downloadTitle: this.videoHandler.site.host === "googledrive" ? normalizeGoogleDriveTitle(title) ?? normalizeGoogleDriveTitle(localizedTitle) ?? normalizeGoogleDriveTitle(getGoogleDrivePageTitle()) ?? videoId : this.videoHandler.site.host === "custom" ? normalizeLocalTitleFromUrl(url) ?? title ?? localizedTitle ?? videoId : localizedTitle ?? title ?? videoId
           };
           if (sharedLanguageState.lastLoggedDetectedLanguage !== detectedLanguage) {
             console.log("[VOT] Detected language:", detectedLanguage);
@@ -30087,7 +30281,7 @@ isYouTubeHosts() {
             return false;
           }
           const host = this.site.host;
-          return host === "youtube" || host === "invidious" || host === "piped" || host === "yandexdisk";
+          return host === "youtube" || host === "invidious" || host === "piped" || host === "yandexdisk" || host === "custom";
         }
 setupAudioSettings() {
           return this.callModule(setupAudioSettings);

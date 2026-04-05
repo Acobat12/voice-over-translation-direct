@@ -1638,7 +1638,8 @@ getPreferAudio() {
       host === "youtube" ||
       host === "invidious" ||
       host === "piped" ||
-      host === "yandexdisk"
+      host === "yandexdisk"||
+      host === "custom"
     );
   }
   /**

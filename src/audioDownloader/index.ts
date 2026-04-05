@@ -11,7 +11,7 @@ import {
   strategies,
   YT_AUDIO_STRATEGY,
 } from "./strategies";
-
+export const LOCAL_FILE_STRATEGY = "localFile";
 function assertValidMediaPartsLength(mediaPartsLength: number): void {
   if (!Number.isInteger(mediaPartsLength) || mediaPartsLength < 1) {
     throw new Error("Audio downloader. Invalid media parts length");

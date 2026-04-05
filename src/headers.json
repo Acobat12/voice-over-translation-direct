@@ -137,12 +137,23 @@
     "*://video.bunnycdn.com/*",
     "*://*.weibo.com/*",
     "*://*/*.mp4*",
-    "*://*/*.webm*"
+    "*://*/*.m4v*",
+    "*://*/*.webm*",
+    "*://*/*.mov*",
+    "*://*/*.mkv*",
+    "*://*/*.avi*",
+    "*://*/*.ogv*",
+    "file://*/*",
+    "*://localhost/*",
+    "*://127.0.0.1/*",
+    "*://192.168.*/*",
+    "*://*.trycloudflare.com/*",
+    "*://*.ngrok-free.app/*",
+    "*://*.ngrok-free.dev/*",
+    "*://*.ngrok.app/*"
   ],
   "grant": ["window.focus", "GM_xmlhttpRequest"],
   "exclude": [
-    "file://*/*.mp4*",
-    "file://*/*.webm*",
     "*://accounts.youtube.com/*"
   ],
   "require": [
