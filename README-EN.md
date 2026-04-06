@@ -67,7 +67,7 @@ Voice-over translation is now available beyond [Yandex Browser][yabrowser-link].
 
 ## Publishing local videos via Caddy and Cloudflare Tunnel
 
-For local `.mp4` / `.webm` / `.mkv` / `.mov` / other video files, you can use the helper scripts `start_public_video.ps1` and `start_public_video.bat`.
+For local video files, you can use the helper scripts `start_public_video.ps1` and `start_public_video.bat`. Only `.mp4` files are supported for local translation.
 
 The scripts no longer require Python. They now use a local **Caddy** static server together with a public **Cloudflare Quick Tunnel**.
 
@@ -117,6 +117,7 @@ powershell -ExecutionPolicy Bypass -File .\start_public_video.ps1 -VideoFile "vi
 - startup speed depends not only on the tunnel, but also on how the browser begins reading the media file
 - when the script stops, both the local server and the tunnel are terminated
 - `index.html` only lists videos from the current script folder
+- only `.mp4` files are supported for local translation
 
 
 ## Installing the extension:
