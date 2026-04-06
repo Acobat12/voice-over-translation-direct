@@ -56,21 +56,70 @@ function Invoke-DownloadFile {
     Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
 }
 
+function Install-FfmpegPortable {
+    $toolsRoot = Get-LocalToolsRoot
+    $dstDir = Join-Path $toolsRoot "ffmpeg"
+    $dstExe = Join-Path $dstDir "ffmpeg.exe"
+    $zipPath = Join-Path $env:TEMP ("ffmpeg_{0}.zip" -f ([guid]::NewGuid().ToString("N")))
+    $extractDir = Join-Path $env:TEMP ("ffmpeg_extract_{0}" -f ([guid]::NewGuid().ToString("N")))
+
+    if (-not (Test-Path -LiteralPath $dstDir)) {
+        New-Item -ItemType Directory -Path $dstDir -Force | Out-Null
+    }
+
+    $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+
+    try {
+        Invoke-DownloadFile -Url $ffmpegUrl -OutFile $zipPath
+        New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
+
+        $foundExe = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter "ffmpeg.exe" -ErrorAction Stop |
+            Select-Object -First 1
+
+        if (-not $foundExe) {
+            throw "ffmpeg.exe not found in extracted archive."
+        }
+
+        if (Test-Path -LiteralPath $dstExe) {
+            Remove-Item -LiteralPath $dstExe -Force -ErrorAction SilentlyContinue
+        }
+
+        Copy-Item -LiteralPath $foundExe.FullName -Destination $dstExe -Force
+
+        if (-not (Test-Path -LiteralPath $dstExe)) {
+            throw "ffmpeg copy failed."
+        }
+
+        Write-Info "ffmpeg installed to: $dstExe"
+        return $dstExe
+    }
+    finally {
+        if (Test-Path -LiteralPath $zipPath) {
+            Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        }
+
+        if (Test-Path -LiteralPath $extractDir) {
+            Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Get-CommandPathIfExists([string]$Name) {
     $toolsRoot = Get-LocalToolsRoot
 
     switch ($Name) {
         "cloudflared" {
             $portable = Join-Path $toolsRoot "cloudflared\cloudflared.exe"
-            if (Test-Path -LiteralPath $portable) {
-                return $portable
-            }
+            if (Test-Path -LiteralPath $portable) { return $portable }
         }
         "caddy" {
             $portable = Join-Path $toolsRoot "caddy\caddy.exe"
-            if (Test-Path -LiteralPath $portable) {
-                return $portable
-            }
+            if (Test-Path -LiteralPath $portable) { return $portable }
+        }
+        "ffmpeg" {
+            $portable = Join-Path $toolsRoot "ffmpeg\ffmpeg.exe"
+            if (Test-Path -LiteralPath $portable) { return $portable }
         }
     }
 
@@ -93,7 +142,10 @@ function Get-CommandPathIfExists([string]$Name) {
         $wingetPackagesRoot = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
         if (Test-Path -LiteralPath $wingetPackagesRoot) {
             $pkg = Get-ChildItem -LiteralPath $wingetPackagesRoot -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -like 'Cloudflare.cloudflared_*' } |
+                Where-Object {
+                    $_.Name -like 'Cloudflare.cloudflared_*' -and
+                    $_.Name -notlike '*.disabled*'
+                } |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
 
@@ -214,8 +266,170 @@ function Ensure-Command([string]$Name) {
     switch ($Name) {
         "cloudflared" { return Install-CloudflaredPortable }
         "caddy"       { return Install-CaddyPortable }
+        "ffmpeg"      { return Install-FfmpegPortable }
         default       { throw "Unsupported dependency: $Name" }
     }
+}
+
+function Encode-UrlPath([string]$Path) {
+    $normalized = $Path -replace '\\', '/'
+    $segments = $normalized -split '/'
+    $encodedSegments = foreach ($segment in $segments) {
+        [System.Uri]::EscapeDataString($segment)
+    }
+    return ($encodedSegments -join '/')
+}
+
+function New-Slug([string]$Text) {
+    $slug = $Text.ToLowerInvariant()
+    $slug = [regex]::Replace($slug, '[^a-z0-9]+', '-')
+    $slug = $slug.Trim('-')
+    if (-not $slug) { $slug = 'video' }
+    return $slug
+}
+
+function Get-VideoFiles([string]$Root) {
+    $extensions = @(".mp4", ".mkv", ".mov", ".avi", ".m4v", ".webm")
+    return Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue |
+        Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() } |
+        Sort-Object Name
+}
+
+function Convert-VideoToMp4 {
+    param(
+        [Parameter(Mandatory = $true)][string]$FfmpegPath,
+        [Parameter(Mandatory = $true)][string]$InputPath,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    $parent = Split-Path -Parent $OutputPath
+    if (-not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+
+    Write-Info "Converting to cached MP4: $(Split-Path -Leaf $InputPath)"
+
+    $arguments = @(
+        '-y',
+        '-hide_banner',
+        '-loglevel', 'error',
+        '-i', $InputPath,
+        '-map', '0:v:0?',
+        '-map', '0:a:0?',
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        '-b:a', '160k',
+        '-movflags', '+faststart',
+        $OutputPath
+    )
+
+    & $FfmpegPath @arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "ffmpeg failed while converting: $InputPath"
+    }
+}
+
+function Get-MediaEntries([string]$Root, [string]$FfmpegPath) {
+    $cacheDir = Join-Path $Root ".public-video-cache"
+    if (-not (Test-Path -LiteralPath $cacheDir)) {
+        New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+    }
+
+    $entries = @()
+    $usedSlugs = @{}
+
+    foreach ($file in (Get-VideoFiles $Root)) {
+        $ext = $file.Extension.ToLowerInvariant()
+        $baseSlug = New-Slug $file.BaseName
+        $slug = $baseSlug
+
+        $n = 2
+        while ($usedSlugs.ContainsKey($slug)) {
+            $slug = "$baseSlug-$n"
+            $n++
+        }
+        $usedSlugs[$slug] = $true
+
+        if ($ext -eq ".mp4") {
+            $entries += [pscustomobject]@{
+                title     = $file.BaseName
+                fileName  = $file.Name
+                src       = "/" + (Encode-UrlPath $file.Name)
+                slug      = $slug
+                fullPath  = $file.FullName
+                extension = $ext
+                mode      = "direct"
+            }
+            continue
+        }
+
+        $cachedName = "$baseSlug.mp4"
+        $cachedPath = Join-Path $cacheDir $cachedName
+
+        $needConvert = $true
+
+        if (Test-Path -LiteralPath $cachedPath) {
+            $cachedItem = Get-Item -LiteralPath $cachedPath -ErrorAction SilentlyContinue
+
+            if ($cachedItem -and $cachedItem.Length -gt 0) {
+                if ($cachedItem.LastWriteTimeUtc -ge $file.LastWriteTimeUtc) {
+                    $needConvert = $false
+                    Write-Info "Using cached MP4: $cachedName"
+                }
+            }
+        }
+
+        if ($needConvert) {
+            Write-Info "Converting to cached MP4: $($file.Name)"
+
+            & $FfmpegPath `
+                -y `
+                -i $file.FullName `
+                -map 0:v:0? `
+                -map 0:a:0? `
+                -c:v libx264 `
+                -preset veryfast `
+                -crf 23 `
+                -pix_fmt yuv420p `
+                -c:a aac `
+                -b:a 160k `
+                -movflags +faststart `
+                $cachedPath
+
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $cachedPath)) {
+                throw "FFmpeg conversion failed for: $($file.FullName)"
+            }
+        }
+
+        $entries += [pscustomobject]@{
+            title     = $file.BaseName
+            fileName  = $file.Name
+            src       = "/.public-video-cache/" + (Encode-UrlPath $cachedName)
+            slug      = $baseSlug
+            fullPath  = $file.FullName
+            extension = $ext
+            mode      = "cached"
+        }
+    }
+
+    return $entries
+}
+function Ensure-PlaylistJson([string]$Root, [object[]]$Entries) {
+    $playlistPath = Join-Path $Root "playlist.json"
+
+    $items = foreach ($entry in $Entries) {
+        [pscustomobject]@{
+            title = $entry.title
+            src   = $entry.src
+        }
+    }
+
+    $json = $items | ConvertTo-Json -Depth 4
+    Set-Content -LiteralPath $playlistPath -Value $json -Encoding UTF8
+    return $playlistPath
 }
 
 function Ensure-PlayerHtml([string]$Root) {
@@ -231,7 +445,6 @@ function Ensure-PlayerHtml([string]$Root) {
   <style>
     :root {
       --bg: #0b0d12;
-      --bg-soft: #131823;
       --panel: rgba(255,255,255,0.06);
       --panel-strong: rgba(255,255,255,0.08);
       --panel-border: rgba(255,255,255,0.10);
@@ -239,16 +452,13 @@ function Ensure-PlayerHtml([string]$Root) {
       --muted: #9aa6bd;
       --accent: #6ea8fe;
       --accent-2: rgba(110,168,254,0.18);
-      --danger: #ff7b7b;
       --success: #72e29a;
       --shadow: 0 18px 50px rgba(0,0,0,.42);
       --radius: 20px;
       --radius-sm: 14px;
     }
 
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     html, body {
       margin: 0;
@@ -272,8 +482,8 @@ function Ensure-PlayerHtml([string]$Root) {
       width: 100%;
       height: calc(100dvh - 36px);
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 360px;
-      gap: 18px;
+      grid-template-columns: minmax(0, 1fr) 390px;
+      gap: 12px;
       min-height: 0;
     }
 
@@ -318,9 +528,7 @@ function Ensure-PlayerHtml([string]$Root) {
       flex: 0 0 auto;
     }
 
-    .brand-copy {
-      min-width: 0;
-    }
+    .brand-copy { min-width: 0; }
 
     .title {
       font-size: 15px;
@@ -402,9 +610,7 @@ function Ensure-PlayerHtml([string]$Root) {
       text-align: center;
     }
 
-    .overlay.visible {
-      display: flex;
-    }
+    .overlay.visible { display: flex; }
 
     .overlay-card {
       width: min(560px, 100%);
@@ -428,9 +634,7 @@ function Ensure-PlayerHtml([string]$Root) {
       font-size: 14px;
     }
 
-    .overlay-text.error {
-      color: #ffd6d6;
-    }
+    .overlay-text.error { color: #ffd6d6; }
 
     .controls {
       display: flex;
@@ -469,10 +673,7 @@ function Ensure-PlayerHtml([string]$Root) {
       background: rgba(255,255,255,.10);
     }
 
-    .btn:disabled {
-      opacity: .45;
-      cursor: not-allowed;
-    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
 
     .btn.primary {
       background: var(--accent-2);
@@ -498,9 +699,7 @@ function Ensure-PlayerHtml([string]$Root) {
       user-select: none;
     }
 
-    .check input {
-      accent-color: var(--accent);
-    }
+    .check input { accent-color: var(--accent); }
 
     .sidebar {
       min-width: 0;
@@ -512,23 +711,8 @@ function Ensure-PlayerHtml([string]$Root) {
       padding: 14px;
     }
 
-    .sidebar-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .sidebar-title {
-      font-size: 16px;
-      font-weight: 800;
-    }
-
-    .sidebar-subtitle {
-      font-size: 12px;
-      color: var(--muted);
-      margin-top: 4px;
-    }
+    .sidebar-title { font-size: 16px; font-weight: 800; }
+    .sidebar-subtitle { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
     .next-card {
       padding: 14px;
@@ -545,16 +729,8 @@ function Ensure-PlayerHtml([string]$Root) {
       margin-bottom: 8px;
     }
 
-    .next-title {
-      font-size: 14px;
-      font-weight: 700;
-      line-height: 1.4;
-    }
-
-    .next-empty {
-      font-size: 13px;
-      color: var(--muted);
-    }
+    .next-title { font-size: 14px; font-weight: 700; line-height: 1.4; }
+    .next-empty { font-size: 13px; color: var(--muted); }
 
     .playlist {
       min-height: 0;
@@ -592,7 +768,7 @@ function Ensure-PlayerHtml([string]$Root) {
     .playlist-top {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 10px;
       margin-bottom: 6px;
     }
@@ -638,62 +814,40 @@ function Ensure-PlayerHtml([string]$Root) {
     }
 
     @media (max-width: 1100px) {
-      body {
-        overflow: auto;
-      }
-
+      body { overflow: auto; }
       .app {
         height: auto;
         min-height: calc(100dvh - 36px);
         grid-template-columns: 1fr;
       }
-
-      .main {
-        min-height: auto;
-      }
-
-      .player-shell {
-        min-height: unset;
-        overflow: visible;
-      }
-
+      .main { min-height: auto; }
+      .player-shell { min-height: unset; overflow: visible; }
       .video-wrap {
         width: 100% !important;
         height: auto !important;
         aspect-ratio: 16 / 9;
-        max-height: none;       
+        max-height: none;
       }
-
       .sidebar {
         min-height: unset;
         overflow: visible;
         grid-template-rows: auto auto auto;
       }
-
-      .playlist {
-        max-height: 360px;
-      }
+      .playlist { max-height: 360px; }
     }
 
     @media (max-width: 720px) {
-      body {
-        padding: 12px;
-      }
-
+      body { padding: 12px; }
       .topbar,
       .controls {
         flex-direction: column;
         align-items: stretch;
       }
-
       .badges,
       .controls-right {
         justify-content: flex-start;
       }
-
-      .meta {
-        max-width: none;
-      }
+      .meta { max-width: none; }
     }
   </style>
 </head>
@@ -711,7 +865,7 @@ function Ensure-PlayerHtml([string]$Root) {
 
         <div class="badges">
           <div class="pill" id="playlistBadge">Playlist: --</div>
-          <div class="pill">LOCAL .MP4 ONLY</div>
+          <div class="pill">STATIC MP4 DELIVERY</div>
         </div>
       </div>
 
@@ -730,8 +884,8 @@ function Ensure-PlayerHtml([string]$Root) {
 
       <div class="panel controls">
         <div class="controls-left">
-          <button class="btn" id="prevBtn" type="button">⟵ Previous</button>
-          <button class="btn primary" id="nextBtn" type="button">Next ⟶</button>
+          <button class="btn" id="prevBtn" type="button">&larr; Previous</button>
+          <button class="btn primary" id="nextBtn" type="button">Next &rarr;</button>
           <label class="check">
             <input type="checkbox" id="autoplayNext" checked />
             Auto play next
@@ -745,11 +899,9 @@ function Ensure-PlayerHtml([string]$Root) {
     </section>
 
     <aside class="panel sidebar">
-      <div class="sidebar-head">
-        <div>
-          <div class="sidebar-title">Queue</div>
-          <div class="sidebar-subtitle" id="queueSubtitle">Waiting for playlist...</div>
-        </div>
+      <div>
+        <div class="sidebar-title">Queue</div>
+        <div class="sidebar-subtitle" id="queueSubtitle">Waiting for playlist...</div>
       </div>
 
       <div class="next-card">
@@ -787,54 +939,6 @@ function Ensure-PlayerHtml([string]$Root) {
 
     let playlist = [];
     let currentIndex = -1;
-
-    function getVideoAspect() {
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        return video.videoWidth / video.videoHeight;
-      }
-      return 16 / 9;
-    }
-
-    function fitPlayer() {
-      if (!playerShell || !videoWrap) return;
-
-      if (window.innerWidth <= 1100) {
-        videoWrap.style.width = "100%";
-        videoWrap.style.height = "auto";
-        videoWrap.style.aspectRatio = "16 / 9";
-        return;
-      }
-
-      const shellRect = playerShell.getBoundingClientRect();
-      const shellStyle = getComputedStyle(playerShell);
-
-      const padX =
-        parseFloat(shellStyle.paddingLeft || "0") +
-        parseFloat(shellStyle.paddingRight || "0");
-
-      const padY =
-        parseFloat(shellStyle.paddingTop || "0") +
-        parseFloat(shellStyle.paddingBottom || "0");
-
-      const availableWidth = Math.max(0, shellRect.width - padX);
-      const availableHeight = Math.max(0, shellRect.height - padY);
-
-      if (!availableWidth || !availableHeight) return;
-
-      const aspect = getVideoAspect();
-
-      let width = availableWidth;
-      let height = width / aspect;
-
-      if (height > availableHeight) {
-        height = availableHeight;
-        width = height * aspect;
-      }
-
-      videoWrap.style.aspectRatio = "auto";
-      videoWrap.style.width = Math.floor(width) + "px";
-      videoWrap.style.height = Math.floor(height) + "px";
-    }
 
     function showOverlay(title, text, isError = false) {
       overlay.classList.add("visible");
@@ -887,6 +991,53 @@ function Ensure-PlayerHtml([string]$Root) {
       return left === right;
     }
 
+    function getVideoAspect() {
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        return video.videoWidth / video.videoHeight;
+      }
+      return 16 / 9;
+    }
+
+    function fitPlayer() {
+      if (!playerShell || !videoWrap) return;
+
+      if (window.innerWidth <= 1100) {
+        videoWrap.style.width = "100%";
+        videoWrap.style.height = "auto";
+        videoWrap.style.aspectRatio = "16 / 9";
+        return;
+      }
+
+      const shellRect = playerShell.getBoundingClientRect();
+      const shellStyle = getComputedStyle(playerShell);
+
+      const padX =
+        parseFloat(shellStyle.paddingLeft || "0") +
+        parseFloat(shellStyle.paddingRight || "0");
+
+      const padY =
+        parseFloat(shellStyle.paddingTop || "0") +
+        parseFloat(shellStyle.paddingBottom || "0");
+
+      const availableWidth = Math.max(0, shellRect.width - padX);
+      const availableHeight = Math.max(0, shellRect.height - padY);
+
+      if (!availableWidth || !availableHeight) return;
+
+      const aspect = getVideoAspect();
+      let width = availableWidth;
+      let height = width / aspect;
+
+      if (height > availableHeight) {
+        height = availableHeight;
+        width = height * aspect;
+      }
+
+      videoWrap.style.aspectRatio = "auto";
+      videoWrap.style.width = Math.floor(width) + "px";
+      videoWrap.style.height = Math.floor(height) + "px";
+    }
+
     async function navigateToIndex(index, autoPlay = false) {
       if (index < 0 || index >= playlist.length) return;
 
@@ -895,10 +1046,7 @@ function Ensure-PlayerHtml([string]$Root) {
 
       const nextUrl = new URL(window.location.href);
       nextUrl.searchParams.set("src", item.src);
-      if (playlistUrl) {
-        nextUrl.searchParams.set("list", playlistUrl);
-      }
-
+      nextUrl.searchParams.set("list", playlistUrl);
       history.replaceState(null, "", nextUrl.toString());
 
       renderPlaylist();
@@ -929,7 +1077,7 @@ function Ensure-PlayerHtml([string]$Root) {
       playlistEl.innerHTML = "";
 
       if (!playlist.length) {
-        playlistEl.innerHTML = '<div class="empty">Playlist not available. Generate a <strong>playlist.json</strong> or open the player with <strong>?list=/playlist.json</strong>.</div>';
+        playlistEl.innerHTML = '<div class="empty">playlist.json is empty or unavailable.</div>';
         queueSubtitle.textContent = "Single video mode";
         playlistBadge.textContent = "Playlist: 0 items";
         updateNavButtons();
@@ -954,7 +1102,7 @@ function Ensure-PlayerHtml([string]$Root) {
         `;
         button.querySelector(".playlist-name").textContent = item.title;
         button.querySelector(".playlist-src").textContent = item.src;
-        button.addEventListener("click", () => navigateToIndex(index));
+        button.addEventListener("click", () => navigateToIndex(index, true));
         playlistEl.appendChild(button);
       });
 
@@ -968,7 +1116,7 @@ function Ensure-PlayerHtml([string]$Root) {
       videoSubtitle.textContent = src;
 
       if (currentIndex >= 0 && playlist[currentIndex]) {
-        metaInfo.textContent = "Playing " + (currentIndex + 1) + " of " + playlist.length + " • " + playlist[currentIndex].title;
+        metaInfo.textContent = "Playing " + (currentIndex + 1) + " of " + playlist.length + " | " + playlist[currentIndex].title;
       } else {
         metaInfo.textContent = "Single video mode • " + fileName;
       }
@@ -983,14 +1131,15 @@ function Ensure-PlayerHtml([string]$Root) {
       }
 
       if (!isMp4File(decodedSrc)) {
-        showOverlay("Unsupported file format", "Local playback supports only .mp4 files.", true);
+        showOverlay("Unsupported source", "Expected a direct .mp4 file", true);
         return;
       }
 
       setVideoMeta(decodedSrc);
-      showOverlay("Loading video", "Fetching local .mp4 file...");
+      showOverlay("Loading video", "Fetching MP4 file...");
 
       video.pause();
+      video.preload = "auto";
       video.src = decodedSrc;
       video.load();
 
@@ -998,32 +1147,30 @@ function Ensure-PlayerHtml([string]$Root) {
         try {
           await video.play();
           hideOverlay();
-        } catch (err) {
-          try {
-            await video.play();
-            hideOverlay();
-          } catch {
-            showOverlay(
-              "Ready to play",
-              "Browser blocked autoplay with sound. Press Play to continue.",
-              false
-            );
-          }
+        } catch {
+          showOverlay(
+            "Ready to play",
+            "Autoplay was blocked. Press Play to continue.",
+            false
+          );
         }
       }
     }
+
     function attachVideoEvents() {
       video.addEventListener("loadedmetadata", () => {
         const duration = Math.round(video.duration || 0);
         const prefix = currentIndex >= 0
-          ? ("Playing " + (currentIndex + 1) + " of " + playlist.length + " • ")
+          ? ("Playing " + (currentIndex + 1) + " of " + playlist.length + " | ")
           : "";
         videoSubtitle.textContent =
-          prefix + getFileName(video.currentSrc || video.src) + " • " + duration + " sec";
+          prefix + getFileName(video.currentSrc || video.src) + " | " + duration + " sec";
+        fitPlayer();
       });
 
       video.addEventListener("canplay", () => {
         hideOverlay();
+        fitPlayer();
       });
 
       video.addEventListener("waiting", () => {
@@ -1087,7 +1234,7 @@ function Ensure-PlayerHtml([string]$Root) {
         const decodedSrc = decodePath(rawSrc || "");
         currentIndex = playlist.findIndex(x => samePath(x.src, decodedSrc));
 
-        if (currentIndex < 0 && decodedSrc) {
+        if (currentIndex < 0 && decodedSrc && isMp4File(decodedSrc)) {
           playlist.unshift(normalizeItem({ src: decodedSrc, title: getFileName(decodedSrc) }, 0));
           currentIndex = 0;
         }
@@ -1152,7 +1299,7 @@ function Ensure-PlayerHtml([string]$Root) {
           return;
         }
 
-        showOverlay("No videos found", "playlist.json is empty or no .mp4 files were found.", true);
+        showOverlay("No videos found", "playlist.json is empty or no supported videos were found.", true);
         renderPlaylist();
         return;
       }
@@ -1170,43 +1317,6 @@ function Ensure-PlayerHtml([string]$Root) {
 
     Set-Content -LiteralPath $playerPath -Value $content -Encoding UTF8
     return $playerPath
-}
-
-function Encode-UrlPath([string]$Path) {
-    $normalized = $Path -replace '\\', '/'
-    $segments = $normalized -split '/'
-    $encodedSegments = foreach ($segment in $segments) {
-        [System.Uri]::EscapeDataString($segment)
-    }
-    return ($encodedSegments -join '/')
-}
-
-function Escape-Html([string]$Text) {
-    if ($null -eq $Text) { return "" }
-    return [System.Net.WebUtility]::HtmlEncode($Text)
-}
-
-function Get-VideoFiles([string]$Root) {
-    $extensions = @(".mp4")
-    return Get-ChildItem -LiteralPath $Root -File -ErrorAction SilentlyContinue |
-        Where-Object { $extensions -contains $_.Extension.ToLowerInvariant() } |
-        Sort-Object Name
-}
-
-function Ensure-PlaylistJson([string]$Root) {
-    $playlistPath = Join-Path $Root "playlist.json"
-    $videoFiles = Get-VideoFiles $Root
-
-    $items = foreach ($file in $videoFiles) {
-        [pscustomobject]@{
-            title = $file.BaseName
-            src   = "/" + (Encode-UrlPath $file.Name)
-        }
-    }
-
-    $json = $items | ConvertTo-Json -Depth 4
-    Set-Content -LiteralPath $playlistPath -Value $json -Encoding UTF8
-    return $playlistPath
 }
 
 function Test-PortBindable([int]$PortNumber) {
@@ -1284,7 +1394,6 @@ function Get-ChromiumBrowserPath {
     return $null
 }
 
-
 function Test-TcpPortOpen([string]$HostName, [int]$PortNumber, [int]$TimeoutMs = 1500) {
     $client = New-Object System.Net.Sockets.TcpClient
     try {
@@ -1354,9 +1463,11 @@ Set-Location $root
 
 $cloudflared = Ensure-Command "cloudflared"
 $caddy = Ensure-Command "caddy"
+$ffmpeg = Ensure-Command "ffmpeg"
 
 $playerPath = Ensure-PlayerHtml $root
-$playlistPath = Ensure-PlaylistJson $root
+$mediaEntries = Get-MediaEntries -Root $root -FfmpegPath $ffmpeg
+$playlistPath = Ensure-PlaylistJson $root $mediaEntries
 
 Write-Info "Generated player: $playerPath"
 Write-Info "Generated playlist: $playlistPath"
@@ -1369,22 +1480,28 @@ if (-not (Test-Path -LiteralPath $playlistPath)) {
     throw "playlist.json was not created: $playlistPath"
 }
 
+if (-not $mediaEntries -or $mediaEntries.Count -eq 0) {
+    throw "No supported video files were found in: $root"
+}
+
+$selectedEntry = $null
 if ($VideoFile) {
     $videoFullPath = Join-Path $root $VideoFile
     if (-not (Test-Path -LiteralPath $videoFullPath)) {
         throw "Video file not found: $videoFullPath"
     }
 
-    if ([System.IO.Path]::GetExtension($videoFullPath).ToLowerInvariant() -ne ".mp4") {
-        throw "Only .mp4 is supported for local playback: $videoFullPath"
+    $videoName = [System.IO.Path]::GetFileName($videoFullPath)
+    $selectedEntry = $mediaEntries | Where-Object { $_.fileName -eq $videoName } | Select-Object -First 1
+    if (-not $selectedEntry) {
+        throw "Selected video is not in the generated playlist: $videoName"
     }
-
-    $VideoFile = [System.IO.Path]::GetFileName($videoFullPath)
 }
 
 Write-Info "Serving folder: $root"
 Write-Info "Using cloudflared: $cloudflared"
 Write-Info "Using caddy: $caddy"
+Write-Info "Using ffmpeg: $ffmpeg"
 
 try {
     $existing = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
@@ -1405,7 +1522,6 @@ if ($Port -ne $requestedPort) {
 }
 
 $localUrl = "http://127.0.0.1:$Port/"
-$localIndexUrl = $localUrl
 Write-Info "Local server: $localUrl"
 
 $serverProc = $null
@@ -1422,30 +1538,20 @@ try {
     Write-Info "Launching Caddy in background..."
     $serverProc = Start-Process `
         -FilePath $caddy `
-        -ArgumentList @("file-server", "--listen", "127.0.0.1:$Port", "--root", ".", "--browse") `
+        -ArgumentList @("file-server", "--listen", "127.0.0.1:$Port", "--root", ".") `
         -WorkingDirectory $root `
         -PassThru `
         -WindowStyle Hidden `
         -RedirectStandardOutput $caddyStdoutFile `
         -RedirectStandardError $caddyStderrFile
 
-
     $serverReady = $false
     for ($i = 0; $i -lt 30; $i++) {
         Start-Sleep -Milliseconds 500
 
         if ($serverProc.HasExited) {
-            $caddyOut = ""
-            $caddyErr = ""
-
-            if (Test-Path -LiteralPath $caddyStdoutFile) {
-                $caddyOut = Get-Content -LiteralPath $caddyStdoutFile -Raw -ErrorAction SilentlyContinue
-            }
-
-            if (Test-Path -LiteralPath $caddyStderrFile) {
-                $caddyErr = Get-Content -LiteralPath $caddyStderrFile -Raw -ErrorAction SilentlyContinue
-            }
-
+            $caddyOut = if (Test-Path -LiteralPath $caddyStdoutFile) { Get-Content -LiteralPath $caddyStdoutFile -Raw -ErrorAction SilentlyContinue } else { '' }
+            $caddyErr = if (Test-Path -LiteralPath $caddyStderrFile) { Get-Content -LiteralPath $caddyStderrFile -Raw -ErrorAction SilentlyContinue } else { '' }
             throw "Caddy exited early.`nSTDOUT:`n$caddyOut`nSTDERR:`n$caddyErr"
         }
 
@@ -1456,17 +1562,8 @@ try {
     }
 
     if (-not $serverReady) {
-        $caddyOut = ""
-        $caddyErr = ""
-
-        if (Test-Path -LiteralPath $caddyStdoutFile) {
-            $caddyOut = Get-Content -LiteralPath $caddyStdoutFile -Raw -ErrorAction SilentlyContinue
-        }
-
-        if (Test-Path -LiteralPath $caddyStderrFile) {
-            $caddyErr = Get-Content -LiteralPath $caddyStderrFile -Raw -ErrorAction SilentlyContinue
-        }
-
+        $caddyOut = if (Test-Path -LiteralPath $caddyStdoutFile) { Get-Content -LiteralPath $caddyStdoutFile -Raw -ErrorAction SilentlyContinue } else { '' }
+        $caddyErr = if (Test-Path -LiteralPath $caddyStderrFile) { Get-Content -LiteralPath $caddyStderrFile -Raw -ErrorAction SilentlyContinue } else { '' }
         throw "Local server did not start on http://127.0.0.1:$Port/`nCaddy STDOUT:`n$caddyOut`nCaddy STDERR:`n$caddyErr"
     }
 
@@ -1520,11 +1617,13 @@ try {
         Write-Info "Could not parse public URL automatically."
         Write-Info "STDOUT log: $stdoutFile"
         Write-Info "STDERR log: $stderrFile"
-    } else {
-        if ($VideoFile) {
-            $encodedVideo = Encode-UrlPath ([System.IO.Path]::GetFileName($VideoFile))
-            $targetUrl = "$publicUrl/player.html?src=/$encodedVideo&list=/playlist.json"
-        } else {
+    }
+    else {
+        if ($selectedEntry) {
+            $encodedVideo = [System.Uri]::EscapeDataString($selectedEntry.src)
+            $targetUrl = "$publicUrl/player.html?src=$encodedVideo&list=/playlist.json"
+        }
+        else {
             $targetUrl = "$publicUrl/player.html?list=/playlist.json"
         }
 
@@ -1537,8 +1636,7 @@ try {
             Write-Info "Could not copy URL to clipboard."
         }
 
-        $hostName = ([uri]$targetUrl).Host
-        Open-TunnelUrl $targetUrl
+        [void](Open-TunnelUrl $targetUrl)
     }
 
     Write-Info "Press Ctrl+C to stop everything."

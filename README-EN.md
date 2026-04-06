@@ -67,58 +67,109 @@ Voice-over translation is now available beyond [Yandex Browser][yabrowser-link].
 
 ## Publishing local videos via Caddy and Cloudflare Tunnel
 
-For local video files, you can use the helper scripts `start_public_video.ps1` and `start_public_video.bat`. Only `.mp4` files are supported for local translation.
+You can use the helper scripts `start_public_video.ps1` and `start_public_video.bat` to publish and translate local videos.
 
-The scripts no longer require Python. They now use a local **Caddy** static server together with a public **Cloudflare Quick Tunnel**.
+The local workflow now works like this:
 
-What the script does:
+- `.mp4` files are served directly as normal static files
+- if the source video is **not** `.mp4` (`.mkv`, `.avi`, `.mov`, `.m4v`, `.webm`, etc.), the script automatically converts it to `.mp4`
+- converted files are saved into `.public-video-cache`
+- on the next run, conversion is **not repeated** if a ready `.mp4` for that video already exists in `.public-video-cache`
 
-- checks whether `caddy` and `cloudflared` are available
+The scripts no longer require Python. They now use:
+
+- a local **Caddy** static server
+- a public **Cloudflare Quick Tunnel**
+- **FFmpeg** for one-time conversion of files that were not originally `.mp4`
+
+### What the script does
+
+- checks whether `caddy`, `cloudflared`, and `ffmpeg` are available
 - if they are missing, downloads portable versions into the `.tools` folder
-- creates `player.html` for opening a single video
-- creates `index.html` with a list of video files in the current folder
+- creates `player.html` and `playlist.json`
+- scans video files in the current folder
+- keeps `.mp4` files as they are
+- converts other formats to `.mp4` and stores them in `.public-video-cache`
 - starts a local server on `http://127.0.0.1:8000`
 - launches a Cloudflare Quick Tunnel for that server
-- extracts a public URL like `https://*.trycloudflare.com`
+- gets a public URL like `https://*.trycloudflare.com/player.html?list=/playlist.json`
 - copies the URL to the clipboard
 - tries to open the URL in a browser
 - stops both `caddy` and `cloudflared` when the script exits
 
-### How to run
+### Important about the `.tools` folder
+
+The `.tools` folder stores the already downloaded portable utilities (`caddy`, `cloudflared`, `ffmpeg`).
+You can **copy this folder** into another folder that contains videos, so the script will **not download the tools again** there.
+
+Example:
+
+1. Run the script once in the first video folder
+2. Let it create the `.tools` folder
+3. Copy `.tools` into another folder with videos
+4. Run `start_public_video.bat` there
+5. The script will reuse the existing tools from `.tools`
+
+### Important about the `.public-video-cache` folder
+
+The `.public-video-cache` folder stores ready `.mp4` files for videos that were originally in another format.
+
+This means:
+
+- the first run may take longer if the folder contains `.mkv`, `.avi`, `.mov`, or other non-`.mp4` files
+- later runs will be faster because the script reuses the prepared `.mp4` files from `.public-video-cache`
+- if the ready `.mp4` already exists in `.public-video-cache`, conversion is not repeated
+
+### Beginner-friendly step-by-step launch guide
 
 1. Put `start_public_video.ps1` and `start_public_video.bat` into the folder with your videos
-2. Run:
+2. Double-click `start_public_video.bat`, or run it from PowerShell:
 
 ```powershell
 .\start_public_video.bat
 ```
 
-### What happens next
+3. Wait while the script:
+   - checks and, if needed, downloads tools into `.tools`
+   - creates `player.html` and `playlist.json`
+   - converts non-`.mp4` videos into `.public-video-cache` if needed
+   - starts the local server and Cloudflare Tunnel
+4. After that, the script will show the public URL and copy it to the clipboard
+5. Open that URL in a browser — `player.html` will open with the video queue on the right side
 
-- the script creates `index.html` and `player.html` next to your videos
-- the folder becomes available locally at `http://127.0.0.1:8000/`
-- a public `https://*.trycloudflare.com` URL is created
-- the URL is copied to the clipboard
-- when you want the whole folder view, use the tunnel root URL
-- a single video is opened through a URL like `player.html?src=/video.mp4`
+### Open one specific file immediately
 
-### Open a specific file directly
-
-If you want to open one specific file immediately, run the PowerShell script directly:
+You can run the PowerShell script directly and pass the file name:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\start_public_video.ps1 -VideoFile "video.mp4"
 ```
 
+Or for example:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start_public_video.ps1 -VideoFile "lesson1.mkv"
+```
+
+If the file is not `.mp4`, the script will first prepare an `.mp4` version in `.public-video-cache`, then open the player.
+
+### What gets created next to the videos
+
+The script creates and uses these files and folders:
+
+- `player.html` — the local player with the video queue
+- `playlist.json` — the playlist for the player
+- `.tools` — portable utilities (`caddy`, `cloudflared`, `ffmpeg`)
+- `.public-video-cache` — cache with already converted `.mp4` files
+
 ### Limitations
 
 - this uses **Cloudflare Quick Tunnel**, so the public URL changes every run
 - the DNS record for `*.trycloudflare.com` may take a short time to become reachable
-- startup speed depends not only on the tunnel, but also on how the browser begins reading the media file
+- first startup speed depends on how many videos you have and whether files need to be converted into `.mp4`
 - when the script stops, both the local server and the tunnel are terminated
-- `index.html` only lists videos from the current script folder
-- only `.mp4` files are supported for local translation
-
+- the script scans videos only in the current folder where `start_public_video.ps1` and `start_public_video.bat` are located
+- if a non-`.mp4` video was already converted and the ready file exists in `.public-video-cache`, conversion is not repeated
 
 ## Installing the extension:
 
