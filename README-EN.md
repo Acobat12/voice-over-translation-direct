@@ -65,111 +65,86 @@
 
 Voice-over translation is now available beyond [Yandex Browser][yabrowser-link]. Thanks to the **[Yandex.Translate][yatranslate-link]** team and all [contributors][contributors-link] helping improve this project.
 
-## Publishing local videos via Caddy and Cloudflare Tunnel
+## Publishing local videos
 
-You can use the helper scripts `start_public_video.ps1` and `start_public_video.bat` to publish and translate local videos.
+This fork provides two ways to expose local videos through a temporary public link:
 
-The local workflow now works like this:
+1. **`PublicVideoLauncher`** — a cross-platform desktop app for Windows, macOS, and Linux
+2. **`start_public_video.ps1` / `start_public_video.bat`** — helper scripts for manual launching directly from a video folder
 
-- `.mp4` files are served directly as normal static files
-- if the source video is **not** `.mp4` (`.mkv`, `.avi`, `.mov`, `.m4v`, `.webm`, etc.), the script automatically converts it to `.mp4`
-- converted files are saved into `.public-video-cache`
-- on the next run, conversion is **not repeated** if a ready `.mp4` for that video already exists in `.public-video-cache`
+> [!IMPORTANT]
+> **`vot.user.js` is required** for local video translation.  
+> Without it, `PublicVideoLauncher` and the helper scripts can expose a local video through a temporary public link, but translation itself will not work.
 
-The scripts no longer require Python. They now use:
+### PublicVideoLauncher
 
-- a local **Caddy** static server
-- a public **Cloudflare Quick Tunnel**
-- **FFmpeg** for one-time conversion of files that were not originally `.mp4`
+`PublicVideoLauncher` is a cross-platform desktop app that:
 
-### What the script does
+- finds videos in the selected folder
+- prepares `.mp4` files when the source video uses another format
+- starts a local server
+- creates a temporary public link
+- opens a local player with the video queue
 
-- checks whether `caddy`, `cloudflared`, and `ffmpeg` are available
-- if they are missing, downloads portable versions into the `.tools` folder
-- creates `player.html` and `playlist.json`
-- scans video files in the current folder
-- keeps `.mp4` files as they are
-- converts other formats to `.mp4` and stores them in `.public-video-cache`
-- starts a local server on `http://127.0.0.1:8000`
-- launches a Cloudflare Quick Tunnel for that server
-- gets a public URL like `https://*.trycloudflare.com/player.html?list=/playlist.json`
-- copies the URL to the clipboard
-- tries to open the URL in a browser
-- stops both `caddy` and `cloudflared` when the script exits
+Supported platforms: **Windows, macOS, and Linux**.
+
+### What to install first
+
+- `vot.user.js` — the required userscript for translation
+- `PublicVideoLauncher` — the desktop app for exposing a local video through a temporary public link
+
+### What to download
+
+#### Windows
+- **Standard installer:** `PublicVideoLauncher-<version>-win-x64-setup.exe`
+- **Windows ARM64:** `PublicVideoLauncher-<version>-win-arm64-setup.exe`
+
+#### macOS
+- **Apple Silicon (M1 / M2 / M3 / M4):** `PublicVideoLauncher-<version>-osx-arm64.app.zip`
+- **Intel Mac:** `PublicVideoLauncher-<version>-osx-x64.app.zip`
+
+#### Linux
+- **Ubuntu / Debian:** `public-video-launcher_<version>_amd64.deb`
+- **Ubuntu / Debian ARM64:** `public-video-launcher_<version>_arm64.deb`
+- **Fedora / RHEL / openSUSE:** `public-video-launcher-<version>-1.x86_64.rpm`
+- **Fedora / RHEL / openSUSE ARM64:** `public-video-launcher-<version>-1.aarch64.rpm`
+- **Portable build:** `PublicVideoLauncher-<version>-linux-x64.AppImage`
+
+### How to use the app
+
+1. Download the build for your operating system from [Releases][vot-releases]
+2. Install the app or extract the archive
+3. Launch `PublicVideoLauncher`
+4. Select your video folder
+5. If needed, install missing helper tools directly from the app window
+6. Start the app and get a temporary public link
+
+### Platform notes
+
+- `osx-arm64` is for Apple Silicon Macs
+- `osx-x64` is for Intel Macs
+- if macOS blocks the app on first launch, open it via **right click → Open**
+- on Linux, use `.deb`, `.rpm`, or `AppImage` depending on your distribution
+- Windows SmartScreen may warn about an unsigned app; if needed, click **More info → Run anyway**
+
+### If the link does not open in Firefox
+
+For some users, the temporary public link may not load correctly because of Firefox DNS settings.
+
+What to try:
+
+1. Open **Settings** → **Privacy & Security**
+2. Find the **DNS over HTTPS** / **Secure DNS** section
+3. Try either:
+   - **Max Protection**
+   - or temporarily **Off**
+4. Choose **Cloudflare** as the provider
+
+> This changes DNS settings only inside Firefox and does not affect the whole system.
 
 ### Important about the `.tools` folder
 
-The `.tools` folder stores the already downloaded portable utilities (`caddy`, `cloudflared`, `ffmpeg`).
-You can **copy this folder** into another folder that contains videos, so the script will **not download the tools again** there.
-
-Example:
-
-1. Run the script once in the first video folder
-2. Let it create the `.tools` folder
-3. Copy `.tools` into another folder with videos
-4. Run `start_public_video.bat` there
-5. The script will reuse the existing tools from `.tools`
-
-### Important about the `.public-video-cache` folder
-
-The `.public-video-cache` folder stores ready `.mp4` files for videos that were originally in another format.
-
-This means:
-
-- the first run may take longer if the folder contains `.mkv`, `.avi`, `.mov`, or other non-`.mp4` files
-- later runs will be faster because the script reuses the prepared `.mp4` files from `.public-video-cache`
-- if the ready `.mp4` already exists in `.public-video-cache`, conversion is not repeated
-
-### Beginner-friendly step-by-step launch guide
-
-1. Put `start_public_video.ps1` and `start_public_video.bat` into the folder with your videos
-2. Double-click `start_public_video.bat`, or run it from PowerShell:
-
-```powershell
-.\start_public_video.bat
-```
-
-3. Wait while the script:
-   - checks and, if needed, downloads tools into `.tools`
-   - creates `player.html` and `playlist.json`
-   - converts non-`.mp4` videos into `.public-video-cache` if needed
-   - starts the local server and Cloudflare Tunnel
-4. After that, the script will show the public URL and copy it to the clipboard
-5. Open that URL in a browser — `player.html` will open with the video queue on the right side
-
-### Open one specific file immediately
-
-You can run the PowerShell script directly and pass the file name:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start_public_video.ps1 -VideoFile "video.mp4"
-```
-
-Or for example:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start_public_video.ps1 -VideoFile "lesson1.mkv"
-```
-
-If the file is not `.mp4`, the script will first prepare an `.mp4` version in `.public-video-cache`, then open the player.
-
-### What gets created next to the videos
-
-The script creates and uses these files and folders:
-
-- `player.html` — the local player with the video queue
-- `playlist.json` — the playlist for the player
-- `.tools` — portable utilities (`caddy`, `cloudflared`, `ffmpeg`)
-- `.public-video-cache` — cache with already converted `.mp4` files
-
-### Limitations
-
-- this uses **Cloudflare Quick Tunnel**, so the public URL changes every run
-- the DNS record for `*.trycloudflare.com` may take a short time to become reachable
-- first startup speed depends on how many videos you have and whether files need to be converted into `.mp4`
-- when the script stops, both the local server and the tunnel are terminated
-- the script scans videos only in the current folder where `start_public_video.ps1` and `start_public_video.bat` are located
-- if a non-`.mp4` video was already converted and the ready file exists in `.public-video-cache`, conversion is not repeated
+If the app or local publishing flow has already downloaded the portable helper tools (`caddy`, `cloudflared`, `ffmpeg`) into a `.tools` folder, you can **copy or move that folder** into another video folder. In that case, the tools do not need to be downloaded again.
 
 ## Installing the extension:
 
