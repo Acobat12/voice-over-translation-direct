@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.18
+// @version         1.11.5.19
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -7553,12 +7553,19 @@ string() {
         video;
         fetchFn;
         fetchOpts;
-        constructor({ url, video, debug: debug2 = false, fetchFn = config.fetchFn, fetchOpts = {}, preferAudio = false }) {
+        constructor({
+          url,
+          video,
+          debug: debug2 = false,
+          fetchFn = config.fetchFn,
+          fetchOpts = {},
+          preferAudio = false
+        }) {
           this._debug = config.debug = debug2;
           this.fetchFn = fetchFn;
           this.fetchOpts = fetchOpts;
-          this.audioContext = initAudioContext();
-          this.player = this.audioContext && !preferAudio ? new ChaimuPlayer(this, url) : new AudioPlayer(this, url);
+          this.audioContext = preferAudio ? void 0 : initAudioContext();
+          this.player = preferAudio ? new AudioPlayer(this, url) : new ChaimuPlayer(this, url);
           this.video = video;
         }
         async init() {
@@ -9501,7 +9508,7 @@ get isSupportOnlyLS() {
         return buildVersion || scriptVersion || "unknown";
       }
       function getRuntimeLocaleVersion() {
-        const buildVersion = String("1.11.5.18");
+        const buildVersion = String("1.11.5.19");
         const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
         return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
       }
@@ -10149,6 +10156,22 @@ locale;
           url: "stub",
           match: /(^|\.)okcdn\.ru$/i,
           selector: GENERIC_PLAYER_SELECTOR,
+          rawResult: true
+        },
+        {
+          host: VideoService.custom,
+          url: "stub",
+          match: /(^|\.)dailymotion\.com$/i,
+          selector: GENERIC_PLAYER_SELECTOR,
+          eventSelector: GENERIC_PLAYER_SELECTOR,
+          rawResult: true
+        },
+        {
+          host: VideoService.custom,
+          url: "stub",
+          match: /(^|\.)geo\.dailymotion\.com$/i,
+          selector: GENERIC_PLAYER_SELECTOR,
+          eventSelector: GENERIC_PLAYER_SELECTOR,
           rawResult: true
         }
       ];
@@ -11603,8 +11626,14 @@ localizedMessage;
             )
           );
         }
+        isHlsManifestUrl(url) {
+          return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
+        }
         isDirectMediaUrlCandidate(url) {
           if (!url) {
+            return false;
+          }
+          if (this.isHlsManifestUrl(url)) {
             return false;
           }
           try {
@@ -11648,7 +11677,9 @@ localizedMessage;
           };
         }
         updateAudioDownloaderStrategy(videoData2) {
-          const useLocalFileWorkflow = this.videoHandler.site.host === "custom" || videoData2?.host === "custom" || this.shouldUseLocalFileWorkflow(videoData2);
+          const url = videoData2 ? this.getCurrentMediaRequestUrl(videoData2) : "";
+          const isLocalFileCompatibleCustom = (this.videoHandler.site.host === "custom" || videoData2?.host === "custom") && !this.isHlsManifestUrl(url) && this.isDirectMediaUrlCandidate(url);
+          const useLocalFileWorkflow = isLocalFileCompatibleCustom || this.shouldUseLocalFileWorkflow(videoData2);
           const nextStrategy = useLocalFileWorkflow ? "localFile" : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : "ytAudio";
           if (this.audioDownloader.strategy === nextStrategy) {
             return;
@@ -12462,7 +12493,9 @@ localizedMessage;
         async translateVideoYDImpl(videoData2, requestLang, responseLang2, translationHelp = null, signal = NEVER_ABORTED_SIGNAL, disableLivelyVoice = false) {
           let normalizedVideoData;
           this.updateAudioDownloaderStrategy(videoData2);
-          if (this.videoHandler.site.host === "custom" || videoData2.host === "custom" || this.shouldUseLocalFileWorkflow(videoData2)) {
+          const currentUrl = this.getCurrentMediaRequestUrl(videoData2);
+          const canUseLocalFileWorkflow = !this.isHlsManifestUrl(currentUrl) && (this.videoHandler.site.host === "custom" || videoData2.host === "custom" || this.shouldUseLocalFileWorkflow(videoData2));
+          if (canUseLocalFileWorkflow) {
             normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData2);
           } else {
             const cachedVideoData = this.activeYandexDiskResolvedVideoData && this.isDirectResolvedUploadVideoData(
@@ -29275,6 +29308,12 @@ useAudioDownload: isSupportGMXhr,
           return this;
         }
         await this.changeSubtitlesLang(DISABLED_SUBTITLES_VALUE);
+        console.warn("[VOT][auto subtitles] selected", {
+          bestIdx,
+          fromLang,
+          toLang,
+          subtitles: this.subtitles
+        });
         await this.changeSubtitlesLang(String(bestIdx));
         return this;
       }
@@ -30639,6 +30678,12 @@ headers: {
             TRANSLATED_AUDIO_START_TIMEOUT_MS
           );
           if (!started) {
+            if (this.videoData?.host === "custom") {
+              this.setupAudioSettings();
+              this.transformBtn("success", localizationProvider.get("disableTranslate"));
+              this.afterUpdateTranslation(nextAudioUrl);
+              return;
+            }
             if (isLikelyAutoplayBlocked(this)) {
               debug.log("[VOT][audio] translated audio is waiting for a user gesture", {
                 sourceUrl: nextAudioUrl,
@@ -31089,6 +31134,7 @@ constructor(video, container, site) {
             isAutoTranslateEnabled: () => Boolean(this.data?.autoTranslate),
             getVideoId: () => this.videoData?.videoId,
             scheduleAutoTranslate: () => this.runAutoTranslate(),
+            enableSubtitlesForCurrentLangPair: () => this.enableSubtitlesForCurrentLangPair(),
             isMobileYouTubeMuted: () => this.site.host === "youtube" && this.site.additionalData === "mobile" && this.video.muted,
             setMuteWatcher: (callback) => {
               let done = false;
@@ -31281,17 +31327,13 @@ getAudioContext() {
           return globalThis.AudioContext !== void 0 || globalThis.webkitAudioContext !== void 0;
         }
 getPreferAudio() {
-          const hasAudioContext = Boolean(this.getAudioContext());
-          const data = this.data;
-          const tunnelContext = getTunnelPlayerContext();
-          if (!hasAudioContext) return true;
-          if (!data) return true;
-          if (this.site.host === "custom" || this.videoData?.host === "custom") {
-            if (tunnelContext) {
-              return true;
-            }
+          if (this.site.host === "custom" || this.videoData?.host === "custom" || this.site.host === "youtube" || this.site.host === "vk" || this.site.host === "rutube" || location.hostname === "vkvideo.ru" || this.site.host === "ok" || this.site.host === "odnoklassniki" || location.hostname === "ok.ru" || location.hostname.endsWith(".ok.ru")) {
             return true;
           }
+          const hasAudioContext = Boolean(this.getAudioContext());
+          const data = this.data;
+          if (!hasAudioContext) return true;
+          if (!data) return true;
           if (this.site.needBypassCSP) return false;
           if (this.videoData?.isStream) return false;
           if (!data.newAudioPlayer) return true;
@@ -31310,7 +31352,18 @@ debug: Boolean(false),
             preferAudio
           });
           if (preferAudio && (this.site.host === "custom" || this.videoData?.host === "custom")) {
+            const playerAudioContext = this.audioPlayer.audioContext;
             this.audioPlayer.audioContext = void 0;
+            if (playerAudioContext && playerAudioContext.state !== "closed") {
+              void playerAudioContext.close().catch(() => {
+              });
+            }
+            if (this.audioContext && this.audioContext.state !== "closed") {
+              const handlerAudioContext = this.audioContext;
+              this.audioContext = void 0;
+              void handlerAudioContext.close().catch(() => {
+              });
+            }
           }
           return this;
         }
@@ -32097,7 +32150,9 @@ releaseExtraEvents = releaseExtraEvents;
         }
         logBootstrap("Loading extension");
         if (bootstrapMode === "top-full") {
-          await ensureRuntimeActivated("top-frame", logBootstrap);
+          void ensureRuntimeActivated("top-frame", logBootstrap).catch((err) => {
+            console.error("[VOT] Failed to activate runtime", err);
+          });
         } else {
           logBootstrap("Lazy iframe bootstrap enabled; waiting for video detection");
         }

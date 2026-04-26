@@ -196,18 +196,25 @@ export class VOTTranslationHandler {
       ),
     );
   }
+private isHlsManifestUrl(url: string): boolean {
+  return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
+}
 
-  private isDirectMediaUrlCandidate(url: string): boolean {
-    if (!url) {
-      return false;
-    }
-
-    try {
-      return this.videoHandler.votClient.isDirectMediaUrl(url);
-    } catch {
-      return false;
-    }
+private isDirectMediaUrlCandidate(url: string): boolean {
+  if (!url) {
+    return false;
   }
+
+  if (this.isHlsManifestUrl(url)) {
+    return false;
+  }
+
+  try {
+    return this.videoHandler.votClient.isDirectMediaUrl(url);
+  } catch {
+    return false;
+  }
+}
 
   private isCrossOriginMediaUrl(url: string): boolean {
     try {
@@ -261,31 +268,36 @@ export class VOTTranslationHandler {
     };
   }
 
-  private updateAudioDownloaderStrategy(videoData?: VideoData): void {
-    const useLocalFileWorkflow =
-      this.videoHandler.site.host === "custom" ||
-      videoData?.host === "custom" ||
-      this.shouldUseLocalFileWorkflow(videoData);
+private updateAudioDownloaderStrategy(videoData?: VideoData): void {
+  const url = videoData ? this.getCurrentMediaRequestUrl(videoData) : "";
 
-    const nextStrategy =
-      useLocalFileWorkflow
-        ? "localFile"
-        : this.videoHandler.site.host === "yandexdisk"
-          ? "yandexDisk"
-          : "ytAudio";
+  const isLocalFileCompatibleCustom =
+    (this.videoHandler.site.host === "custom" || videoData?.host === "custom") &&
+    !this.isHlsManifestUrl(url) &&
+    this.isDirectMediaUrlCandidate(url);
 
-    if (this.audioDownloader.strategy === nextStrategy) {
-      return;
-    }
+  const useLocalFileWorkflow =
+    isLocalFileCompatibleCustom || this.shouldUseLocalFileWorkflow(videoData);
 
-    this.audioDownloader.strategy = nextStrategy;
-    console.log("[VOT][audio] switched downloader strategy", {
-      siteHost: this.videoHandler.site.host,
-      videoHost: videoData?.host,
-      strategy: nextStrategy,
-      url: videoData?.url,
-    });
+  const nextStrategy =
+    useLocalFileWorkflow
+      ? "localFile"
+      : this.videoHandler.site.host === "yandexdisk"
+        ? "yandexDisk"
+        : "ytAudio";
+
+  if (this.audioDownloader.strategy === nextStrategy) {
+    return;
   }
+
+  this.audioDownloader.strategy = nextStrategy;
+  console.log("[VOT][audio] switched downloader strategy", {
+    siteHost: this.videoHandler.site.host,
+    videoHost: videoData?.host,
+    strategy: nextStrategy,
+    url: videoData?.url,
+  });
+}
 
   private isDirectResolvedUploadVideoData(
     data: VideoData | undefined,
@@ -1344,13 +1356,18 @@ export class VOTTranslationHandler {
     let normalizedVideoData: VideoData;
     this.updateAudioDownloaderStrategy(videoData);
 
-    if (
-      this.videoHandler.site.host === "custom" ||
-      videoData.host === "custom" ||
-      this.shouldUseLocalFileWorkflow(videoData)
-    ) {
-      normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData);
-    } else {
+    const currentUrl = this.getCurrentMediaRequestUrl(videoData);
+const canUseLocalFileWorkflow =
+  !this.isHlsManifestUrl(currentUrl) &&
+  (
+    this.videoHandler.site.host === "custom" ||
+    videoData.host === "custom" ||
+    this.shouldUseLocalFileWorkflow(videoData)
+  );
+
+if (canUseLocalFileWorkflow) {
+  normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData);
+} else {
       const cachedVideoData =
         this.activeYandexDiskResolvedVideoData &&
         this.isDirectResolvedUploadVideoData(

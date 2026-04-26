@@ -4,7 +4,7 @@ import { getService } from "@vot.js/ext/utils/videoData";
 import { availableLangs, availableTTS } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { ClientSession, SessionModule } from "@vot.js/shared/types/secure";
-import Chaimu from "chaimu/client";
+import Chaimu from "./core/chaimuClient";
 import { initAudioContext } from "chaimu/player";
 
 import { getOrCreateBootState } from "./bootstrap/bootState";
@@ -489,6 +489,8 @@ export class VideoHandler {
       isAutoTranslateEnabled: () => Boolean(this.data?.autoTranslate),
       getVideoId: () => this.videoData?.videoId,
       scheduleAutoTranslate: () => this.runAutoTranslate(),
+      enableSubtitlesForCurrentLangPair: () =>
+        this.enableSubtitlesForCurrentLangPair(),
       isMobileYouTubeMuted: () =>
         this.site.host === "youtube" &&
         this.site.additionalData === "mobile" &&
@@ -756,32 +758,30 @@ export class VideoHandler {
    * @returns {boolean} True if audio is preferred.
    */
 getPreferAudio() {
+  if (this.site.host === "custom" || this.videoData?.host === "custom" ||
+      this.site.host === "youtube" || this.site.host === "vk" || 
+this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
+    this.site.host === "ok" ||
+    this.site.host === "odnoklassniki" ||
+    location.hostname === "ok.ru" ||
+    location.hostname.endsWith(".ok.ru")) 
+  {
+    return true;
+  }
+
   const hasAudioContext = Boolean(this.getAudioContext());
   const data = this.data;
-  const tunnelContext = getTunnelPlayerContext();
 
   if (!hasAudioContext) return true;
   if (!data) return true;
 
-  // Generic/custom players are more reliable with a plain HTMLAudioElement
-  // than with the WebAudio decode path, especially in Firefox and in embedded
-  // cross-origin player contexts.
-  if (this.site.host === "custom" || this.videoData?.host === "custom") {
-    if (tunnelContext) {
-      return true;
-    }
-    return true;
-  }
-
   if (this.site.needBypassCSP) return false;
-
   if (this.videoData?.isStream) return false;
   if (!data.newAudioPlayer) return true;
   if (!data.onlyBypassMediaCSP) return false;
 
   return true;
 }
-
   /**
    * Creates the audio player.
    * @returns {VideoHandler} The VideoHandler instance.
@@ -803,7 +803,22 @@ getPreferAudio() {
       preferAudio &&
       (this.site.host === "custom" || this.videoData?.host === "custom")
     ) {
+      const playerAudioContext = this.audioPlayer.audioContext;
       this.audioPlayer.audioContext = undefined;
+
+      if (playerAudioContext && playerAudioContext.state !== "closed") {
+        void playerAudioContext.close().catch(() => {
+          // ignore
+        });
+      }
+
+      if (this.audioContext && this.audioContext.state !== "closed") {
+        const handlerAudioContext = this.audioContext;
+        this.audioContext = undefined;
+        void handlerAudioContext.close().catch(() => {
+          // ignore
+        });
+      }
     }
     return this;
   }
@@ -2104,10 +2119,12 @@ if (iframeMode && document.visibilityState === "hidden") {
 
   logBootstrap("Loading extension");
   if (bootstrapMode === "top-full") {
-    await ensureRuntimeActivated("top-frame", logBootstrap);
-  } else {
-    logBootstrap("Lazy iframe bootstrap enabled; waiting for video detection");
-  }
+  void ensureRuntimeActivated("top-frame", logBootstrap).catch((err) => {
+    console.error("[VOT] Failed to activate runtime", err);
+  });
+} else {
+  logBootstrap("Lazy iframe bootstrap enabled; waiting for video detection");
+}
 
   bindObserverListeners({
     videoObserver,

@@ -707,7 +707,12 @@ console.warn("[VOT][subtitles][after ensure]", {
   }
 
   await this.changeSubtitlesLang(DISABLED_SUBTITLES_VALUE);
-  
+  console.warn("[VOT][auto subtitles] selected", {
+  bestIdx,
+  fromLang,
+  toLang,
+  subtitles: this.subtitles,
+});
 
   await this.changeSubtitlesLang(String(bestIdx));
   return this;

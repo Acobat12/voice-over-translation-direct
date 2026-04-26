@@ -1866,6 +1866,17 @@ if (shouldRequireImmediateTranslatedStart(this)) {
   if (!started) {
     debug.log("[updateTranslation] audio source attached but playback did not start");
 
+    if (this.videoData?.host === "custom") {
+      debug.log(
+        "[updateTranslation] custom source: translated audio did not auto-start, keeping translation active",
+      );
+
+        this.setupAudioSettings();
+        this.transformBtn("success", localizationProvider.get("disableTranslate"));
+        this.afterUpdateTranslation(nextAudioUrl);
+        return;
+    }
+
     if (isLikelyAutoplayBlocked(this)) {
       debug.log("[VOT][audio] translated audio is waiting for a user gesture", {
         sourceUrl: nextAudioUrl,
@@ -1918,7 +1929,6 @@ if (shouldRequireImmediateTranslatedStart(this)) {
 this.setupAudioSettings();
 this.transformBtn("success", localizationProvider.get("disableTranslate"));
 this.afterUpdateTranslation(nextAudioUrl);
-
 }
 
 export async function translateFunc(
