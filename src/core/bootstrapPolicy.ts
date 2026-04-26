@@ -10,11 +10,12 @@ export function shouldSkipIframeBootstrap(
   input: BootstrapPolicyInput,
 ): boolean {
   if (!input.isIframe) return false;
-  return (
-    input.href === "about:blank" ||
-    input.href.startsWith("about:srcdoc") ||
-    input.origin === "null"
-  );
+
+  // Many embedded players are rendered inside same-origin `about:blank` /
+  // `about:srcdoc` wrapper iframes. Skipping bootstrap there prevents the
+  // generic observer from ever seeing the real <video>. Only skip truly
+  // opaque/null-origin frames where we have no stable runtime context.
+  return input.origin === "null";
 }
 
 export function resolveBootstrapMode(

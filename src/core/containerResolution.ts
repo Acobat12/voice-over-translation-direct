@@ -1,5 +1,24 @@
 import { closestCrossShadow, containsCrossShadow } from "../utils/dom";
 
+function promoteVideoElementContainer(
+  matched: HTMLElement,
+  video: HTMLVideoElement,
+): HTMLElement {
+  if (matched !== video) {
+    return matched;
+  }
+
+  let parent = video.parentElement;
+  while (parent) {
+    if (parent !== document.body && parent !== document.documentElement) {
+      return parent;
+    }
+    parent = parent.parentElement;
+  }
+
+  return matched;
+}
+
 export function findConnectedContainerBySelector(
   video: HTMLVideoElement,
   selector?: string,
@@ -14,7 +33,7 @@ export function findConnectedContainerBySelector(
     matched.isConnected &&
     containsCrossShadow(matched, video)
   ) {
-    return matched;
+    return promoteVideoElementContainer(matched, video);
   }
 
   return null;

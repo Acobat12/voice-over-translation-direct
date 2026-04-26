@@ -11,6 +11,10 @@ export function resolveOverlayBaseContainer(
   container: HTMLElement,
   site: ServiceConf,
 ): HTMLElement {
+  if (container instanceof HTMLVideoElement) {
+    return container.parentElement ?? container;
+  }
+
   return site.host === "youtube" && site.additionalData !== "mobile"
     ? (container.parentElement ?? container)
     : container;
@@ -23,7 +27,10 @@ export function resolveOverlayMountTargets(input: {
 }): OverlayMountTargets {
   const base = resolveOverlayBaseContainer(input.container, input.site);
   const root = input.fullscreenRoot ?? base;
-  const subtitlesMountContainer = input.site.host === "googledrive" ? input.fullscreenRoot ?? document.body : root;
+  const subtitlesMountContainer =
+    input.site.host === "googledrive"
+      ? input.fullscreenRoot ?? document.body
+      : root;
 
   return {
     base,

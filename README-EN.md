@@ -116,8 +116,204 @@ Supported platforms: **Windows, macOS, and Linux**.
 2. Install the app or extract the archive
 3. Launch `PublicVideoLauncher`
 4. Select your video folder
-5. If needed, install missing helper tools directly from the app window
-6. Start the app and get a temporary public link
+5. Choose a publishing method in **Tunnel provider**
+6. If needed, install missing helper tools directly from the app window
+7. Fill in extra fields if the selected tunnel requires them
+8. Start the app and get a temporary public link
+
+### Tunnel selection guide
+
+`PublicVideoLauncher` can expose the local video server through several tunnel providers. For most users, **Cloudflare Tunnel** is the easiest choice. The other options are useful when Cloudflare is unavailable in your network, when you need your own domain, or when you prefer another provider.
+
+#### Cloudflare Tunnel
+
+The easiest option for most users.
+
+Requirements:
+
+- installed or automatically downloaded `cloudflared`
+- no Cloudflare account required
+- no token required
+
+How to start:
+
+1. Select **Cloudflare Tunnel**
+2. Leave **Tunnel auth** empty
+3. If the app offers to install `cloudflared`, install it
+4. Click start
+5. Wait for a link like `https://...trycloudflare.com`
+
+Notes:
+
+- the link is temporary
+- the link works only while the app is running
+- the link usually changes on every new start
+- if Cloudflare is blocked or unstable on your network, try another tunnel
+
+#### Cloudflare Name
+
+Use this option if you have your own domain in Cloudflare and want a stable hostname.
+
+Requirements:
+
+- Cloudflare account
+- a domain added to Cloudflare
+- installed `cloudflared`
+- `cloudflared` access configured for your Cloudflare account
+
+Setup:
+
+1. Install `cloudflared` if the app has not installed it automatically
+2. Log in to Cloudflare for `cloudflared` manually if needed:
+
+```bash
+cloudflared tunnel login
+```
+
+3. In the app, select **Cloudflare Name**
+4. Enter the tunnel name in **Tunnel name**
+5. Enter a domain or subdomain in **Hostname**, for example:
+
+```text
+video.example.com
+```
+
+6. Click start
+
+Notes:
+
+- uses your own domain or subdomain
+- the address can stay stable
+- DNS and tunnel configuration are handled through Cloudflare
+- this mode is not suitable if your domain is not connected to Cloudflare
+
+#### localhost.run
+
+A simple SSH-based tunnel without a separate account.
+
+Requirements:
+
+- installed `ssh`
+- network access to `localhost.run`
+- no token required
+
+How to start:
+
+1. Select **localhost.run**
+2. Leave **Tunnel auth** empty
+3. Make sure the `ssh` command is available on your system
+4. Click start
+5. Wait for the public link in the logs
+
+Notes:
+
+- useful as a backup option
+- usually does not require an account
+- stability depends on the availability of the `localhost.run` service
+- on Windows, `ssh` is usually included in modern Windows 10/11 installations
+
+#### Tailscale Funnel
+
+Use this option if you already use Tailscale and want to expose the local server through Funnel.
+
+Requirements:
+
+- installed Tailscale
+- signed-in Tailscale account
+- Funnel enabled in Tailscale settings
+- available `tailscale` command
+
+Setup:
+
+1. Install Tailscale
+2. Sign in to your Tailscale account
+3. Enable Funnel in Tailscale settings if it is not enabled yet
+4. In the app, select **Tailscale Funnel**
+5. Leave **Tunnel auth** empty
+6. Click start
+
+Notes:
+
+- the public link depends on your device name and Tailscale domain
+- you may need to allow Funnel in the Tailscale admin panel
+- if Tailscale is not authenticated, the tunnel will not start
+
+#### zrok
+
+A tunnel through zrok. It requires an account and token for the first environment enable step.
+
+Requirements:
+
+- installed `zrok`
+- zrok account
+- zrok token for first-time activation
+
+First start:
+
+1. Select **zrok**
+2. Paste your zrok token into **Tunnel auth**
+3. If the app offers to install `zrok`, install it
+4. Click start
+5. After activation, the app creates a public link
+
+If zrok is already enabled on this machine:
+
+1. Select **zrok**
+2. You can leave **Tunnel auth** empty
+3. Click start
+
+Notes:
+
+- the token is usually needed only once per machine
+- if the zrok environment is not enabled, the app will ask you to fill in **Tunnel auth**
+- the link is temporary and works only while the app is running
+
+#### xTunnel
+
+An option for xTunnel users on Windows. It usually requires a license key.
+
+Requirements:
+
+- `xtunnel.exe` or `xTunnel.exe`
+- xTunnel license key
+- Windows
+
+Setup:
+
+1. Download the official xTunnel archive
+2. Extract `xtunnel.exe` or `xTunnel.exe`
+3. Put it into `.tools/xtunnel/` or specify the path in **CLI path**
+4. Paste your license key into **Tunnel auth**
+5. Click start
+
+What the app does automatically:
+
+- registers the key if it is provided
+- starts an HTTP tunnel to the local port
+- if the license is busy, it can retry with a forced mode
+
+Manual commands for testing:
+
+```powershell
+xtunnel.exe register <KEY>
+xtunnel.exe http 8000
+```
+
+If the service says the license is busy:
+
+```powershell
+xtunnel.exe http 8000 --force
+```
+
+### Tunnel settings fields
+
+- **Tunnel provider** — which tunnel to use
+- **Tunnel auth** — token or key if required by the provider
+- **CLI path** — manual path to the tunnel executable if the app cannot find it automatically
+- **Tunnel name** — named Cloudflare tunnel name for **Cloudflare Name** mode
+- **Hostname** — domain or subdomain for **Cloudflare Name** mode
+
+If you are not sure what to choose, use **Cloudflare Tunnel**. It is the shortest path from “I have a video” to “here is the link”. Almost teleportation, minus the blue smoke.
 
 ### Platform notes
 

@@ -1,4 +1,5 @@
 import debug from "../utils/debug";
+import type { VideoHandler } from "../videoHandler";
 
 export type TranslationState =
   | { status: "idle" }
@@ -16,12 +17,13 @@ export interface TranslationOrchestratorDeps {
   isMobileYouTubeMuted?(): boolean;
   /** Sets up a one-time watcher to trigger callback when video is unmuted */
   setMuteWatcher?(callback: () => void): void;
+  enableSubtitlesForCurrentLangPair?: () => Promise<unknown>;
 }
 
 export class TranslationOrchestrator {
   private state: TranslationState = { status: "idle" };
   private readonly deps: TranslationOrchestratorDeps;
-
+  
   constructor(deps: TranslationOrchestratorDeps) {
     this.deps = deps;
   }
@@ -40,6 +42,12 @@ export class TranslationOrchestrator {
   }
 
   async runAutoTranslationIfEligible() {
+  console.warn("[VOT][orchestrator] runAutoTranslationIfEligible called", {
+    state: this.state,
+    isFirstPlay: this.deps.isFirstPlay(),
+    autoTranslate: this.deps.isAutoTranslateEnabled(),
+    videoId: this.deps.getVideoId(),
+  });
     if (this.state.status !== "idle") {
       return;
     }
@@ -72,13 +80,17 @@ export class TranslationOrchestrator {
 
     this.setState({ status: "pending", reason: "auto" });
 
-    try {
-      await this.deps.scheduleAutoTranslate();
-      this.deps.setFirstPlay(false);
-      this.reset();
-    } catch (err) {
-      this.setState({ status: "error", message: err });
-      throw err;
-    }
-  }
+try {
+  await this.deps.scheduleAutoTranslate();
+} catch (err) {
+  this.setState({ status: "error", message: err });
+  throw err;
+} finally {
+  this.deps.setFirstPlay(false);
+  this.reset();
+
+  queueMicrotask(() => {
+    void this.deps.enableSubtitlesForCurrentLangPair?.();
+  });
+} }
 }

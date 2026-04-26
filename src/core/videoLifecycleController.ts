@@ -9,6 +9,12 @@ import type { VideoData } from "../videoHandler/shared";
 import { findConnectedContainerBySelector } from "./containerResolution";
 import { hideLifecycleOverlay, resetAndHideLifecycle } from "./lifecycleShared";
 
+function isVkProbeHost(): boolean {
+  return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
+    String(globalThis.location.hostname || ""),
+  );
+}
+
 interface LifecycleOverlayView {
   votButton: { container: HTMLElement; opacity: number };
   votMenu: { container: HTMLElement; hidden: boolean };
@@ -111,6 +117,16 @@ export class VideoLifecycleController {
     this.host.queueOverlayAutoHide?.();
   }
 
+  private hasResolvableMediaSource(): boolean {
+    const { video } = this.host;
+    if (video.currentSrc || video.src || video.srcObject) {
+      return true;
+    }
+
+    const source = video.querySelector("source");
+    return Boolean(source?.getAttribute("src") || source?.src);
+  }
+
   teardown() {
     this.setCanPlayRequested = false;
     this.invalidateActiveSession("teardown");
@@ -196,6 +212,7 @@ export class VideoLifecycleController {
       debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
         sourceKey,
       });
+      await this.runAutoSubtitlesIfEnabled(this.lifecycleGeneration);
       return;
     }
 
@@ -208,9 +225,17 @@ export class VideoLifecycleController {
         err,
       );
       this.host.videoData = undefined;
-      hideLifecycleOverlay(this.host.uiManager.votOverlayView, {
-        hideMenu: true,
-      });
+      if (this.hasResolvableMediaSource()) {
+        debug.log(
+          `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
+          { sourceKey },
+        );
+        this.showOverlayButton(this.host.uiManager.votOverlayView);
+      } else {
+        hideLifecycleOverlay(this.host.uiManager.votOverlayView, {
+          hideMenu: true,
+        });
+      }
       return;
     }
 
@@ -223,6 +248,17 @@ export class VideoLifecycleController {
     }
 
     this.host.videoData = nextVideoData;
+    if (isVkProbeHost()) {
+      console.log("[VOT][VK probe] videoData", {
+        videoId: nextVideoData?.videoId,
+        host: nextVideoData?.host,
+        url: nextVideoData?.url,
+        duration: nextVideoData?.duration,
+        subtitles: Array.isArray(nextVideoData?.subtitles)
+          ? nextVideoData.subtitles.length
+          : null,
+      });
+    }
     this.activeSetCanPlaySourceKey = sourceKey;
     const currentId = this.startSession(`setCanPlay (source: ${sourceKey})`);
     debug.log(`[VideoLifecycle][session:${currentId}] setCanPlay started`, {
@@ -239,9 +275,15 @@ export class VideoLifecycleController {
         return;
       }
 
+      await this.host.translationOrchestrator.runAutoTranslationIfEligible();
+
+console.warn("[VOT][lifecycle] after auto translation, before subtitles", {
+  autoSubtitles: this.host.data.autoSubtitles,
+  videoId: this.host.videoData?.videoId,
+});
+
       const autoSubtitlesPromise = this.runAutoSubtitlesIfEnabled(currentId);
 
-      await this.host.translationOrchestrator.runAutoTranslationIfEligible();
       if (this.isStale(currentId)) {
         debug.log(
           `[VideoLifecycle][session:${currentId}] auto-translation result ignored (stale session)`,
@@ -264,20 +306,26 @@ export class VideoLifecycleController {
     }
   }
 
-  private async runAutoSubtitlesIfEnabled(sessionId: number): Promise<void> {
-    if (!this.host.data.autoSubtitles || !this.host.videoData?.videoId) {
-      return;
-    }
+private async runAutoSubtitlesIfEnabled(sessionId: number): Promise<void> {
+  console.warn("[VOT][lifecycle] runAutoSubtitlesIfEnabled", {
+    autoSubtitles: this.host.data.autoSubtitles,
+    videoId: this.host.videoData?.videoId,
+    sessionId,
+  });
 
-    try {
-      await this.host.enableSubtitlesForCurrentLangPair();
-    } catch (err) {
-      debug.log(
-        `[VideoLifecycle][session:${sessionId}] auto-subtitles failed`,
-        err,
-      );
-    }
+  if (!this.host.data.autoSubtitles || !this.host.videoData?.videoId) {
+    return;
   }
+
+  try {
+    await this.host.enableSubtitlesForCurrentLangPair();
+  } catch (err) {
+    debug.log(
+      `[VideoLifecycle][session:${sessionId}] auto-subtitles failed`,
+      err,
+    );
+  }
+}
 
   async handleSrcChanged(callId?: number, expectedSourceKey?: string) {
     const sessionId =
@@ -327,9 +375,17 @@ export class VideoLifecycleController {
 
     if (!this.host.videoData?.videoId) {
       debug.log(
-        `[VideoLifecycle][session:${sessionId}] No videoId resolved, hiding overlay`,
+        `[VideoLifecycle][session:${sessionId}] No videoId resolved`,
       );
-      hideLifecycleOverlay(overlayView, { hideMenu: true });
+      if (this.hasResolvableMediaSource()) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
+          { sourceKey },
+        );
+        this.showOverlayButton(overlayView);
+      } else {
+        hideLifecycleOverlay(overlayView, { hideMenu: true });
+      }
       return;
     }
 

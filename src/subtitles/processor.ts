@@ -130,6 +130,63 @@ const pickDescriptorFromVideoData = (
   return list[0] ?? null;
 };
 
+type ExtendedSubtitlesClient = SubtitlesClient & {
+  getSubtitlesYAImpl?: (args: {
+    videoData: VideoDataForSubtitles;
+    requestLang?: string;
+    headers?: Record<string, string>;
+  }) => Promise<SubtitlesResponsePayload>;
+  isDirectMediaUrl?: (url: string) => boolean;
+};
+
+const normalizeSubtitlesVideoUrl = (rawUrl: string): string => {
+  try {
+    return new URL(rawUrl, globalThis.location.href).toString();
+  } catch {
+    return String(rawUrl || "");
+  }
+};
+
+const isCrossOriginDirectMediaUrl = (
+  client: ExtendedSubtitlesClient,
+  rawUrl: string,
+): boolean => {
+  const normalizedUrl = normalizeSubtitlesVideoUrl(rawUrl);
+  if (!normalizedUrl) {
+    return false;
+  }
+
+  try {
+    if (typeof client.isDirectMediaUrl === "function") {
+      if (!client.isDirectMediaUrl(normalizedUrl)) {
+        return false;
+      }
+    } else {
+      return false;
+    }
+
+    return new URL(normalizedUrl).hostname !== globalThis.location.hostname;
+  } catch {
+    return false;
+  }
+};
+
+const shouldPreferYandexSubtitlesFlow = (
+  client: ExtendedSubtitlesClient,
+  videoData: VideoDataForSubtitles,
+): boolean => {
+  try {
+    const host = String(videoData?.host || globalThis.location?.hostname || "");
+    if (host === "custom") {
+      return true;
+    }
+
+    return isCrossOriginDirectMediaUrl(client, videoData?.url);
+  } catch {
+    return true;
+  }
+};
+
 const appendYoutubePoTokenParams = (inputUrl: string): string => {
   const poToken = YoutubeHelper.getPoToken();
   if (!poToken) return inputUrl;
@@ -705,7 +762,7 @@ const normalizeFetchedSubtitles = (
   }
 
   const normalized = ensureProcessedSubtitles(rawSubtitles);
-  if (descriptor.source === "vk") {
+  if (descriptor.source === "vk" && descriptor.format === "json") {
     return SubtitlesProcessor.cleanJsonSubtitles(normalized);
   }
   return sortProcessedSubtitles(normalized);
@@ -999,8 +1056,26 @@ export const SubtitlesProcessor = {
         requestLang: requestLang as SubtitlesRequestPayload["requestLang"],
       };
 
+      const extendedClient = client as ExtendedSubtitlesClient;
+      const preferYandexSubtitlesFlow = shouldPreferYandexSubtitlesFlow(
+        extendedClient,
+        videoData,
+      );
+      const subtitlesRequest =
+        preferYandexSubtitlesFlow &&
+        typeof extendedClient.getSubtitlesYAImpl === "function"
+          ? extendedClient.getSubtitlesYAImpl({
+              videoData: {
+                ...videoData,
+                url: normalizeSubtitlesVideoUrl(videoData.url),
+              },
+              requestLang,
+              headers: {},
+            })
+          : client.getSubtitles(requestPayload);
+
       const response = await Promise.race([
-        client.getSubtitles(requestPayload),
+        subtitlesRequest,
         timeout(5000, "Timeout"),
       ]);
 

@@ -6,6 +6,7 @@ import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { ClientSession, SessionModule } from "@vot.js/shared/types/secure";
 import Chaimu from "chaimu/client";
 import { initAudioContext } from "chaimu/player";
+
 import { getOrCreateBootState } from "./bootstrap/bootState";
 import { ensureRuntimeActivated } from "./bootstrap/runtimeActivation";
 import { bindObserverListeners } from "./bootstrap/videoObserverBinding";
@@ -15,10 +16,13 @@ import {
   votBackendUrl,
   workerHost,
 } from "./config/config";
+import { extraSites } from "./config/extraSites";
+import { GENERIC_PLAYER_SELECTOR } from "./config/playerSelectors";
 import { resolveBootstrapMode } from "./core/bootstrapPolicy";
 import { CacheManager, VOTSessionStorageCache } from "./core/cacheManager";
 import { findConnectedContainerBySelector } from "./core/containerResolution";
 import { resolveOverlayMountTargets } from "./core/overlayMountTargets";
+import { getTunnelPlayerContext } from "./core/tunnelPlayer";
 import { VOTTranslationHandler } from "./core/translationHandler";
 import { TranslationOrchestrator } from "./core/translationOrchestrator";
 import { VideoLifecycleController } from "./core/videoLifecycleController";
@@ -43,6 +47,7 @@ import {
   createIntervalIdleChecker,
   type IntervalIdleChecker,
 } from "./utils/intervalIdleChecker";
+import { installManifestSniffer } from "./utils/manifestSniffer";
 import { Notifier } from "./utils/notify";
 import { translate } from "./utils/translateApis";
 import {
@@ -83,13 +88,19 @@ import {
   updateSubtitlesLangSelect as updateSubtitlesLangSelectImpl,
 } from "./videoHandler/modules/subtitles";
 import {
+  applyManualVideoVolumeOverride as applyManualVideoVolumeOverrideImpl,
+  clearPendingAutoplayRecovery as clearPendingAutoplayRecoveryImpl,
   handleProxySettingsChanged as handleProxySettingsChangedImpl,
+  isAwaitingAutoplayRecovery as isAwaitingAutoplayRecoveryImpl,
   isMultiMethodS3 as isMultiMethodS3Impl,
   isYouTubeHosts as isYouTubeHostsImpl,
+  primePlaybackByGesture as primePlaybackByGestureImpl,
   proxifyAudio as proxifyAudioImpl,
   refreshTranslationAudio as refreshTranslationAudioImpl,
+  resumePendingAutoplayRecovery as resumePendingAutoplayRecoveryImpl,
   scheduleTranslationRefresh as scheduleTranslationRefreshImpl,
   setupAudioSettings as setupAudioSettingsImpl,
+  syncTranslationPlaybackVolume as syncTranslationPlaybackVolumeImpl,
   stopSmartVolumeDucking as stopSmartVolumeDuckingImpl,
   translateFunc as translateFuncImpl,
   unproxifyAudio as unproxifyAudioImpl,
@@ -220,6 +231,12 @@ export class VideoHandler {
 
   activeTranslation: { key: string; promise: Promise<unknown> } | null = null;
   lastTranslationVideoId: string | null = null;
+  externalTranslationSourceUrl: string | null = null;
+  pendingAutoplayRecovery:
+    | { gen: number; videoId: string; sourceUrl: string; createdAt: number }
+    | null = null;
+  pendingAutoplayRecoveryAbortController?: AbortController;
+  pendingAutoplayRecoveryPromise: Promise<boolean> | null = null;
   /**
    * In-flight async teardown for translation/audio player cleanup.
    * New translation starts should wait for this to avoid clear/init races.
@@ -377,6 +394,22 @@ export class VideoHandler {
     responseLanguage: string,
   ): string {
     return `${videoId}_${detectedLanguage}_${responseLanguage}_${Boolean(this.data?.useLivelyVoice)}`;
+  }
+
+  getPreferredSubtitlesLanguage(
+    detectedLanguage: string = this.videoData?.detectedLanguage ?? "auto",
+    responseLanguage: string = this.videoData?.responseLanguage ??
+      this.translateToLang,
+  ): string | undefined {
+    const normalize = (value?: string): string | undefined => {
+      const nextValue = String(value || "").trim().toLowerCase();
+      if (!nextValue || nextValue === "auto") {
+        return undefined;
+      }
+      return nextValue;
+    };
+
+    return normalize(responseLanguage) ?? normalize(detectedLanguage);
   }
 
   isActionStale(actionContext?: { gen: number; videoId: string }): boolean {
@@ -585,9 +618,11 @@ export class VideoHandler {
   getSubtitlesWidget() {
     if (!this.subtitlesWidget) {
       const { subtitlesMountContainer } = this.getOverlayMountPoints();
+      const widgetContainer =
+        this.uiManager.votOverlayView?.root ?? subtitlesMountContainer;
       this.subtitlesWidget = new SubtitlesWidget(
         this.video,
-        subtitlesMountContainer,
+        widgetContainer,
         this.interactionChecker,
         this.tooltipLayoutRoot,
       );
@@ -677,10 +712,11 @@ export class VideoHandler {
    */
   getEventContainer() {
     if (!this.site.eventSelector) return this.container;
-    return (
-      (document.querySelector(this.site.eventSelector) as HTMLElement | null) ??
-      this.container
+    const matched = findConnectedContainerBySelector(
+      this.video,
+      this.site.eventSelector,
     );
+    return matched ?? this.container;
   }
 
   /**
@@ -722,9 +758,20 @@ export class VideoHandler {
 getPreferAudio() {
   const hasAudioContext = Boolean(this.getAudioContext());
   const data = this.data;
+  const tunnelContext = getTunnelPlayerContext();
 
   if (!hasAudioContext) return true;
   if (!data) return true;
+
+  // Generic/custom players are more reliable with a plain HTMLAudioElement
+  // than with the WebAudio decode path, especially in Firefox and in embedded
+  // cross-origin player contexts.
+  if (this.site.host === "custom" || this.videoData?.host === "custom") {
+    if (tunnelContext) {
+      return true;
+    }
+    return true;
+  }
 
   if (this.site.needBypassCSP) return false;
 
@@ -752,6 +799,12 @@ getPreferAudio() {
       },
       preferAudio,
     });
+    if (
+      preferAudio &&
+      (this.site.host === "custom" || this.videoData?.host === "custom")
+    ) {
+      this.audioPlayer.audioContext = undefined;
+    }
     return this;
   }
 
@@ -957,7 +1010,25 @@ getPreferAudio() {
    * @returns {boolean} True if the extension audio player has active audio source
    */
   hasActiveSource() {
-    return !!this.audioPlayer?.player?.src;
+    return Boolean(
+      this.audioPlayer?.player?.src || this.externalTranslationSourceUrl,
+    );
+  }
+
+  isAwaitingAutoplayRecovery(): boolean {
+    return this.callModule(isAwaitingAutoplayRecoveryImpl);
+  }
+
+  clearPendingAutoplayRecovery(resetUi = false): void {
+    this.callModule(clearPendingAutoplayRecoveryImpl, resetUi);
+  }
+
+  resumePendingAutoplayRecovery(trigger = "manual"): Promise<boolean> {
+    return this.callModuleAsync(resumePendingAutoplayRecoveryImpl, trigger);
+  }
+
+  primePlaybackByGesture(trigger = "manual"): Promise<void> {
+    return this.callModuleAsync(primePlaybackByGestureImpl, trigger);
   }
 
   /**
@@ -1326,6 +1397,8 @@ getPreferAudio() {
     }
 
     const cleanup = async () => {
+      this.clearPendingAutoplayRecovery();
+      this.externalTranslationSourceUrl = null;
       if (this.audioPlayer?.player) {
         try {
           this.audioPlayer.player.removeVideoEvents();
@@ -1523,6 +1596,7 @@ getPreferAudio() {
       "afterUpdateTranslation downloadTranslationUrl",
       this.downloadTranslationUrl,
     );
+    this.syncTranslationPlaybackVolume();
     this.syncPopupOverlayState({
       status: isSuccess ? "success" : "none",
       label: isSuccess ? "Turn off" : localizationProvider.get("translateVideo"),
@@ -1532,6 +1606,31 @@ getPreferAudio() {
         ? "Translated audio is ready for download."
         : "Waiting for translated audio.",
     });
+
+    if (isSuccess && this.site.host === "vk" && this.videoData?.videoId) {
+      const vkSubtitlesCacheKey = this.getSubtitlesCacheKey(
+        this.videoData.videoId,
+        this.videoData.detectedLanguage,
+        this.videoData.responseLanguage,
+      );
+      this.cacheManager.deleteSubtitles(vkSubtitlesCacheKey);
+      this.subtitles = [];
+      this.subtitlesCacheKey = null;
+      void (async () => {
+        try {
+          await this.loadSubtitles();
+          if (this.data?.autoSubtitles) {
+            await this.enableSubtitlesForCurrentLangPair();
+          }
+        } catch (error) {
+          debug.log("[VOT][VK subtitles] failed to refresh after translation", {
+            error,
+            videoId: this.videoData?.videoId,
+          });
+        }
+      })();
+    }
+
     if (this.data?.sendNotifyOnComplete && this.hadAsyncWait && isSuccess) {
       this.notifier.translationCompleted(globalThis.location.hostname);
       this.hadAsyncWait = false;
@@ -1628,12 +1727,41 @@ getPreferAudio() {
     return this.callModule(isYouTubeHostsImpl);
   }
   canUploadAudioForCurrentSite(): boolean {
+    const host = this.site.host;
+    const rawUrl = String(
+      this.videoData?.url || this.video?.currentSrc || this.video?.src || "",
+    );
+    debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
+
+    const canForceLocalFileUpload = (() => {
+      if (!rawUrl) {
+        return host === "custom" || this.videoData?.host === "custom";
+      }
+
+      try {
+        const normalizedUrl = new URL(rawUrl, globalThis.location.href).toString();
+
+        if (!this.votClient.isDirectMediaUrl(normalizedUrl)) {
+          return host === "custom" || this.videoData?.host === "custom";
+        }
+
+        return (
+          host === "custom" ||
+          this.videoData?.host === "custom" ||
+          new URL(normalizedUrl).hostname !== globalThis.location.hostname
+        );
+      } catch {
+        return host === "custom" || this.videoData?.host === "custom";
+      }
+    })();
+
+    if (canForceLocalFileUpload) {
+      return true;
+    }
+
     if (!this.data?.useAudioDownload) {
       return false;
     }
-
-    const host = this.site.host;
-    debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
 
     return (
       host === "youtube" ||
@@ -1648,6 +1776,14 @@ getPreferAudio() {
    */
   setupAudioSettings() {
     return this.callModule(setupAudioSettingsImpl);
+  }
+
+  syncTranslationPlaybackVolume(): void {
+    return this.callModule(syncTranslationPlaybackVolumeImpl);
+  }
+
+  applyManualVideoVolumeOverride(volume: number): void {
+    return this.callModule(applyManualVideoVolumeOverrideImpl, volume);
   }
 
   /**
@@ -1842,10 +1978,56 @@ function logBootstrap(
   console.log(`[VOT][bootstrap][${ctx.frame}] ${message}`, payload);
 }
 
+function matchSite(entry: ServiceConf, url: URL): boolean {
+  const host = url.hostname;
+
+  const isMatches = (match: unknown): boolean => {
+    if (match instanceof RegExp) return match.test(host);
+    if (typeof match === "string") return host.includes(match);
+    if (typeof match === "function") {
+      try {
+        return Boolean(match(url));
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  };
+
+  return Array.isArray(entry.match)
+    ? entry.match.some(isMatches)
+    : isMatches(entry.match);
+}
+
+
 function getServicesCached(): ServiceConf[] {
   if (!servicesCache) {
-    servicesCache = getService();
+    const base = getService();
+    const url = new URL(globalThis.location.href);
+
+    const matchedBase = base.filter((site) => matchSite(site, url));
+    const matchedExtra = extraSites.filter((site) => matchSite(site, url));
+
+    servicesCache = [...matchedExtra, ...matchedBase];
+
+    const genericFallbackService = {
+      host: "custom",
+      url: "stub",
+      selector: GENERIC_PLAYER_SELECTOR,
+      eventSelector: GENERIC_PLAYER_SELECTOR,
+      rawResult: true,
+      priority: -1000,
+    } as ServiceConf;
+
+    const hasGenericFallback = servicesCache.some(
+      (site) => String(site.host) === "custom" && site.selector === GENERIC_PLAYER_SELECTOR,
+    );
+
+    if (!hasGenericFallback) {
+      servicesCache.push(genericFallbackService);
+    }
   }
+
   return servicesCache;
 }
 
@@ -1860,20 +2042,26 @@ function findContainer(
   video: HTMLVideoElement,
 ): HTMLElement | null {
   debug.log("findContainer", site, video);
-  if (!site.selector) {
-    debug.log("findContainer without selector, using parentElement");
-    return video.parentElement;
+
+  if (site.selector) {
+    const matched = findConnectedContainerBySelector(video, site.selector);
+    if (matched) {
+      debug.log("findContainer matched by site.selector", matched);
+      return matched;
+    }
   }
 
-  const matched = findConnectedContainerBySelector(video, site.selector);
-
-  if (site.shadowRoot) {
-    debug.log("findContainer with site.shadowRoot", matched);
-  } else {
-    debug.log("findContainer without shadowRoot", matched);
+  const genericMatched = findConnectedContainerBySelector(
+    video,
+    GENERIC_PLAYER_SELECTOR,
+  );
+  if (genericMatched) {
+    debug.log("findContainer matched by generic selector", genericMatched);
+    return genericMatched;
   }
 
-  return matched;
+  debug.log("findContainer fallback to parentElement");
+  return video.parentElement;
 }
 
 /**
@@ -1881,6 +2069,7 @@ function findContainer(
  */
 async function main(): Promise<void> {
   await persistGoogleDriveTopFrameTitleIfNeeded();
+  installManifestSniffer();
   const iframeMode = isIframe();
   const bootstrapMode = resolveBootstrapMode({
     isIframe: isIframe(),
@@ -1893,10 +2082,25 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (iframeMode && document.visibilityState === "hidden") {
-    logBootstrap("Skipping hidden iframe bootstrap");
-    return;
-  } 
+if (iframeMode && document.visibilityState === "hidden") {
+  logBootstrap("Hidden iframe detected; delaying bootstrap until visible");
+
+  await new Promise<void>((resolve) => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "hidden") {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        resolve();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    setTimeout(() => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      resolve();
+    }, 1500);
+  });
+}
 
   logBootstrap("Loading extension");
   if (bootstrapMode === "top-full") {

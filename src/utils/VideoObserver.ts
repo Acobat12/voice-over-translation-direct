@@ -275,11 +275,25 @@ export class VideoObserver {
     return true;
   }
 
+  private isVkLikeVideo(video: HTMLVideoElement): boolean {
+    const hostname = String(globalThis.location?.hostname || "");
+    const sourceUrl = String(video.currentSrc || video.src || "");
+
+    return (
+      /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$|(?:^|\.)okcdn\.ru$/i.test(
+        hostname,
+      ) ||
+      /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru|vk\.(?:com|ru)/i.test(
+        sourceUrl,
+      )
+    );
+  }
+
   private isValidVideo(video: HTMLVideoElement): boolean {
     if (this.isAdRelated(video)) return false;
     if (this.isInsideAd(video)) return false;
 
-    if (!this.hasAudio(video)) {
+    if (!this.hasAudio(video) && !this.isVkLikeVideo(video)) {
       debug.log("Ignoring video without audio:", video);
       return false;
     }
@@ -374,16 +388,42 @@ export class VideoObserver {
       }
     };
 
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+    const hasInitialMediaState =
+      video.readyState >= HTMLMediaElement.HAVE_METADATA ||
+      Boolean(video.currentSrc || video.src || video.srcObject);
+
+    if (hasInitialMediaState) {
       tryValidate();
     } else {
+      video.addEventListener("loadedmetadata", tryValidate, {
+        once: true,
+        signal: listenerSignal,
+      });
+
       video.addEventListener("loadeddata", tryValidate, {
         once: true,
         signal: listenerSignal,
       });
 
+      video.addEventListener("canplay", tryValidate, {
+        once: true,
+        signal: listenerSignal,
+      });
+
+      video.addEventListener("playing", tryValidate, {
+        once: true,
+        passive: true,
+        signal: listenerSignal,
+      });
+
+      video.addEventListener("timeupdate", tryValidate, {
+        once: true,
+        passive: true,
+        signal: listenerSignal,
+      });
+
       const handlePlay = () => {
-        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
           tryValidate();
         }
       };
@@ -399,6 +439,16 @@ export class VideoObserver {
       () => {
         if (!video.isConnected) {
           this.untrackVideo(video);
+        }
+      },
+      { passive: true, signal: listenerSignal },
+    );
+
+    video.addEventListener(
+      "durationchange",
+      () => {
+        if (!this.activeVideos.has(video)) {
+          tryValidate();
         }
       },
       { passive: true, signal: listenerSignal },

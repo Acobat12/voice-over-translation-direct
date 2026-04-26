@@ -68,7 +68,7 @@ export async function init(this: VideoHandler) {
     sendNotifyOnComplete: false,
     subtitlesMaxLength: 300,
     subtitlesSmartLayout: true,
-    highlightWords: false,
+    highlightWords: true,
     subtitlesFontSize: 20,
     subtitlesFontFamily: "default-sans",
     subtitlesOpacity: 20,
@@ -309,6 +309,10 @@ export async function init(this: VideoHandler) {
 
   this.translateToLang = this.data.responseLanguage ?? "ru";
   this.initExtraEvents();
+
+  if (this.site.host === "custom") {
+    this.overlayVisibility?.queueAutoHide();
+  }
 
   this.initialized = true;
 }

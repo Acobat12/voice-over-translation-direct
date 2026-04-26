@@ -122,6 +122,7 @@ type YandexDiskResolvedTarget = {
   url: string;
   videoId: string;
   host?: VideoData["host"];
+  title?: string;
 };
 
 export class VOTTranslationHandler {
@@ -130,44 +131,188 @@ export class VOTTranslationHandler {
   downloading: boolean;
   private readonly downloadWaiters = new Set<DownloadWaiter>();
 
-private normalizeUrlForRequest(raw: string): string {
-  try {
-    return new URL(raw, globalThis.location.href).toString();
-  } catch {
-    return String(raw || "");
-  }
-}
-
-  // Avoid spamming the fail-audio-js fallback for the same video URL.
-  // In normal operation we should upload audio from the direct ytAudio path.
   private readonly requestedFailAudio = new Set<string>();
-private isDirectResolvedUploadVideoData(
-  data: VideoData | undefined,
-): data is VideoData {
-  if (!data) {
-    return false;
+  private activeTranslationUrl?: string;
+  private activeYandexDiskResolvedVideoData?: VideoData;
+
+  constructor(videoHandler: VideoHandler) {
+    this.videoHandler = videoHandler;
+
+    const strategy =
+      this.videoHandler.site.host === "youtube"
+        ? "ytAudio"
+        : this.videoHandler.site.host === "yandexdisk"
+          ? "yandexDisk"
+          : this.videoHandler.site.host === "custom"
+            ? "localFile"
+            : "ytAudio";
+
+    this.audioDownloader = new AudioDownloader(strategy as any);
+    this.downloading = false;
+
+    this.audioDownloader
+      .addEventListener("downloadedAudio", this.onDownloadedAudio)
+      .addEventListener("downloadedPartialAudio", this.onDownloadedPartialAudio)
+      .addEventListener("downloadAudioError", this.onDownloadAudioError);
   }
 
-  const rawUrl = String(data.url || "");
-  if (!rawUrl.length || this.isYandexDiskDownloadUrl(rawUrl)) {
-    return false;
-  }
-
-  if (data.host === "yandexdisk") {
-    return true;
-  }
-
-  if (data.host === "custom") {
+  private normalizeUrlForRequest(raw: string): string {
     try {
-      return this.videoHandler.votClient.isDirectMediaUrl(rawUrl);
+      return new URL(raw, globalThis.location.href).toString();
+    } catch {
+      return String(raw || "");
+    }
+  }
+
+  private normalizeOdyseeDirectUrl(url: string): string {
+    try {
+      if (!url) {
+        return url;
+      }
+
+      const m = url.match(
+        /^https:\/\/player\.odycdn\.com\/api\/v3\/streams\/free\/[^/]+\/([a-f0-9]+)\/([^/?#]+\.mp4)(?:[?#].*)?$/i,
+      );
+
+      if (m) {
+        const claimId = m[1];
+        const fileName = m[2];
+        return `https://player.odycdn.com/v6/streams/${claimId}/${fileName}`;
+      }
+    } catch {
+      // ignore
+    }
+
+    return url;
+  }
+
+  private getCurrentMediaRequestUrl(videoData?: VideoData): string {
+    return this.normalizeUrlForRequest(
+      String(
+        videoData?.url ||
+          this.videoHandler.video?.currentSrc ||
+          this.videoHandler.video?.src ||
+          globalThis.location.href,
+      ),
+    );
+  }
+
+  private isDirectMediaUrlCandidate(url: string): boolean {
+    if (!url) {
+      return false;
+    }
+
+    try {
+      return this.videoHandler.votClient.isDirectMediaUrl(url);
     } catch {
       return false;
     }
   }
 
-  return false;
-}
-  private activeTranslationUrl?: string;
+  private isCrossOriginMediaUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url, globalThis.location.href);
+      return parsed.hostname !== globalThis.location.hostname;
+    } catch {
+      return false;
+    }
+  }
+
+  private shouldUseLocalFileWorkflow(videoData?: VideoData): boolean {
+    if (!videoData) {
+      return false;
+    }
+
+    const url = this.getCurrentMediaRequestUrl(videoData);
+    if (!this.isDirectMediaUrlCandidate(url)) {
+      return false;
+    }
+
+    if (
+      this.videoHandler.site.host === "custom" ||
+      videoData.host === "custom"
+    ) {
+      return true;
+    }
+
+    return this.isCrossOriginMediaUrl(url);
+  }
+
+  private buildLocalFileWorkflowVideoData(videoData: VideoData): VideoData {
+    let url = this.getCurrentMediaRequestUrl(videoData);
+
+    if (
+      this.videoHandler.site.host === "odysee" ||
+      videoData.host === "odysee"
+    ) {
+      url = this.normalizeUrlForRequest(this.normalizeOdyseeDirectUrl(url));
+    }
+
+    const videoId =
+      typeof videoData.videoId === "string" && videoData.videoId.trim().length > 0
+        ? videoData.videoId
+        : url;
+
+    return {
+      ...videoData,
+      host: "custom",
+      url,
+      videoId,
+    };
+  }
+
+  private updateAudioDownloaderStrategy(videoData?: VideoData): void {
+    const useLocalFileWorkflow =
+      this.videoHandler.site.host === "custom" ||
+      videoData?.host === "custom" ||
+      this.shouldUseLocalFileWorkflow(videoData);
+
+    const nextStrategy =
+      useLocalFileWorkflow
+        ? "localFile"
+        : this.videoHandler.site.host === "yandexdisk"
+          ? "yandexDisk"
+          : "ytAudio";
+
+    if (this.audioDownloader.strategy === nextStrategy) {
+      return;
+    }
+
+    this.audioDownloader.strategy = nextStrategy;
+    console.log("[VOT][audio] switched downloader strategy", {
+      siteHost: this.videoHandler.site.host,
+      videoHost: videoData?.host,
+      strategy: nextStrategy,
+      url: videoData?.url,
+    });
+  }
+
+  private isDirectResolvedUploadVideoData(
+    data: VideoData | undefined,
+  ): data is VideoData {
+    if (!data) {
+      return false;
+    }
+
+    const rawUrl = String(data.url || "");
+    if (!rawUrl.length || this.isYandexDiskDownloadUrl(rawUrl)) {
+      return false;
+    }
+
+    if (data.host === "yandexdisk") {
+      return true;
+    }
+
+    if (data.host === "custom") {
+      try {
+        return this.videoHandler.votClient.isDirectMediaUrl(rawUrl);
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
 
   private parseYandexDiskUrl(rawUrl: string): {
     mode: "file" | "folderRoot" | "folderFile" | "unknown";
@@ -277,586 +422,685 @@ private isDirectResolvedUploadVideoData(
     }
   }
 
-private extractYandexDiskPublicTarget(
-  value: string,
-): YandexDiskResolvedTarget | null {
-  try {
-    const parsed = new URL(value, globalThis.location.href);
-    const pathname = parsed.pathname || "/";
-    const origin = "https://disk.yandex.com";
-
-    const inlineMatch = pathname.match(/^\/i\/([^/?#]+)$/i);
-    if (inlineMatch) {
-      return {
-        url: `${origin}/i/${inlineMatch[1]}`,
-        videoId: `/i/${inlineMatch[1]}`,
-      };
-    }
-
-    const publicFileMatch = pathname.match(/^\/d\/([^/?#]+)\/?$/i);
-    if (publicFileMatch) {
-      return {
-        url: `${origin}/d/${publicFileMatch[1]}`,
-        videoId: `/d/${publicFileMatch[1]}`,
-      };
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-private extractYandexDiskPublicTargetFromMedia(): YandexDiskResolvedTarget | null {
-  const tryValue = (value: string): YandexDiskResolvedTarget | null =>
-    this.extractYandexDiskPublicTarget(String(value || ""));
-
-  const href = String(globalThis.location.href || "");
-  const locationParsed = this.parseYandexDiskUrl(href);
-
-  // Только /i/... можно безопасно брать из location.
-  if (locationParsed.mode === "file" && locationParsed.fileId) {
-    return {
-      url: `${locationParsed.origin}/i/${locationParsed.fileId}`,
-      videoId: locationParsed.fileId,
-    };
-  }
-
-  const videos = Array.from(document.querySelectorAll("video"));
-  for (const video of videos) {
-    const htmlVideo = video as HTMLVideoElement;
-    const candidates = [
-      htmlVideo.currentSrc || "",
-      htmlVideo.src || "",
-      htmlVideo.getAttribute("src") || "",
-    ];
-
-    for (const candidate of candidates) {
-      const target = tryValue(candidate);
-      if (target) {
-        return target;
-      }
-    }
-
-    const sources = Array.from(video.querySelectorAll("source"));
-    for (const source of sources) {
-      const target = tryValue(source.getAttribute("src") || "");
-      if (target) {
-        return target;
-      }
-    }
-  }
-
-  return null;
-}
-private isYandexDiskFolderRootTarget(
-  target: YandexDiskResolvedTarget,
-  parsed: ReturnType<VOTTranslationHandler["parseYandexDiskUrl"]>,
-): boolean {
-  if (!parsed.folderId) {
-    return false;
-  }
-
-  const folderRootUrl = `${parsed.origin}/d/${parsed.folderId}`;
-  return (
-    target.videoId === parsed.folderId ||
-    target.url === folderRootUrl
-  );
-}
-private async gmGetJson(url: string): Promise<any> {
-  return new Promise((resolve, reject) => {
-    GM_xmlhttpRequest({
-      method: "GET",
-      url,
-      headers: {
-        Accept: "application/json",
-      },
-      onload: (res) => {
-        try {
-          console.log("[VOT][yandexdisk] GM response", {
-            url,
-            status: res.status,
-            responseText: String(res.responseText || "").slice(0, 1000),
-          });
-
-          resolve(JSON.parse(res.responseText || "null"));
-        } catch (error) {
-          reject(error);
-        }
-      },
-      onerror: (error) => reject(error),
-      ontimeout: () => reject(new Error("Yandex Disk public API timeout")),
-    });
-  });
-}
-
-
-private getYandexDiskServiceVideoId(
-  url: string,
-  fallbackPath?: string,
-): string {
-  try {
-    const parsed = new URL(url, globalThis.location.href);
-    const pathname = parsed.pathname || "";
-
-    if (/^\/i\/[^/]+$/i.test(pathname)) {
-      return pathname;
-    }
-
-    if (/^\/d\/.+$/i.test(pathname)) {
-      return pathname;
-    }
-  } catch {
-    // ignore
-  }
-
-  return fallbackPath || String(url || "");
-}
-
-private extractDirectMediaTargetFromVideo(): YandexDiskResolvedTarget | null {
-  const video = document.querySelector("video");
-
-  if (!(video instanceof HTMLVideoElement)) {
-    return null;
-  }
-
-  const candidates = [
-    video.currentSrc || "",
-    video.src || "",
-    video.getAttribute("src") || "",
-  ];
-
-  for (const candidate of candidates) {
-    const normalized = this.normalizeUrlForRequest(candidate);
-    if (!normalized) continue;
-
+  private extractYandexDiskPublicTarget(
+    value: string,
+  ): YandexDiskResolvedTarget | null {
     try {
-      if (this.videoHandler.votClient.isDirectMediaUrl(normalized)) {
+      const parsed = new URL(value, globalThis.location.href);
+      const pathname = parsed.pathname || "/";
+      const origin = "https://disk.yandex.com";
+
+      const inlineMatch = pathname.match(/^\/i\/([^/?#]+)$/i);
+      if (inlineMatch) {
         return {
-          url: normalized,
-          videoId: normalized,
-          host: "custom",
+          url: `${origin}/i/${inlineMatch[1]}`,
+          videoId: `/i/${inlineMatch[1]}`,
         };
+      }
+
+      const publicFileMatch = pathname.match(/^\/d\/([^/?#]+)\/?$/i);
+      if (publicFileMatch) {
+        return {
+          url: `${origin}/d/${publicFileMatch[1]}`,
+          videoId: `/d/${publicFileMatch[1]}`,
+        };
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractYandexDiskPublicTargetFromMedia(): YandexDiskResolvedTarget | null {
+    const tryValue = (value: string): YandexDiskResolvedTarget | null =>
+      this.extractYandexDiskPublicTarget(String(value || ""));
+
+    const href = String(globalThis.location.href || "");
+    const locationParsed = this.parseYandexDiskUrl(href);
+
+    if (locationParsed.mode === "file" && locationParsed.fileId) {
+      return {
+        url: `${locationParsed.origin}/i/${locationParsed.fileId}`,
+        videoId: locationParsed.fileId,
+      };
+    }
+
+    const videos = Array.from(document.querySelectorAll("video"));
+    for (const video of videos) {
+      const htmlVideo = video as HTMLVideoElement;
+      const candidates = [
+        htmlVideo.currentSrc || "",
+        htmlVideo.src || "",
+        htmlVideo.getAttribute("src") || "",
+      ];
+
+      for (const candidate of candidates) {
+        const target = tryValue(candidate);
+        if (target) {
+          return target;
+        }
+      }
+
+      const sources = Array.from(video.querySelectorAll("source"));
+      for (const source of sources) {
+        const target = tryValue(source.getAttribute("src") || "");
+        if (target) {
+          return target;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private isYandexDiskFolderRootTarget(
+    target: YandexDiskResolvedTarget,
+    parsed: ReturnType<VOTTranslationHandler["parseYandexDiskUrl"]>,
+  ): boolean {
+    if (!parsed.folderId) {
+      return false;
+    }
+
+    const folderRootUrl = `${parsed.origin}/d/${parsed.folderId}`;
+    return target.videoId === parsed.folderId || target.url === folderRootUrl;
+  }
+
+  private async gmGetJson(url: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url,
+        headers: {
+          Accept: "application/json",
+        },
+        onload: (res) => {
+          try {
+            console.log("[VOT][yandexdisk] GM response", {
+              url,
+              status: res.status,
+              responseText: String(res.responseText || "").slice(0, 1000),
+            });
+
+            resolve(JSON.parse(res.responseText || "null"));
+          } catch (error) {
+            reject(error);
+          }
+        },
+        onerror: (error) => reject(error),
+        ontimeout: () => reject(new Error("Yandex Disk public API timeout")),
+      });
+    });
+  }
+
+  private getYandexDiskServiceVideoId(
+    url: string,
+    fallbackPath?: string,
+  ): string {
+    try {
+      const parsed = new URL(url, globalThis.location.href);
+      const pathname = parsed.pathname || "";
+
+      if (/^\/i\/[^/]+$/i.test(pathname)) {
+        return pathname;
+      }
+
+      if (/^\/d\/.+$/i.test(pathname)) {
+        return pathname;
       }
     } catch {
       // ignore
     }
+
+    return fallbackPath || String(url || "");
   }
 
-  return null;
-}
-private async resolveYandexDiskFolderFileTargetViaApi(
-  parsed: ReturnType<VOTTranslationHandler["parseYandexDiskUrl"]>,
-): Promise<YandexDiskResolvedTarget | null> {
-  if (parsed.mode !== "folderFile" || !parsed.folderId) {
+  private extractBridgeDirectMediaTarget(): YandexDiskResolvedTarget | null {
+    try {
+      const raw =
+        (globalThis as Record<string, unknown>).__VOT_DIRECT_SOURCES__ ||
+        JSON.parse(document?.documentElement?.dataset?.votDirectSources || "null");
+
+      if (!raw || typeof raw !== "object") {
+        return null;
+      }
+
+      const bridgeData = raw as {
+        hlsUrl?: string;
+        dashUrl?: string;
+        mpegLowUrl?: string;
+        url?: string;
+        unitedVideoId?: string;
+        title?: string;
+      };
+
+      const candidates = [
+        bridgeData.hlsUrl,
+        bridgeData.dashUrl,
+        bridgeData.mpegLowUrl,
+        bridgeData.url,
+      ].filter((value): value is string => Boolean(value));
+
+      for (const candidate of candidates) {
+        const normalized = this.normalizeUrlForRequest(candidate);
+        if (!normalized) {
+          continue;
+        }
+
+        try {
+          if (this.videoHandler.votClient.isDirectMediaUrl(normalized)) {
+            return {
+              url: normalized,
+              videoId: String(bridgeData.unitedVideoId || normalized),
+              host: "custom",
+              title: bridgeData.title || "",
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     return null;
   }
 
-  const relativePathRaw = parsed.pathname.replace(/^\/d\/[^/]+/, "") || "/";
+  private extractDirectMediaTargetFromVideo(): YandexDiskResolvedTarget | null {
+    const video = document.querySelector("video");
 
-  let relativePath = relativePathRaw;
-  try {
-    relativePath = decodeURIComponent(relativePathRaw);
-  } catch {
-    relativePath = relativePathRaw;
-  }
-
-  const publicKey = `${parsed.origin}/d/${parsed.folderId}`;
-  const apiUrl = new URL("https://cloud-api.yandex.com/v1/disk/public/resources");
-
-  apiUrl.searchParams.set("public_key", publicKey);
-  apiUrl.searchParams.set("path", relativePath);
-
-  try {
-    const payload = await this.gmGetJson(apiUrl.toString());
-
-    console.log("[VOT][yandexdisk] public API payload", {
-      relativePathRaw,
-      relativePath,
-      publicKey,
-      type: payload?.type,
-      path: payload?.path,
-      name: payload?.name,
-      public_url: payload?.public_url,
-      short_url: payload?.short_url,
-      file: payload?.file,
-    });
-
-    if (!payload || typeof payload !== "object") {
-      return null;
-    }
-
-    if ("error" in payload && payload.error) {
-      console.log("[VOT][yandexdisk] public API returned error", {
-        error: payload.error,
-        message: payload.message,
-        description: payload.description,
-      });
+    if (!(video instanceof HTMLVideoElement)) {
       return null;
     }
 
     const candidates = [
-      payload.public_url,
-      payload.short_url,
-    ].filter((value): value is string => typeof value === "string" && value.length > 0);
-
-    for (const candidate of candidates) {
-      const target = this.extractYandexDiskPublicTarget(candidate);
-      if (!target) {
-        continue;
-      }
-
-      if (this.isYandexDiskFolderRootTarget(target, parsed)) {
-        console.log("[VOT][yandexdisk] skip folder-root target from API", {
-          target,
-          relativePath,
-        });
-        continue;
-      }
-
-      const serviceVideoId = this.getYandexDiskServiceVideoId(
-        target.url,
-        parsed.pathname,
-      );
-
-      console.log("[VOT][yandexdisk] public target from API", {
-        target,
-        candidate,
-        relativePath,
-        serviceVideoId,
-      });
-
-      return {
-        url: target.url,
-        videoId: serviceVideoId,
-      };
-    }
-    if (payload.type === "file" && typeof payload.file === "string" && payload.file) {
-      const directUrl = this.normalizeUrlForRequest(payload.file);
-
-      console.log("[VOT][yandexdisk] use direct file url from API", {
-        directUrl,
-        relativePath,
-      });
-
-      return {
-        url: directUrl,
-        videoId: directUrl,
-        host: "custom",
-      };
-    }
-    if (payload.type === "file") {
-      console.log("[VOT][yandexdisk] API did not return usable public target, continue fallback chain", {
-        public_url: payload.public_url,
-        short_url: payload.short_url,
-        file: payload.file,
-        relativePath,
-      });
-
-      return null;
-    }
-  } catch (error) {
-    console.log("[VOT][yandexdisk] failed to resolve public target via API", {
-      relativePathRaw,
-      relativePath,
-      publicKey,
-      error,
-    });
-  }
-
-  return null;
-}
-
-
-private isResolvedYandexDiskVideoData(videoData: VideoData): boolean {
-  if (videoData.host !== "yandexdisk") {
-    return false;
-  }
-
-  const rawUrl = String(videoData.url || "");
-  if (!rawUrl || this.isYandexDiskDownloadUrl(rawUrl)) {
-    return false;
-  }
-
-  const parsed = this.parseYandexDiskUrl(rawUrl);
-
-  // Готовыми считаем только:
-  // 1) /i/<id>
-  // 2) /d/<id> без вложенного пути
-  return (parsed.mode === "file" ||  parsed.mode === "folderRoot" ||  parsed.mode === "folderFile");
-}
-private isYandexDiskDownloadUrl(url: string): boolean {
-  try {
-    return new URL(url, globalThis.location.href).hostname === "downloader.disk.yandex.ru";
-  } catch {
-    return false;
-  }
-}
-
-private isYandexDiskStreamUrl(url: string): boolean {
-  return /^https:\/\/streaming\.disk\.yandex\.net\/.+\.m3u8(?:[?#].*)?$/i.test(
-    String(url || ""),
-  );
-}
-
-private extractYandexDiskStreamTargetFromPlayerState(): YandexDiskResolvedTarget | null {
-  const pick = (value: unknown): string | null => {
-    if (typeof value !== "string") {
-      return null;
-    }
-
-    const normalized = this.normalizeUrlForRequest(value);
-    return this.isYandexDiskStreamUrl(normalized) ? normalized : null;
-  };
-
-  const visited = new WeakSet<object>();
-
-  const scan = (value: unknown, depth: number): string | null => {
-    if (depth < 0) {
-      return null;
-    }
-
-    const direct = pick(value);
-    if (direct) {
-      return direct;
-    }
-
-    if (!value || typeof value !== "object") {
-      return null;
-    }
-
-    const obj = value as Record<string, unknown>;
-
-    if (visited.has(obj)) {
-      return null;
-    }
-    visited.add(obj);
-
-    const preferredKeys = [
-      "streamUrl",
-      "url",
-      "stream",
-      "streams",
-      "source",
-      "sources",
-      "controller",
-      "state",
-      "playerState",
-      "playerApiState",
-      "internalInitialConfig",
-      "config",
-      "store",
-      "redux",
+      video.currentSrc || "",
+      video.src || "",
+      video.getAttribute("src") || "",
     ];
 
-    for (const key of preferredKeys) {
-      if (!(key in obj)) {
+    for (const candidate of candidates) {
+      const normalized = this.normalizeUrlForRequest(candidate);
+      if (!normalized) {
         continue;
       }
 
-      const found = scan(obj[key], depth - 1);
-      if (found) {
-        return found;
-      }
-    }
-
-    const values = Array.isArray(obj)
-      ? obj
-      : Object.keys(obj)
-          .slice(0, 50)
-          .map((key) => obj[key]);
-
-    for (const item of values) {
-      const found = scan(item, depth - 1);
-      if (found) {
-        return found;
+      try {
+        if (this.videoHandler.votClient.isDirectMediaUrl(normalized)) {
+          return {
+            url: normalized,
+            videoId: normalized,
+            host: "custom",
+          };
+        }
+      } catch {
+        // ignore
       }
     }
 
     return null;
-  };
+  }
 
-  const w = globalThis as Record<string, unknown>;
+  private extractOdyseeMetaMediaTarget(): YandexDiskResolvedTarget | null {
+    try {
+      if (!/odysee\.com$/i.test(location.hostname)) {
+        return null;
+      }
 
-  for (const key of Object.keys(w)) {
-    if (!/player|state|store|redux|disk|video|ya|vh/i.test(key)) {
-      continue;
+      const ldJsonNodes = Array.from(
+        document.querySelectorAll('script[type="application/ld+json"]'),
+      );
+
+      for (const node of ldJsonNodes) {
+        const text = node.textContent || "";
+        if (!text.includes('"contentUrl"')) {
+          continue;
+        }
+
+        const data = JSON.parse(text) as {
+          contentUrl?: string;
+          name?: string;
+        };
+        const contentUrl = data?.contentUrl;
+
+        if (typeof contentUrl === "string" && contentUrl) {
+          const normalized = this.normalizeUrlForRequest(contentUrl);
+          return {
+            url: normalized,
+            videoId: normalized,
+            host: "custom",
+            title: data?.name || document.title || "",
+          };
+        }
+      }
+    } catch {
+      // ignore
     }
 
-    const found = scan(w[key], 6);
-    if (found) {
-      console.log("[VOT][yandexdisk] use stream url from deep player state", {
-        key,
-        url: found,
+    return null;
+  }
+
+  private async resolveYandexDiskFolderFileTargetViaApi(
+    parsed: ReturnType<VOTTranslationHandler["parseYandexDiskUrl"]>,
+  ): Promise<YandexDiskResolvedTarget | null> {
+    if (parsed.mode !== "folderFile" || !parsed.folderId) {
+      return null;
+    }
+
+    const relativePathRaw = parsed.pathname.replace(/^\/d\/[^/]+/, "") || "/";
+
+    let relativePath = relativePathRaw;
+    try {
+      relativePath = decodeURIComponent(relativePathRaw);
+    } catch {
+      relativePath = relativePathRaw;
+    }
+
+    const publicKey = `${parsed.origin}/d/${parsed.folderId}`;
+    const apiUrl = new URL("https://cloud-api.yandex.com/v1/disk/public/resources");
+
+    apiUrl.searchParams.set("public_key", publicKey);
+    apiUrl.searchParams.set("path", relativePath);
+
+    try {
+      const payload = await this.gmGetJson(apiUrl.toString());
+
+      console.log("[VOT][yandexdisk] public API payload", {
+        relativePathRaw,
+        relativePath,
+        publicKey,
+        type: payload?.type,
+        path: payload?.path,
+        name: payload?.name,
+        public_url: payload?.public_url,
+        short_url: payload?.short_url,
+        file: payload?.file,
       });
 
-      return {
-        url: found,
-        videoId: found,
-        host: "yandexdisk",
-      };
+      if (!payload || typeof payload !== "object") {
+        return null;
+      }
+
+      if ("error" in payload && payload.error) {
+        console.log("[VOT][yandexdisk] public API returned error", {
+          error: payload.error,
+          message: payload.message,
+          description: payload.description,
+        });
+        return null;
+      }
+
+      const candidates = [payload.public_url, payload.short_url].filter(
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
+      );
+
+      for (const candidate of candidates) {
+        const target = this.extractYandexDiskPublicTarget(candidate);
+        if (!target) {
+          continue;
+        }
+
+        if (this.isYandexDiskFolderRootTarget(target, parsed)) {
+          console.log("[VOT][yandexdisk] skip folder-root target from API", {
+            target,
+            relativePath,
+          });
+          continue;
+        }
+
+        const serviceVideoId = this.getYandexDiskServiceVideoId(
+          target.url,
+          parsed.pathname,
+        );
+
+        console.log("[VOT][yandexdisk] public target from API", {
+          target,
+          candidate,
+          relativePath,
+          serviceVideoId,
+        });
+
+        return {
+          url: target.url,
+          videoId: serviceVideoId,
+        };
+      }
+
+      if (payload.type === "file" && typeof payload.file === "string" && payload.file) {
+        const directUrl = this.normalizeUrlForRequest(payload.file);
+
+        console.log("[VOT][yandexdisk] use direct file url from API", {
+          directUrl,
+          relativePath,
+        });
+
+        return {
+          url: directUrl,
+          videoId: directUrl,
+          host: "custom",
+        };
+      }
+
+      if (payload.type === "file") {
+        console.log(
+          "[VOT][yandexdisk] API did not return usable public target, continue fallback chain",
+          {
+            public_url: payload.public_url,
+            short_url: payload.short_url,
+            file: payload.file,
+            relativePath,
+          },
+        );
+
+        return null;
+      }
+    } catch (error) {
+      console.log("[VOT][yandexdisk] failed to resolve public target via API", {
+        relativePathRaw,
+        relativePath,
+        publicKey,
+        error,
+      });
+    }
+
+    return null;
+  }
+
+  private isResolvedYandexDiskVideoData(videoData: VideoData): boolean {
+    if (videoData.host !== "yandexdisk") {
+      return false;
+    }
+
+    const rawUrl = String(videoData.url || "");
+    if (!rawUrl || this.isYandexDiskDownloadUrl(rawUrl)) {
+      return false;
+    }
+
+    const parsed = this.parseYandexDiskUrl(rawUrl);
+
+    return (
+      parsed.mode === "file" ||
+      parsed.mode === "folderRoot" ||
+      parsed.mode === "folderFile"
+    );
+  }
+
+  private isYandexDiskDownloadUrl(url: string): boolean {
+    try {
+      return (
+        new URL(url, globalThis.location.href).hostname ===
+        "downloader.disk.yandex.ru"
+      );
+    } catch {
+      return false;
     }
   }
 
-  return null;
-}
+  private isYandexDiskStreamUrl(url: string): boolean {
+    return /^https:\/\/streaming\.disk\.yandex\.net\/.+\.m3u8(?:[?#].*)?$/i.test(
+      String(url || ""),
+    );
+  }
 
-private extractYandexDiskStreamTargetFromPerformance(): YandexDiskResolvedTarget | null {
-  try {
-    const entries = performance.getEntriesByType("resource");
+  private extractYandexDiskStreamTargetFromPlayerState(): YandexDiskResolvedTarget | null {
+    const pick = (value: unknown): string | null => {
+      if (typeof value !== "string") {
+        return null;
+      }
 
-    console.log("[VOT][yandexdisk] inspect performance resources", {
-      count: entries.length,
-    });
+      const normalized = this.normalizeUrlForRequest(value);
+      return this.isYandexDiskStreamUrl(normalized) ? normalized : null;
+    };
 
-    for (let i = entries.length - 1; i >= 0; i -= 1) {
-      const entry = entries[i];
-      const raw = String((entry as PerformanceResourceTiming)?.name || "");
-      const normalized = this.normalizeUrlForRequest(raw);
+    const visited = new WeakSet<object>();
 
-      if (!this.isYandexDiskStreamUrl(normalized)) {
+    const scan = (value: unknown, depth: number): string | null => {
+      if (depth < 0) {
+        return null;
+      }
+
+      const direct = pick(value);
+      if (direct) {
+        return direct;
+      }
+
+      if (!value || typeof value !== "object") {
+        return null;
+      }
+
+      const obj = value as Record<string, unknown>;
+
+      if (visited.has(obj)) {
+        return null;
+      }
+      visited.add(obj);
+
+      const preferredKeys = [
+        "streamUrl",
+        "url",
+        "stream",
+        "streams",
+        "source",
+        "sources",
+        "controller",
+        "state",
+        "playerState",
+        "playerApiState",
+        "internalInitialConfig",
+        "config",
+        "store",
+        "redux",
+      ];
+
+      for (const key of preferredKeys) {
+        if (!(key in obj)) {
+          continue;
+        }
+
+        const found = scan(obj[key], depth - 1);
+        if (found) {
+          return found;
+        }
+      }
+
+      const values = Array.isArray(obj)
+        ? obj
+        : Object.keys(obj)
+            .slice(0, 50)
+            .map((key) => obj[key]);
+
+      for (const item of values) {
+        const found = scan(item, depth - 1);
+        if (found) {
+          return found;
+        }
+      }
+
+      return null;
+    };
+
+    const w = globalThis as Record<string, unknown>;
+
+    for (const key of Object.keys(w)) {
+      if (!/player|state|store|redux|disk|video|ya|vh/i.test(key)) {
         continue;
       }
 
-      console.log("[VOT][yandexdisk] use stream url from performance", {
-        url: normalized,
+      const found = scan(w[key], 6);
+      if (found) {
+        console.log("[VOT][yandexdisk] use stream url from deep player state", {
+          key,
+          url: found,
+        });
+
+        return {
+          url: found,
+          videoId: found,
+          host: "yandexdisk",
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private extractYandexDiskStreamTargetFromPerformance(): YandexDiskResolvedTarget | null {
+    try {
+      const entries = performance.getEntriesByType("resource");
+
+      console.log("[VOT][yandexdisk] inspect performance resources", {
+        count: entries.length,
       });
 
+      for (let i = entries.length - 1; i >= 0; i -= 1) {
+        const entry = entries[i];
+        const raw = String((entry as PerformanceResourceTiming)?.name || "");
+        const normalized = this.normalizeUrlForRequest(raw);
+
+        if (!this.isYandexDiskStreamUrl(normalized)) {
+          continue;
+        }
+
+        console.log("[VOT][yandexdisk] use stream url from performance", {
+          url: normalized,
+        });
+
+        return {
+          url: normalized,
+          videoId: normalized,
+          host: "yandexdisk",
+        };
+      }
+    } catch (error) {
+      console.log("[VOT][yandexdisk] failed to inspect performance resources", {
+        error,
+      });
+    }
+
+    return null;
+  }
+
+  private async buildYandexDiskVideoData(videoData: VideoData): Promise<VideoData> {
+    const bridgeTarget = this.extractBridgeDirectMediaTarget();
+    if (bridgeTarget) {
       return {
-        url: normalized,
-        videoId: normalized,
-        host: "yandexdisk",
+        ...videoData,
+        ...bridgeTarget,
+        host: "custom",
       };
     }
-  } catch (error) {
-    console.log("[VOT][yandexdisk] failed to inspect performance resources", {
-      error,
+
+    const odyseeTarget = this.extractOdyseeMetaMediaTarget();
+    if (odyseeTarget) {
+      return {
+        ...videoData,
+        ...odyseeTarget,
+        host: "custom",
+      };
+    }
+
+    const sourceUrl = this.getYandexDiskSourceUrl(videoData);
+    const parsed = this.parseYandexDiskUrl(sourceUrl);
+
+    console.log("[VOT][yandexdisk] build source", {
+      pageUrl: globalThis.location.href,
+      videoDataUrl: videoData.url,
+      sourceUrl,
+      parsedMode: parsed.mode,
+      videoId: videoData.videoId,
     });
-  }
 
-  return null;
-}
-
-private async buildYandexDiskVideoData(videoData: VideoData): Promise<VideoData> {
-  const sourceUrl = this.getYandexDiskSourceUrl(videoData);
-  const parsed = this.parseYandexDiskUrl(sourceUrl);
-
-  console.log("[VOT][yandexdisk] build source", {
-    pageUrl: globalThis.location.href,
-    videoDataUrl: videoData.url,
-    sourceUrl,
-    parsedMode: parsed.mode,
-    videoId: videoData.videoId,
-  });
-
-  if (parsed.mode === "file" && parsed.fileId) {
-    const url = `${parsed.origin}/i/${parsed.fileId}`;
-    return {
-      ...videoData,
-      url,
-      videoId: this.getYandexDiskServiceVideoId(url, parsed.pathname),
-      host: "yandexdisk" as VideoData["host"],
-    };
-  }
-
-  if (parsed.mode === "folderFile") {
-    const target = await this.resolveYandexDiskFolderFileTargetViaApi(parsed);
-
-    if (target) {
-      const normalizedUrl = this.normalizeUrlForRequest(target.url);
-      const serviceVideoId =
-        target.host === "custom"
-          ? normalizedUrl
-          : this.getYandexDiskServiceVideoId(normalizedUrl, parsed.pathname);
-
-      console.log("[VOT][yandexdisk] resolved folder file target", {
-        sourceUrl,
-        resolvedUrl: normalizedUrl,
-        videoId: serviceVideoId,
-        host: target.host ?? "yandexdisk",
-      });
-
+    if (parsed.mode === "file" && parsed.fileId) {
+      const url = `${parsed.origin}/i/${parsed.fileId}`;
       return {
         ...videoData,
-        url: normalizedUrl,
-        videoId: serviceVideoId,
-        host: target.host ?? ("yandexdisk" as VideoData["host"]),
-      };
-    }
-
-    const streamTarget = this.extractYandexDiskStreamTargetFromPlayerState();
-    if (streamTarget) {
-      return {
-        ...videoData,
-        url: streamTarget.url,
-        videoId: streamTarget.videoId,
+        url,
+        videoId: this.getYandexDiskServiceVideoId(url, parsed.pathname),
         host: "yandexdisk" as VideoData["host"],
       };
     }
-    const performanceStreamTarget =
-      this.extractYandexDiskStreamTargetFromPerformance();
 
-    if (performanceStreamTarget) {
+    if (parsed.mode === "folderFile") {
+      const target = await this.resolveYandexDiskFolderFileTargetViaApi(parsed);
+
+      if (target) {
+        const normalizedUrl = this.normalizeUrlForRequest(target.url);
+        const serviceVideoId =
+          target.host === "custom"
+            ? normalizedUrl
+            : this.getYandexDiskServiceVideoId(normalizedUrl, parsed.pathname);
+
+        console.log("[VOT][yandexdisk] resolved folder file target", {
+          sourceUrl,
+          resolvedUrl: normalizedUrl,
+          videoId: serviceVideoId,
+          host: target.host ?? "yandexdisk",
+        });
+
+        return {
+          ...videoData,
+          url: normalizedUrl,
+          videoId: serviceVideoId,
+          host: target.host ?? ("yandexdisk" as VideoData["host"]),
+        };
+      }
+
+      const streamTarget = this.extractYandexDiskStreamTargetFromPlayerState();
+      if (streamTarget) {
+        return {
+          ...videoData,
+          url: streamTarget.url,
+          videoId: streamTarget.videoId,
+          host: "yandexdisk" as VideoData["host"],
+        };
+      }
+
+      const performanceStreamTarget =
+        this.extractYandexDiskStreamTargetFromPerformance();
+
+      if (performanceStreamTarget) {
+        return {
+          ...videoData,
+          url: performanceStreamTarget.url,
+          videoId: performanceStreamTarget.videoId,
+          host: "yandexdisk" as VideoData["host"],
+        };
+      }
+    }
+
+    const directTarget = this.extractYandexDiskPublicTarget(sourceUrl);
+    if (directTarget) {
       return {
         ...videoData,
-        url: performanceStreamTarget.url,
-        videoId: performanceStreamTarget.videoId,
+        url: directTarget.url,
+        videoId: this.getYandexDiskServiceVideoId(directTarget.url, parsed.pathname),
         host: "yandexdisk" as VideoData["host"],
       };
     }
-  }
 
-  const directTarget = this.extractYandexDiskPublicTarget(sourceUrl);
-  if (directTarget) {
-    return {
-      ...videoData,
-      url: directTarget.url,
-      videoId: this.getYandexDiskServiceVideoId(directTarget.url, parsed.pathname),
-      host: "yandexdisk" as VideoData["host"],
-    };
-  }
+    const mediaTarget = this.extractYandexDiskPublicTargetFromMedia();
+    if (mediaTarget) {
+      return {
+        ...videoData,
+        url: mediaTarget.url,
+        videoId: this.getYandexDiskServiceVideoId(mediaTarget.url, parsed.pathname),
+        host: "yandexdisk" as VideoData["host"],
+      };
+    }
 
-  const mediaTarget = this.extractYandexDiskPublicTargetFromMedia();
-  if (mediaTarget) {
-    return {
-      ...videoData,
-      url: mediaTarget.url,
-      videoId: this.getYandexDiskServiceVideoId(mediaTarget.url, parsed.pathname),
-      host: "yandexdisk" as VideoData["host"],
-    };
-  }
-  const directMediaTarget = this.extractDirectMediaTargetFromVideo();
-  if (directMediaTarget) {
-    return {
-      ...videoData,
-      url: directMediaTarget.url,
-      videoId: directMediaTarget.videoId,
-      host: "custom",
-    };
-  }
+    const directMediaTarget = this.extractDirectMediaTargetFromVideo();
+    if (directMediaTarget) {
+      return {
+        ...videoData,
+        url: directMediaTarget.url,
+        videoId: directMediaTarget.videoId,
+        host: "custom",
+      };
+    }
 
-  throw new Error("Failed to build Yandex Disk translation target");
-}
-  constructor(videoHandler: VideoHandler) {
-    this.videoHandler = videoHandler;
-    
-    const strategy =
-      this.videoHandler.site.host === "youtube"
-        ? "ytAudio"
-        : this.videoHandler.site.host === "yandexdisk"
-          ? "yandexDisk"
-          : this.videoHandler.site.host === "custom"
-            ? "localFile"
-            : "ytAudio";
-          
-
-    this.audioDownloader = new AudioDownloader(strategy as any);
-    this.downloading = false;
-
-    this.audioDownloader
-      .addEventListener("downloadedAudio", this.onDownloadedAudio)
-      .addEventListener("downloadedPartialAudio", this.onDownloadedPartialAudio)
-      .addEventListener("downloadAudioError", this.onDownloadAudioError);
+    throw new Error("Failed to build Yandex Disk translation target");
   }
 
   private readonly onDownloadedAudio = async (
@@ -871,14 +1115,16 @@ private async buildYandexDiskVideoData(videoData: VideoData): Promise<VideoData>
 
     const { videoId, fileId, audioData } = data;
     const videoUrl = this.getCanonicalUrl(videoId);
+
     try {
-console.log("[VOT] Uploading full audio", {
-  translationId,
-  videoId,
-  fileId,
-  size: audioData.byteLength,
-  videoUrl,
-});
+      console.log("[VOT] Uploading full audio", {
+        translationId,
+        videoId,
+        fileId,
+        size: audioData.byteLength,
+        videoUrl,
+      });
+
       await this.videoHandler.votClient.requestVtransAudio(
         videoUrl,
         translationId,
@@ -894,6 +1140,7 @@ console.log("[VOT] Uploading full audio", {
       );
       return;
     }
+
     this.finishDownloadSuccess();
   };
 
@@ -909,16 +1156,18 @@ console.log("[VOT] Uploading full audio", {
 
     const { audioData, fileId, videoId, amount, version, index } = data;
     const videoUrl = this.getCanonicalUrl(videoId);
+
     try {
-console.log("[VOT] Uploading audio chunk", {
-  translationId,
-  videoId,
-  fileId,
-  index,
-  amount,
-  size: audioData.byteLength,
-  videoUrl,
-});
+      console.log("[VOT] Uploading audio chunk", {
+        translationId,
+        videoId,
+        fileId,
+        index,
+        amount,
+        size: audioData.byteLength,
+        videoUrl,
+      });
+
       await this.videoHandler.votClient.requestVtransAudio(
         videoUrl,
         translationId,
@@ -954,13 +1203,13 @@ console.log("[VOT] Uploading audio chunk", {
     debug.log(`Failed to download audio ${videoId}`);
     const videoUrl = this.getCanonicalUrl(videoId);
 
-    // The fail-audio-js endpoint is a rare fallback. Keep its usage minimal and
-    // only call it for YouTube when the audio downloader is enabled.
     const shouldUseFallback =
       this.videoHandler.site.host === "youtube" &&
       Boolean(this.videoHandler.data?.useAudioDownload);
-console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
-console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy);
+
+    console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
+    console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy);
+
     if (!shouldUseFallback) {
       this.finishDownloadFailure(
         new VOTLocalizedError("VOTFailedDownloadAudio"),
@@ -996,38 +1245,39 @@ console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy)
     this.rejectDownloadWaiters(error);
   }
 
-private getCanonicalUrl(videoId: string) {
-  if (this.videoHandler.site.host === "youtube") {
-    return `https://youtu.be/${videoId}`;
+  private getCanonicalUrl(videoId: string) {
+    if (this.shouldUseLocalFileWorkflow(this.videoHandler.videoData)) {
+      return (
+        this.activeTranslationUrl ||
+        this.getCurrentMediaRequestUrl(this.videoHandler.videoData)
+      );
+    }
+
+    if (this.videoHandler.site.host === "youtube") {
+      return `https://youtu.be/${videoId}`;
+    }
+
+    if (this.videoHandler.site.host === "yandexdisk") {
+      return (
+        this.activeTranslationUrl ||
+        this.normalizeYandexDiskPublicUrl(
+          this.videoHandler.videoData?.url || globalThis.location.href,
+        )
+      );
+    }
+
+    if (this.videoHandler.site.host === "custom") {
+      return (
+        this.activeTranslationUrl ||
+        this.normalizeUrlForRequest(
+          String(this.videoHandler.videoData?.url || globalThis.location.href),
+        )
+      );
+    }
+
+    return this.videoHandler.videoData?.url || globalThis.location.href;
   }
 
-  if (this.videoHandler.site.host === "yandexdisk") {
-    return (
-      this.activeTranslationUrl ||
-      this.normalizeYandexDiskPublicUrl(
-        this.videoHandler.videoData?.url || globalThis.location.href,
-      )
-    );
-  }
-
-  if (this.videoHandler.site.host === "custom") {
-    return (
-      this.activeTranslationUrl ||
-      this.normalizeUrlForRequest(
-        String(this.videoHandler.videoData?.url || globalThis.location.href),
-      )
-    );
-  }
-
-  return this.videoHandler.videoData?.url || globalThis.location.href;
-}
-
-  // Cancellation helpers live in utils/abort.ts.
-
-  /**
-   * Detector for cases when server rejects the request because
-   * "Lively/Live voices" are unavailable (unsupported language pair).
-   */
   private isLivelyVoiceUnavailableError(value: unknown): boolean {
     const msg = getErrorMessage(value);
     return !!msg && msg.toLowerCase().includes("обычная озвучка");
@@ -1039,8 +1289,6 @@ private getCanonicalUrl(videoId: string) {
     signal: AbortSignal,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      // Avoid a micro-race where the signal gets aborted between checking
-      // `signal.aborted` and attaching the abort listener.
       let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
       const cleanup = () => {
@@ -1055,7 +1303,6 @@ private getCanonicalUrl(videoId: string) {
         reject(makeAbortError());
       };
 
-      // Attach the listener first, then check `aborted` to close the race.
       signal.addEventListener("abort", onAbort, { once: true });
       if (signal.aborted) {
         onAbort();
@@ -1067,7 +1314,9 @@ private getCanonicalUrl(videoId: string) {
           onAbort();
           return;
         }
+
         cleanup();
+
         try {
           const result = await fn();
           resolve(result);
@@ -1076,204 +1325,229 @@ private getCanonicalUrl(videoId: string) {
         }
       }, delayMs);
 
-      // Keep old behavior: allow caller to clear retries via the host.
       if (timeoutId !== null) {
         this.videoHandler.autoRetry = timeoutId;
       }
     });
   }
-private activeYandexDiskResolvedVideoData?: VideoData;
 
-async translateVideoYDImpl(
-  videoData: VideoData,
-  requestLang: RequestLang,
-  responseLang: ResponseLang,
-  translationHelp: TranslationHelp[] | null = null,
-  signal = NEVER_ABORTED_SIGNAL,
-  disableLivelyVoice = false,
-): Promise<
-  (TranslatedVideoTranslationResponse & { usedLivelyVoice: boolean }) | null
-> {
-  let normalizedVideoData: VideoData;
+  async translateVideoYDImpl(
+    videoData: VideoData,
+    requestLang: RequestLang,
+    responseLang: ResponseLang,
+    translationHelp: TranslationHelp[] | null = null,
+    signal = NEVER_ABORTED_SIGNAL,
+    disableLivelyVoice = false,
+  ): Promise<
+    (TranslatedVideoTranslationResponse & { usedLivelyVoice: boolean }) | null
+  > {
+    let normalizedVideoData: VideoData;
+    this.updateAudioDownloaderStrategy(videoData);
 
-  if (this.videoHandler.site.host === "custom") {
-    normalizedVideoData = {
-      ...videoData,
-      url: this.normalizeUrlForRequest(
-        String(videoData.url || globalThis.location.href),
-      ),
-    };
-  } else {
-    const cachedVideoData =
-      this.activeYandexDiskResolvedVideoData &&
-      this.isDirectResolvedUploadVideoData(
-        this.activeYandexDiskResolvedVideoData,
-      )
-        ? this.activeYandexDiskResolvedVideoData
-        : undefined;
+    if (
+      this.videoHandler.site.host === "custom" ||
+      videoData.host === "custom" ||
+      this.shouldUseLocalFileWorkflow(videoData)
+    ) {
+      normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData);
+    } else {
+      const cachedVideoData =
+        this.activeYandexDiskResolvedVideoData &&
+        this.isDirectResolvedUploadVideoData(
+          this.activeYandexDiskResolvedVideoData,
+        )
+          ? this.activeYandexDiskResolvedVideoData
+          : undefined;
 
-    const currentVideoData =
-      this.isDirectResolvedUploadVideoData(videoData)
+      const currentVideoData = this.isDirectResolvedUploadVideoData(videoData)
         ? videoData
         : undefined;
 
-    const resolvedVideoData =
-      cachedVideoData ||
-      currentVideoData ||
-      await this.buildYandexDiskVideoData(videoData);
+      const resolvedVideoData =
+        cachedVideoData ||
+        currentVideoData ||
+        (await this.buildYandexDiskVideoData(videoData));
 
-    normalizedVideoData = {
-      ...resolvedVideoData,
-      url: this.normalizeUrlForRequest(
-        String(resolvedVideoData.url || ""),
-      ),
-    };
-  }
-
-  this.activeYandexDiskResolvedVideoData = normalizedVideoData;
-  this.activeTranslationUrl = normalizedVideoData.url;
-
-  console.log("[VOT][upload] translateVideoYDImpl input", {
-    host: normalizedVideoData.host,
-    url: normalizedVideoData.url,
-    videoId: normalizedVideoData.videoId,
-  });
-
-  try {
-    throwIfAborted(signal);
-
-    const useLivelyVoice =
-      !disableLivelyVoice &&
-      this.videoHandler.isLivelyVoiceAllowed(requestLang, responseLang) &&
-      Boolean(this.videoHandler.data?.useLivelyVoice);
-
-    const res = await this.videoHandler.votClient.translateVideo({
-      videoData: normalizedVideoData,
-      requestLang,
-      responseLang,
-      translationHelp,
-      extraOpts: {
-        useLivelyVoice,
-        videoTitle: this.videoHandler.videoData?.title,
-      },
-      shouldSendFailedAudio: true,
-    });
-
-    if (!res) {
-      throw new Error("Failed to get translation response");
+      normalizedVideoData = {
+        ...resolvedVideoData,
+        url: this.normalizeUrlForRequest(String(resolvedVideoData.url || "")),
+      };
     }
 
-    console.log("[VOT][upload] translate response", {
-      translated: res.translated,
-      status: res.status,
-      remainingTime: res.remainingTime,
-      message: res.message,
-    });
-
     if (
-      res.translated &&
-      (res.status === VideoTranslationStatus.FINISHED ||
-        res.status === VideoTranslationStatus.PART_CONTENT) &&
-      typeof res.url === "string" &&
-      res.url.length > 0
+      normalizedVideoData.host === "odysee" &&
+      typeof normalizedVideoData.url === "string"
     ) {
-      return { ...res, usedLivelyVoice: useLivelyVoice };
+      const rewrittenUrl = this.normalizeOdyseeDirectUrl(normalizedVideoData.url);
+
+      normalizedVideoData =
+        rewrittenUrl !== normalizedVideoData.url
+          ? {
+              ...normalizedVideoData,
+              url: rewrittenUrl,
+              host: "custom" as VideoData["host"],
+            }
+          : {
+              ...normalizedVideoData,
+              url: this.normalizeUrlForRequest(normalizedVideoData.url),
+            };
     }
 
-    const message =
-      res.message ?? localizationProvider.get("translationTakeFewMinutes");
-
-    await this.videoHandler.updateTranslationErrorMsg(
-      res.remainingTime > 0
-        ? formatTranslationEta(
-            res.remainingTime,
-            (key) => localizationProvider.get(key),
-          )
-        : message,
-      signal,
-    );
-
     if (
-      res.status === VideoTranslationStatus.AUDIO_REQUESTED &&
-      this.videoHandler.canUploadAudioForCurrentSite()
+      normalizedVideoData &&
+      typeof normalizedVideoData.url === "string" &&
+      normalizedVideoData.url &&
+      !/\/frame\/?$/i.test(normalizedVideoData.url) &&
+      !/blob:/i.test(normalizedVideoData.url)
     ) {
-      this.videoHandler.hadAsyncWait = true;
-      this.downloading = true;
+      this.activeYandexDiskResolvedVideoData = normalizedVideoData;
+    }
 
-      await this.audioDownloader.runAudioDownload(
-        normalizedVideoData.videoId,
-        res.translationId,
-        signal,
-      );
+    this.activeTranslationUrl = normalizedVideoData.url;
 
-      await this.waitForAudioDownloadCompletion(signal, 120000);
+    console.log("[VOT][upload] translateVideoYDImpl input", {
+      host: normalizedVideoData.host,
+      url: normalizedVideoData.url,
+      videoId: normalizedVideoData.videoId,
+    });
 
-      return await this.translateVideoYDImpl(
-        normalizedVideoData,
+    try {
+      throwIfAborted(signal);
+
+      const useLivelyVoice =
+        !disableLivelyVoice &&
+        this.videoHandler.isLivelyVoiceAllowed(requestLang, responseLang) &&
+        Boolean(this.videoHandler.data?.useLivelyVoice);
+
+      const res = await this.videoHandler.votClient.translateVideo({
+        videoData: normalizedVideoData,
         requestLang,
         responseLang,
         translationHelp,
+        extraOpts: {
+          useLivelyVoice,
+          videoTitle: this.videoHandler.videoData?.title,
+        },
+        shouldSendFailedAudio: true,
+      });
+
+      if (!res) {
+        throw new Error("Failed to get translation response");
+      }
+
+      console.log("[VOT][upload] translate response", {
+        translated: res.translated,
+        status: res.status,
+        remainingTime: res.remainingTime,
+        message: res.message,
+      });
+
+      if (
+        res.translated &&
+        (res.status === VideoTranslationStatus.FINISHED ||
+          res.status === VideoTranslationStatus.PART_CONTENT) &&
+        typeof res.url === "string" &&
+        res.url.length > 0
+      ) {
+        return { ...res, usedLivelyVoice: useLivelyVoice };
+      }
+
+      const message =
+        res.message ?? localizationProvider.get("translationTakeFewMinutes");
+
+      await this.videoHandler.updateTranslationErrorMsg(
+        res.remainingTime > 0
+          ? formatTranslationEta(
+              res.remainingTime,
+              (key) => localizationProvider.get(key),
+            )
+          : message,
         signal,
-        disableLivelyVoice || !useLivelyVoice,
       );
-    }
 
-    if (
-      res.status === VideoTranslationStatus.WAITING ||
-      res.status === VideoTranslationStatus.LONG_WAITING
-    ) {
-      this.videoHandler.hadAsyncWait = true;
+      if (
+        res.status === VideoTranslationStatus.AUDIO_REQUESTED &&
+        this.videoHandler.canUploadAudioForCurrentSite()
+      ) {
+        this.videoHandler.hadAsyncWait = true;
+        this.downloading = true;
 
-      return this.scheduleRetry(
-        () =>
-          this.translateVideoYDImpl(
-            normalizedVideoData,
-            requestLang,
-            responseLang,
-            translationHelp,
-            signal,
-            disableLivelyVoice || !useLivelyVoice,
-          ),
-        5000,
+        await this.audioDownloader.runAudioDownload(
+          normalizedVideoData.videoId,
+          res.translationId,
+          signal,
+        );
+
+        await this.waitForAudioDownloadCompletion(signal, 120000);
+
+        return await this.translateVideoYDImpl(
+          normalizedVideoData,
+          requestLang,
+          responseLang,
+          translationHelp,
+          signal,
+          disableLivelyVoice || !useLivelyVoice,
+        );
+      }
+
+      if (
+        res.status === VideoTranslationStatus.WAITING ||
+        res.status === VideoTranslationStatus.LONG_WAITING
+      ) {
+        this.videoHandler.hadAsyncWait = true;
+
+        const retryDelay =
+          normalizedVideoData.host === "custom" ? 15000 : 5000;
+
+        return this.scheduleRetry(
+          () =>
+            this.translateVideoYDImpl(
+              normalizedVideoData,
+              requestLang,
+              responseLang,
+              translationHelp,
+              signal,
+              disableLivelyVoice || !useLivelyVoice,
+            ),
+          retryDelay,
+          signal,
+        );
+      }
+
+      throw new Error(
+        typeof res.message === "string" && res.message
+          ? res.message
+          : "Yandex couldn't translate video",
+      );
+    } catch (err) {
+      if (isAbortError(err)) {
+        return null;
+      }
+
+      const uiError = mapVotClientErrorForUi(err, this.videoHandler.site.host);
+
+      await this.videoHandler.updateTranslationErrorMsg(
+        getServerErrorMessage(uiError) ?? uiError,
         signal,
       );
-    }
 
-    throw new Error(
-      typeof res.message === "string" && res.message
-        ? res.message
-        : "Yandex couldn't translate video",
-    );
-  } catch (err) {
-    if (isAbortError(err)) {
+      this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
+        aborted: Boolean(this.videoHandler.actionsAbortController?.signal?.aborted),
+        translateApiErrorsEnabled: Boolean(
+          this.videoHandler.data?.translateAPIErrors,
+        ),
+        hadAsyncWait: this.videoHandler.hadAsyncWait,
+        videoId: normalizedVideoData.videoId,
+        error: err,
+        notify: (params) =>
+          this.videoHandler.notifier.translationFailed(params),
+      });
+
+      console.error("[VOT][upload]", err);
       return null;
     }
-
-    const uiError = mapVotClientErrorForUi(err, this.videoHandler.site.host);
-
-    await this.videoHandler.updateTranslationErrorMsg(
-      getServerErrorMessage(uiError) ?? uiError,
-      signal,
-    );
-
-    this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
-      aborted: Boolean(
-        this.videoHandler.actionsAbortController?.signal?.aborted,
-      ),
-      translateApiErrorsEnabled: Boolean(
-        this.videoHandler.data?.translateAPIErrors,
-      ),
-      hadAsyncWait: this.videoHandler.hadAsyncWait,
-      videoId: normalizedVideoData.videoId,
-      error: err,
-      notify: (params) =>
-        this.videoHandler.notifier.translationFailed(params),
-    });
-
-    console.error("[VOT][upload]", err);
-    return null;
   }
-}
+
   async translateVideoImpl(
     videoData: VideoData,
     requestLang: RequestLang,
@@ -1287,19 +1561,27 @@ async translateVideoYDImpl(
   > {
     clearTimeout(this.videoHandler.autoRetry);
     this.finishDownloadSuccess();
+
     const requestLangForApi = this.videoHandler.getRequestLangForTranslation(
       requestLang,
       responseLang,
     );
+
     debug.log(
       videoData,
       `Translate video (requestLang: ${requestLang}, requestLangForApi: ${requestLangForApi}, responseLang: ${responseLang})`,
     );
 
     let livelyDisabled = disableLivelyVoice;
+    const useLocalFileWorkflow = this.shouldUseLocalFileWorkflow(videoData);
+    this.updateAudioDownloaderStrategy(videoData);
 
-    if (this.videoHandler.site.host === "yandexdisk" ||
-  this.videoHandler.site.host === "custom") {
+    if (
+      this.videoHandler.site.host === "yandexdisk" ||
+      this.videoHandler.site.host === "custom" ||
+      videoData.host === "custom" ||
+      useLocalFileWorkflow
+    ) {
       return await this.translateVideoYDImpl(
         videoData,
         requestLangForApi,
@@ -1309,7 +1591,32 @@ async translateVideoYDImpl(
       );
     }
 
-    this.activeTranslationUrl = this.getCanonicalUrl(videoData.videoId);
+    let requestVideoData = videoData;
+
+    if (
+      this.videoHandler.site.host === "odysee" &&
+      typeof videoData.url === "string"
+    ) {
+      const normalizedUrl = this.normalizeUrlForRequest(videoData.url);
+      const rewrittenUrl = this.normalizeOdyseeDirectUrl(normalizedUrl);
+
+      requestVideoData =
+        rewrittenUrl !== normalizedUrl
+          ? {
+              ...videoData,
+              url: rewrittenUrl,
+              host: "custom" as VideoData["host"],
+            }
+          : {
+              ...videoData,
+              url: normalizedUrl,
+            };
+    }
+
+    this.activeTranslationUrl =
+      this.videoHandler.site.host === "odysee"
+        ? requestVideoData.url
+        : this.getCanonicalUrl(videoData.videoId);
 
     try {
       throwIfAborted(signal);
@@ -1318,6 +1625,7 @@ async translateVideoYDImpl(
         requestLangForApi,
         responseLang,
       );
+
       let useLivelyVoice =
         !livelyDisabled &&
         livelyVoiceAllowed &&
@@ -1325,12 +1633,10 @@ async translateVideoYDImpl(
 
       let res: VideoTranslationResponse | undefined;
 
-      // If server says lively voices are unavailable, immediately retry once
-      // without lively voices and keep that choice for subsequent retries.
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
           res = await this.videoHandler.votClient.translateVideo({
-            videoData,
+            videoData: requestVideoData,
             requestLang: requestLangForApi,
             responseLang,
             translationHelp,
@@ -1340,12 +1646,15 @@ async translateVideoYDImpl(
             },
             shouldSendFailedAudio,
           });
-console.log("[VOT][yandexdisk] translate response", {
-  translated: res.translated,
-  status: res.status,
-  remainingTime: res.remainingTime,
-  message: res.message,
-});
+
+          console.log("[VOT][translate] translate response", {
+            translated: res.translated,
+            status: res.status,
+            remainingTime: res.remainingTime,
+            message: res.message,
+            requestHost: requestVideoData.host,
+            requestUrl: requestVideoData.url,
+          });
         } catch (err) {
           if (useLivelyVoice && this.isLivelyVoiceUnavailableError(err)) {
             debug.log(
@@ -1369,6 +1678,7 @@ console.log("[VOT][yandexdisk] translate response", {
           res = undefined;
           continue;
         }
+
         break;
       }
 
@@ -1377,16 +1687,17 @@ console.log("[VOT][yandexdisk] translate response", {
       }
 
       debug.log("Translate video result", res);
-console.log("[VOT] host:", this.videoHandler.site.host);
-console.log("[VOT] status:", res.status);
-console.log("[VOT] translated:", res.translated);
-console.log("[VOT] remainingTime:", res.remainingTime);
-console.log("[VOT] translationId:", res.translationId);
-console.log(
-  "[VOT] canUploadAudio:",
-  this.videoHandler.canUploadAudioForCurrentSite(),
-);
-console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
+      console.log("[VOT] host:", this.videoHandler.site.host);
+      console.log("[VOT] status:", res.status);
+      console.log("[VOT] translated:", res.translated);
+      console.log("[VOT] remainingTime:", res.remainingTime);
+      console.log("[VOT] translationId:", res.translationId);
+      console.log(
+        "[VOT] canUploadAudio:",
+        this.videoHandler.canUploadAudioForCurrentSite(),
+      );
+      console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
+
       throwIfAborted(signal);
 
       if (res.translated && res.remainingTime < 1) {
@@ -1396,11 +1707,11 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
 
       const message =
         res.message ?? localizationProvider.get("translationTakeFewMinutes");
+
       await this.videoHandler.updateTranslationErrorMsg(
         res.remainingTime > 0
           ? formatTranslationEta(
               res.remainingTime,
-              // The formatter expects a small set of keys; those keys exist in our phrase set.
               (key) => localizationProvider.get(key),
             )
           : message,
@@ -1428,7 +1739,6 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
           this.audioDownloader.strategy === "yandexDisk" ? 120000 : 15000,
         );
 
-        // for get instant result on download end
         return await this.translateVideoImpl(
           videoData,
           requestLang,
@@ -1452,14 +1762,8 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
         signal,
       );
 
-      // Most translation errors are handled inside the translation handler and
-      // returned as `null` to the caller. This means higher-level try/catch
-      // blocks won't see a rejected promise. Send the failure notification here
-      // so users still get a desktop alert (respecting user settings).
       this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
-        aborted: Boolean(
-          this.videoHandler.actionsAbortController?.signal?.aborted,
-        ),
+        aborted: Boolean(this.videoHandler.actionsAbortController?.signal?.aborted),
         translateApiErrorsEnabled: Boolean(
           this.videoHandler.data?.translateAPIErrors,
         ),
@@ -1469,6 +1773,7 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
         notify: (params) =>
           this.videoHandler.notifier.translationFailed(params),
       });
+
       console.error("[VOT]", err);
       return null;
     }
@@ -1490,6 +1795,7 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
       signal,
     );
   }
+
   private getYandexDiskSourceUrl(videoData: VideoData): string {
     const currentUrl = String(videoData.url || "");
 
@@ -1515,6 +1821,7 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
 
     return currentUrl || pageUrl;
   }
+
   private waitForAudioDownloadCompletion(
     signal: AbortSignal,
     timeoutMs: number,
@@ -1577,6 +1884,7 @@ console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
 
     const waiters = Array.from(this.downloadWaiters);
     this.downloadWaiters.clear();
+
     for (const waiter of waiters) {
       handler(waiter);
     }

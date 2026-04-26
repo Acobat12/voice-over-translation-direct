@@ -324,12 +324,17 @@ function normalizeHostPermission(entry: string | undefined | null): string | nul
   const value = String(entry).trim();
   if (!value) return null;
   if (value === "<all_urls>") return value;
+  if (value === "*") return "*://*/*";
 
   if (/^[a-z*]+:\/\//i.test(value)) {
     if (/^[a-z*]+:\/\/[^/]+\/?$/i.test(value)) {
       return `${value.replace(/\/?$/, "")}/*`;
     }
     return value;
+  }
+
+  if (value.startsWith("*.")) {
+    return `*://${value}/*`;
   }
 
   return `*://*.${value}/*`;

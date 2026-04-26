@@ -72,6 +72,10 @@ private settingsEventsBound = false;
     return this.mount.tooltipLayoutRoot;
   }
 
+  private getSubtitlesMountContainer(): HTMLElement {
+    return this.votOverlayView?.root ?? this.mount.subtitlesMountContainer;
+  }
+
   isInitialized(): this is {
     votGlobalPortal: HTMLElement;
     votOverlayView: OverlayView;
@@ -108,6 +112,11 @@ private settingsEventsBound = false;
     });
     this.votSettingsView.initUI();
 
+    this.videoHandler?.subtitlesWidget?.updateMount({
+      container: this.getSubtitlesMountContainer(),
+      tooltipLayoutRoot: this.mount.tooltipLayoutRoot,
+    });
+
     return this;
   }
 
@@ -122,7 +131,7 @@ private settingsEventsBound = false;
     });
 
     this.videoHandler?.subtitlesWidget?.updateMount({
-      container: mount.subtitlesMountContainer,
+      container: this.getSubtitlesMountContainer(),
       tooltipLayoutRoot: mount.tooltipLayoutRoot,
     });
 
@@ -218,12 +227,20 @@ private settingsEventsBound = false;
         // Prefer the actual event payload (the overlay also updates `data`, but
         // using the payload is simpler and avoids accidental desyncs).
         const nextVolume = volume ?? this.data.defaultVolume ?? 100;
-        this.videoHandler.audioPlayer.player.volume = nextVolume / 100;
+        this.videoHandler.syncTranslationPlaybackVolume();
         if (!this.data.syncVolume) {
           this.videoHandler.onTranslationVolumeSliderSynced(nextVolume);
           return;
         }
-        this.videoHandler.syncVolumeWrapper("translation", nextVolume);
+        const syncResult = this.videoHandler.syncVolumeWrapper(
+          "translation",
+          nextVolume,
+        );
+        if (typeof syncResult?.nextVideo === "number") {
+          this.videoHandler.applyManualVideoVolumeOverride(
+            syncResult.nextVideo / 100,
+          );
+        }
       })
       .addEventListener("select:subtitles", (data) => {
         if (!this.videoHandler) {
@@ -287,6 +304,7 @@ private settingsEventsBound = false;
           const nextVolume = clamp(currentVolume, 0, maxVolume);
           overlayView.translationVolumeSlider.value = nextVolume;
           this.videoHandler?.onTranslationVolumeSliderSynced(nextVolume);
+          this.videoHandler?.syncTranslationPlaybackVolume();
         });
       })
       .addEventListener("change:syncVolume", (checked) => {
@@ -305,6 +323,8 @@ private settingsEventsBound = false;
             return;
           }
 
+          this.videoHandler.syncTranslationPlaybackVolume();
+
           this.videoHandler.resetVolumeLinkState(
             Number(videoSlider.value),
             Number(translationSlider.value),
@@ -313,6 +333,15 @@ private settingsEventsBound = false;
       })
       .addEventListener("change:useLivelyVoice", () => {
         if (!this.videoHandler) {
+          return;
+        }
+
+        const isWaitingTranslation =
+          this.votOverlayView?.votButton?.loading === true ||
+          Boolean(this.videoHandler.hadAsyncWait);
+
+        if (isWaitingTranslation) {
+          debug.log("[useLivelyVoice] skip reset during waiting translation");
           return;
         }
 
@@ -627,6 +656,12 @@ private settingsEventsBound = false;
 
   debug.log("[handleTranslationBtnClick] click translationBtn");
 
+  if (videoHandler.isAwaitingAutoplayRecovery()) {
+    debug.log("[handleTranslationBtnClick] resume pending autoplay recovery");
+    await videoHandler.resumePendingAutoplayRecovery("button");
+    return this;
+  }
+
   // Реально выключаем только если перевод уже играет
   if (videoHandler.hasActiveSource()) {
     debug.log("[handleTranslationBtnClick] stop active translation");
@@ -658,6 +693,8 @@ private settingsEventsBound = false;
     }
 
     debug.log("[handleTranslationBtnClick] trying execute translation");
+
+    await videoHandler.primePlaybackByGesture("translate-button");
 
     const videoData = await this.getVideoDataForTranslation(videoHandler);
     await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
@@ -704,7 +741,7 @@ private settingsEventsBound = false;
 
   private async getVideoDataForTranslation(videoHandler: VideoHandler) {
     if (!videoHandler.videoData?.videoId) {
-      throw new VOTLocalizedError("VOTNoVideoIDFound");
+      videoHandler.videoData = await videoHandler.getVideoData();
     }
 
     if (this.shouldRefreshVideoDataBeforeTranslation(videoHandler)) {

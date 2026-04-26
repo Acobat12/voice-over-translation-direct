@@ -3,6 +3,7 @@ import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import { defaultAutoVolume } from "../../config/config";
 import { YANDEX_TTL_MS } from "../../core/cacheManager";
 import { isTranslationDownloadHost } from "../../core/hostPolicies";
+import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
 import debug from "../../utils/debug";
@@ -46,6 +47,20 @@ type ActionContext = { gen: number; videoId: string };
 
 type AutoVolumeMode = "off" | "classic" | "smart";
 
+type PendingAutoplayRecovery = ActionContext & {
+  sourceUrl: string;
+  createdAt: number;
+};
+
+type PvlTranslationReadyPayload = {
+  url: string;
+  videoSrc: string;
+  videoTitle: string;
+  suggestedFileName: string;
+  subtitlesUrl: string | null;
+  suggestedSubtitlesFileName: string | null;
+};
+
 type ApplyTranslationSourceResult =
   | {
       status: "success";
@@ -68,6 +83,7 @@ const SMART_DUCKING_TICK_MS = SMART_DUCKING_DEFAULT_CONFIG.tickMs;
 const AUDIO_PROBE_TIMEOUT_MS = 1200;
 const AUDIO_PROBE_RETRY_DELAY_MS = 100;
 const AUDIO_PROBE_MAX_ATTEMPTS = 1;
+const TRANSLATED_AUDIO_START_TIMEOUT_MS = 4000;
 
 type AudioPlayerLike = {
   audio?: HTMLMediaElement;
@@ -75,6 +91,18 @@ type AudioPlayerLike = {
   gainNode?: AudioNode;
   audioSource?: AudioNode;
   mediaElementSource?: AudioNode;
+  lipSync?: (mode?: false | string) => unknown;
+  play?: () => Promise<unknown>;
+  pause?: () => Promise<unknown>;
+  clear?: () => Promise<unknown>;
+  currentSrc?: string;
+  src?: string;
+  volume?: number;
+};
+
+type GainNodeLike = AudioNode & {
+  gain?: AudioParam;
+  context?: BaseAudioContext;
 };
 
 type SmartDuckingAnalyserState = {
@@ -113,10 +141,563 @@ function isAudioNode(node: unknown): node is AudioNode {
   );
 }
 
+function normalizeMediaElementVolume(volume: number): number {
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, Math.min(1, volume));
+}
+
+function normalizeGainVolume(volume: number): number {
+  if (!Number.isFinite(volume)) return 0;
+  return Math.max(0, volume);
+}
+
+function setAudioParamInstant(
+  param: AudioParam,
+  value: number,
+  context?: BaseAudioContext,
+): void {
+  const now = context?.currentTime;
+  if (typeof now === "number" && Number.isFinite(now)) {
+    try {
+      if (
+        typeof (param as AudioParam & { cancelAndHoldAtTime?: unknown })
+          .cancelAndHoldAtTime === "function"
+      ) {
+        (
+          param as AudioParam & { cancelAndHoldAtTime: (time: number) => void }
+        ).cancelAndHoldAtTime(now);
+      } else if (typeof param.cancelScheduledValues === "function") {
+        param.cancelScheduledValues(now);
+      }
+    } catch {
+      // ignore
+    }
+
+    if (typeof param.setValueAtTime === "function") {
+      param.setValueAtTime(value, now);
+      return;
+    }
+  }
+
+  param.value = value;
+}
+
+function safeSetPlayerVolume(
+  player: AudioPlayerLike | undefined,
+  volume: number,
+): void {
+  if (!player) return;
+
+  const gainNode = player.gainNode as GainNodeLike | undefined;
+  if (gainNode?.gain) {
+    setAudioParamInstant(
+      gainNode.gain,
+      normalizeGainVolume(volume),
+      gainNode.context,
+    );
+  }
+
+  if (typeof player.volume === "number") {
+    player.volume = normalizeMediaElementVolume(volume);
+  }
+
+  const media = getPlayerMediaElement(player);
+  if (media) {
+    media.volume = normalizeMediaElementVolume(volume);
+  }
+}
+
+function applyTranslationPlaybackVolume(
+  player: AudioPlayerLike | undefined,
+  volumePercent: number | undefined,
+  fallbackVolumePercent: number | undefined,
+): void {
+  const nextVolume =
+    typeof volumePercent === "number" && Number.isFinite(volumePercent)
+      ? volumePercent
+      : fallbackVolumePercent;
+
+  if (typeof nextVolume !== "number" || !Number.isFinite(nextVolume)) {
+    return;
+  }
+
+  safeSetPlayerVolume(player, nextVolume / 100);
+}
+
 function getPlayerMediaElement(
   player?: AudioPlayerLike,
 ): HTMLMediaElement | undefined {
   return player?.audio ?? player?.audioElement;
+}
+
+function getAutoplayRecoveryButtonText(): string {
+  return localizationProvider.lang === "ru"
+    ? "Запустить звук перевода"
+    : "Start translated audio";
+}
+
+function getExternalTunnelContext(handler: VideoHandler) {
+  if (handler.site.host !== "custom") {
+    return null;
+  }
+
+  const context = getTunnelPlayerContext();
+  if (!context?.hasTranslationReadyCallback) {
+    return null;
+  }
+
+  return context;
+}
+
+function getPvlVideoSourceUrl(handler: VideoHandler): string {
+  const tunnelContext = getTunnelPlayerContext();
+  const candidates = [
+    String(tunnelContext?.sourceUrl || "").trim(),
+    String((globalThis as Record<string, unknown>).__PVL_VOT_SRC ?? "").trim(),
+    String(handler.video?.dataset?.votSrc || "").trim(),
+    String(handler.video?.currentSrc || handler.video?.src || "").trim(),
+    String(handler.videoData?.url || "").trim(),
+  ].filter(Boolean);
+
+  return candidates[0] || globalThis.location.href;
+}
+
+function getPvlTranslatedSubtitlesUrl(): string | null {
+  const scope = globalThis as Record<string, unknown>;
+  const generic = String(scope.__VOT_LAST_EXTERNAL_SUBTITLE_URL__ ?? "").trim();
+  if (generic) {
+    return generic;
+  }
+
+  const direct = String(scope.__PVL_LAST_TRANSLATED_SUBTITLES_URL ?? "").trim();
+  if (direct) {
+    return direct;
+  }
+
+  const lastTrack = scope.__VOT_LAST_SUBTITLE_TRACK__;
+  if (lastTrack && typeof lastTrack === "object") {
+    const effectiveUrl = String(
+      (lastTrack as Record<string, unknown>).effectiveUrl ?? "",
+    ).trim();
+    if (effectiveUrl) {
+      return effectiveUrl;
+    }
+  }
+
+  return null;
+}
+
+function buildPvlTranslationReadyPayload(
+  handler: VideoHandler,
+  audioUrl: string,
+): PvlTranslationReadyPayload {
+  const baseName = handler.getDownloadBaseName() || "translation";
+  const subtitlesUrl = getPvlTranslatedSubtitlesUrl();
+
+  return {
+    url: audioUrl,
+    videoSrc: getPvlVideoSourceUrl(handler),
+    videoTitle:
+      String(handler.videoData?.downloadTitle || handler.videoData?.title || "").trim() ||
+      baseName,
+    suggestedFileName: `${baseName}.translated.mp3`,
+    subtitlesUrl,
+    suggestedSubtitlesFileName: subtitlesUrl ? `${baseName}.translated.vtt` : null,
+  };
+}
+
+async function notifyPvlTranslationReady(
+  handler: VideoHandler,
+  audioUrl: string,
+): Promise<boolean> {
+  const tunnelContext = getExternalTunnelContext(handler);
+  if (!tunnelContext) {
+    return false;
+  }
+
+  const payload = buildPvlTranslationReadyPayload(handler, audioUrl);
+
+  try {
+const state = globalThis as Record<string, unknown>;
+const dedupeKey = `${handler.videoData?.videoId || ""}|${audioUrl}`;
+
+if (state.__PVL_LAST_TRANSLATION_READY_KEY__ === dedupeKey) {
+  debug.log("[VOT][tunnel] skip duplicate translation-ready", { dedupeKey });
+  return true;
+}
+
+state.__PVL_LAST_TRANSLATION_READY_KEY__ = dedupeKey;
+    const response = await fetch("/translation-ready", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      mode: "same-origin",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      debug.log("[VOT][tunnel] translation-ready callback failed", {
+        kind: tunnelContext.kind,
+        status: response.status,
+        statusText: response.statusText,
+        payload,
+      });
+      return false;
+    }
+
+    debug.log("[VOT][tunnel] translation-ready callback sent", {
+      kind: tunnelContext.kind,
+      payload,
+    });
+    return true;
+  } catch (error) {
+    debug.log("[VOT][tunnel] translation-ready callback error", {
+      kind: tunnelContext.kind,
+      error,
+    });
+    return false;
+  }
+}
+
+function getAutoplayRecoveryHintText(): string {
+  return localizationProvider.lang === "ru"
+    ? "Браузер заблокировал автозапуск перевода. Нажмите на страницу или на кнопку ещё раз."
+    : "Browser autoplay blocked translated audio. Click the page or the button again.";
+}
+
+function setPendingAutoplayDebugValue(
+  handler: VideoHandler,
+  pending: PendingAutoplayRecovery | null,
+): void {
+  const globalRecord = globalThis as Record<string, unknown>;
+  if (!pending) {
+    try {
+      globalRecord.__VOT_PENDING_AUTOPLAY_RECOVERY__ = null;
+    } catch (error) {
+      debug.log("[VOT][audio] failed to reset pending autoplay debug value", error);
+    }
+    return;
+  }
+
+  try {
+    globalRecord.__VOT_PENDING_AUTOPLAY_RECOVERY__ = {
+      ...pending,
+      siteHost: handler.site.host,
+      pageUrl: globalThis.location.href,
+    };
+  } catch (error) {
+    debug.log("[VOT][audio] failed to store pending autoplay debug value", error);
+  }
+}
+
+function clearPendingAutoplayRecoveryState(handler: VideoHandler): void {
+  try {
+    handler.pendingAutoplayRecoveryAbortController?.abort();
+  } catch {
+    // ignore
+  }
+
+  handler.pendingAutoplayRecoveryAbortController = undefined;
+  handler.pendingAutoplayRecovery = null;
+  setPendingAutoplayDebugValue(handler, null);
+}
+
+function hasPlayableMediaState(media: HTMLMediaElement): boolean {
+  return Boolean(
+    media.readyState >= HTMLMediaElement.HAVE_METADATA ||
+      media.currentTime > 0 ||
+      (Number.isFinite(media.duration) && media.duration > 0),
+  );
+}
+
+function hasManagedAudioGraph(player?: AudioPlayerLike): boolean {
+  return Boolean(
+    player?.gainNode || player?.audioSource || player?.mediaElementSource,
+  );
+}
+
+function hasStartedAudiblePlayback(
+  handler: VideoHandler,
+  media: HTMLMediaElement,
+  player?: AudioPlayerLike,
+): boolean {
+  if (media.paused || media.readyState < 2 || Boolean(media.error)) {
+    return false;
+  }
+
+  const audioContextState =
+    handler.audioPlayer?.audioContext?.state ?? handler.audioContext?.state;
+
+  if (audioContextState === "suspended" && hasManagedAudioGraph(player)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isLikelyAutoplayBlocked(handler: VideoHandler): boolean {
+  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const media = getPlayerMediaElement(player);
+  const sourceUrl = String(player?.currentSrc || player?.src || "");
+  const audioContextState =
+    handler.audioPlayer?.audioContext?.state ?? handler.audioContext?.state;
+
+  if (!player || !media || !sourceUrl || !handler.video || handler.video.paused) {
+    return false;
+  }
+
+  if (media.error) {
+    return false;
+  }
+
+  if (audioContextState === "suspended" && hasManagedAudioGraph(player)) {
+    return true;
+  }
+
+  return media.paused && hasPlayableMediaState(media);
+}
+
+async function resumePendingAutoplayRecoveryInternal(
+  handler: VideoHandler,
+  trigger: string,
+): Promise<boolean> {
+  const pending = handler.pendingAutoplayRecovery;
+  if (!pending) {
+    return false;
+  }
+
+  const actionContext = {
+    gen: pending.gen,
+    videoId: pending.videoId,
+  };
+
+  if (handler.isActionStale(actionContext)) {
+    clearPendingAutoplayRecoveryState(handler);
+    return false;
+  }
+
+  debug.log("[VOT][audio] retrying translated audio after user gesture", {
+    trigger,
+    sourceUrl: pending.sourceUrl,
+    videoId: pending.videoId,
+  });
+
+  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const currentSource = String(player?.currentSrc || player?.src || "");
+  const normalizedPendingSource = normalizeManagedAudioUrl(
+    handler,
+    pending.sourceUrl,
+  );
+  const normalizedCurrentSource = normalizeManagedAudioUrl(handler, currentSource);
+
+  if (
+    normalizedPendingSource &&
+    normalizedCurrentSource !== normalizedPendingSource
+  ) {
+    const applyResult = await applyTranslationSource(
+      handler,
+      pending.sourceUrl,
+      actionContext,
+    );
+
+    if (applyResult.status !== "success") {
+      debug.log("[VOT][audio] failed to restore pending translated source", {
+        trigger,
+        applyResult,
+      });
+      return false;
+    }
+  }
+
+  const resumeResult = await resumePlayerAudioContextIfNeeded(handler);
+  if (resumeResult === "failed") {
+    debug.log("[VOT][audio] AudioContext resume failed during autoplay recovery");
+  }
+
+  await attemptTranslatedPlaybackStart(handler, actionContext);
+
+  const started = await ensureTranslatedAudioStarted(handler, actionContext, 1800);
+  if (!started) {
+    debug.log("[VOT][audio] translated audio still did not start after gesture", {
+      trigger,
+      sourceUrl: pending.sourceUrl,
+    });
+    return false;
+  }
+
+  clearPendingAutoplayRecoveryState(handler);
+  handler.transformBtn("success", localizationProvider.get("disableTranslate"));
+  handler.syncPopupOverlayState({
+    hint: handler.downloadTranslationUrl
+      ? "Translated audio is ready for download."
+      : "Waiting for translated audio.",
+  });
+  return true;
+}
+
+function markAutoplayRecoveryPending(
+  handler: VideoHandler,
+  sourceUrl: string,
+  actionContext?: ActionContext,
+): void {
+  clearPendingAutoplayRecoveryState(handler);
+
+  const pending: PendingAutoplayRecovery = {
+    gen: actionContext?.gen ?? handler.actionsGeneration,
+    videoId: actionContext?.videoId ?? handler.videoData?.videoId ?? "",
+    sourceUrl,
+    createdAt: Date.now(),
+  };
+
+  const abortController = new AbortController();
+  const gestureEvents = ["pointerdown", "touchstart", "click", "keydown"] as const;
+  const onUserGesture = (event: Event) => {
+    debug.log("[VOT][audio] user gesture detected while autoplay recovery is pending", {
+      type: event.type,
+      sourceUrl,
+      videoId: pending.videoId,
+    });
+    void resumePendingAutoplayRecoveryInternal(
+      handler,
+      `gesture:${event.type}`,
+    );
+  };
+
+  handler.pendingAutoplayRecovery = pending;
+  handler.pendingAutoplayRecoveryAbortController = abortController;
+  setPendingAutoplayDebugValue(handler, pending);
+
+  for (const eventName of gestureEvents) {
+    document.addEventListener(eventName, onUserGesture, {
+      capture: true,
+      passive: eventName !== "keydown",
+      signal: abortController.signal,
+    });
+  }
+}
+
+async function attemptTranslatedPlaybackStart(
+  handler: VideoHandler,
+  actionContext?: ActionContext,
+): Promise<void> {
+  if (handler.isActionStale(actionContext)) {
+    return;
+  }
+
+  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const media = getPlayerMediaElement(player);
+  const hostVideo = handler.video;
+  const hasSource = Boolean(player?.currentSrc || player?.src);
+
+  if (!player || !hostVideo || hostVideo.paused || !hasSource) {
+    return;
+  }
+
+  try {
+    player.lipSync?.("play");
+  } catch (error) {
+    debug.log("[updateTranslation] lipSync(play) failed", error);
+  }
+
+  try {
+    await player.play?.();
+  } catch (error) {
+    debug.log("[updateTranslation] player.play() failed", error);
+  }
+
+  if (!media) {
+    return;
+  }
+
+  try {
+    media.currentTime = hostVideo.currentTime;
+  } catch {
+    // ignore
+  }
+
+  try {
+    media.playbackRate = hostVideo.playbackRate;
+  } catch {
+    // ignore
+  }
+
+  try {
+    await media.play();
+  } catch (error) {
+    debug.log("[updateTranslation] media.play() failed", error);
+  }
+}
+
+export function clearPendingAutoplayRecovery(
+  this: VideoHandler,
+  resetUi = false,
+): void {
+  const hadPending = Boolean(this.pendingAutoplayRecovery);
+  clearPendingAutoplayRecoveryState(this);
+
+  if (resetUi && hadPending && this.hasActiveSource()) {
+    this.transformBtn("success", localizationProvider.get("disableTranslate"));
+  }
+}
+
+export function isAwaitingAutoplayRecovery(this: VideoHandler): boolean {
+  return Boolean(this.pendingAutoplayRecovery);
+}
+
+export async function resumePendingAutoplayRecovery(
+  this: VideoHandler,
+  trigger = "manual",
+): Promise<boolean> {
+  if (!this.pendingAutoplayRecovery) {
+    return false;
+  }
+
+  if (this.pendingAutoplayRecoveryPromise) {
+    return await this.pendingAutoplayRecoveryPromise;
+  }
+
+  const inFlight = resumePendingAutoplayRecoveryInternal(this, trigger).finally(
+    () => {
+      if (this.pendingAutoplayRecoveryPromise === inFlight) {
+        this.pendingAutoplayRecoveryPromise = null;
+      }
+    },
+  );
+
+  this.pendingAutoplayRecoveryPromise = inFlight;
+  return await inFlight;
+}
+
+export function syncTranslationPlaybackVolume(this: VideoHandler): void {
+  const player = this.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const nextVolume = this.uiManager.votOverlayView?.translationVolumeSlider?.value;
+  applyTranslationPlaybackVolume(player, nextVolume, this.data?.defaultVolume);
+}
+
+export async function primePlaybackByGesture(
+  this: VideoHandler,
+  trigger = "manual",
+): Promise<void> {
+  try {
+    if (!this.audioPlayer) {
+      this.createPlayer();
+    }
+
+    const result = await resumePlayerAudioContextIfNeeded(this);
+    debug.log("[VOT][audio] primed playback context from user gesture", {
+      trigger,
+      result,
+      player: this.audioPlayer?.player?.constructor?.name ?? "unknown",
+    });
+  } catch (error) {
+    debug.log("[VOT][audio] failed to prime playback context", {
+      trigger,
+      error,
+    });
+  }
 }
 
 function getNowMs(): number {
@@ -979,7 +1560,7 @@ async function applyTranslationSource(
     }
 
     if (!handler.video.paused && handler.audioPlayer.player.src) {
-      handler.audioPlayer.player.lipSync("play");
+      await attemptTranslatedPlaybackStart(handler, actionContext);
     }
 
     return {
@@ -999,7 +1580,7 @@ async function applyTranslationSource(
 async function ensureTranslatedAudioStarted(
   handler: VideoHandler,
   actionContext?: ActionContext,
-  timeoutMs = 1500,
+  timeoutMs = TRANSLATED_AUDIO_START_TIMEOUT_MS,
 ): Promise<boolean> {
   const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
   const media = getPlayerMediaElement(player);
@@ -1013,7 +1594,13 @@ async function ensureTranslatedAudioStarted(
     return true;
   }
 
-  if (!media.paused && media.readyState >= 2 && !media.error) {
+  if (hasStartedAudiblePlayback(handler, media, player)) {
+    return true;
+  }
+
+  await attemptTranslatedPlaybackStart(handler, actionContext);
+
+  if (hasStartedAudiblePlayback(handler, media, player)) {
     return true;
   }
 
@@ -1027,25 +1614,37 @@ async function ensureTranslatedAudioStarted(
       resolve(value);
     };
 
-    const onGood = () => finish(true);
+    const onGood = () => {
+      void attemptTranslatedPlaybackStart(handler, actionContext);
+      finish(true);
+    };
     const onBad = () => finish(false);
+    const onReady = () => {
+      void attemptTranslatedPlaybackStart(handler, actionContext);
+      if (hasStartedAudiblePlayback(handler, media, player)) {
+        finish(true);
+      }
+    };
 
     const timer = setTimeout(() => {
-      finish(!media.paused && media.readyState >= 2 && !media.error);
+      void attemptTranslatedPlaybackStart(handler, actionContext);
+      finish(hasStartedAudiblePlayback(handler, media, player));
     }, timeoutMs);
 
     const cleanup = () => {
       clearTimeout(timer);
       media.removeEventListener("playing", onGood);
-      media.removeEventListener("canplay", onGood);
-      media.removeEventListener("loadeddata", onGood);
+      media.removeEventListener("canplay", onReady);
+      media.removeEventListener("loadeddata", onReady);
+      media.removeEventListener("loadedmetadata", onReady);
       media.removeEventListener("error", onBad);
       //media.removeEventListener("abort", onBad);
     };
 
     media.addEventListener("playing", onGood, { once: true });
-    media.addEventListener("canplay", onGood, { once: true });
-    media.addEventListener("loadeddata", onGood, { once: true });
+    media.addEventListener("canplay", onReady, { once: true });
+    media.addEventListener("loadeddata", onReady, { once: true });
+    media.addEventListener("loadedmetadata", onReady, { once: true });
     media.addEventListener("error", onBad, { once: true });
     //media.addEventListener("abort", onBad, { once: true });
 
@@ -1107,7 +1706,7 @@ async function recoverAfterMediaAbort(
     const started = await ensureTranslatedAudioStarted(
       handler,
       actionContext,
-      1500,
+      TRANSLATED_AUDIO_START_TIMEOUT_MS,
     );
 
     if (!started) {
@@ -1136,6 +1735,7 @@ export async function updateTranslation(
 ): Promise<void> {
   await this.waitForPendingStopTranslate();
   if (this.isActionStale(actionContext)) return;
+  clearPendingAutoplayRecoveryState(this);
   if (!this.audioPlayer) {
     this.createPlayer();
   }
@@ -1157,6 +1757,8 @@ export async function updateTranslation(
     );
   }
   if (this.isActionStale(actionContext)) return;
+  this.externalTranslationSourceUrl = null;
+
   let applyResult = await applyTranslationSource(
     this,
     nextAudioUrl,
@@ -1258,11 +1860,26 @@ if (shouldRequireImmediateTranslatedStart(this)) {
   const started = await ensureTranslatedAudioStarted(
     this,
     actionContext,
-    1500,
+    TRANSLATED_AUDIO_START_TIMEOUT_MS,
   );
 
   if (!started) {
     debug.log("[updateTranslation] audio source attached but playback did not start");
+
+    if (isLikelyAutoplayBlocked(this)) {
+      debug.log("[VOT][audio] translated audio is waiting for a user gesture", {
+        sourceUrl: nextAudioUrl,
+        videoId: actionContext?.videoId ?? this.videoData?.videoId,
+      });
+        markAutoplayRecoveryPending(this, nextAudioUrl, actionContext);
+        this.setupAudioSettings();
+        this.transformBtn("success", getAutoplayRecoveryButtonText());
+        this.afterUpdateTranslation(nextAudioUrl);
+        this.syncPopupOverlayState({
+          hint: getAutoplayRecoveryHintText(),
+        });
+        return;
+    }
 
     const recovered = await recoverAfterMediaAbort(
       this,
@@ -1551,9 +2168,11 @@ export function isYouTubeHosts(this: VideoHandler) {
 }
 
 export function setupAudioSettings(this: VideoHandler) {
-  if (typeof this.data?.defaultVolume === "number") {
-    this.audioPlayer.player.volume = this.data.defaultVolume / 100;
-  }
+  applyTranslationPlaybackVolume(
+    this.audioPlayer?.player as unknown as AudioPlayerLike | undefined,
+    this.uiManager.votOverlayView?.translationVolumeSlider?.value,
+    this.data?.defaultVolume,
+  );
 
   const autoVolumeMode = getAutoVolumeMode(this);
 
@@ -1598,4 +2217,15 @@ export function setupAudioSettings(this: VideoHandler) {
     initSmartDuckingRuntime(this.smartVolumeDuckingBaseline),
   );
   this.smartVolumeIsDucked = true;
+}
+
+export function applyManualVideoVolumeOverride(
+  this: VideoHandler,
+  volume01: number,
+): void {
+  if (!this.data?.enabledAutoVolume || !this.hasActiveSource()) return;
+
+  const nextVolume = Math.max(0, Math.min(1, volume01));
+  this.smartVolumeDuckingBaseline = nextVolume;
+  this.smartVolumeLastApplied = nextVolume;
 }

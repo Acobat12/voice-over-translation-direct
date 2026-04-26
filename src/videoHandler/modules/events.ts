@@ -1,4 +1,5 @@
 import YoutubeHelper from "@vot.js/ext/helpers/youtube";
+import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
 import { getVideoID } from "@vot.js/ext/utils/videoData";
 import { availableLangs } from "@vot.js/shared/consts";
 import type { RequestLang } from "@vot.js/shared/types/data";
@@ -76,6 +77,15 @@ function mergeListenerSignals(
   secondary.addEventListener("abort", onSecondaryAbort, { once: true });
 
   return controller.signal;
+}
+
+function isVkLikeSiteHost(host: string): boolean {
+  return (
+    host === "vk" ||
+    /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
+      String(globalThis.location?.hostname || ""),
+    )
+  );
 }
 
 function createScopedListeners(signal: AbortSignal): {
@@ -356,7 +366,9 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
       `[document click] ${isButton} ${isMenu} ${isVideo} ${isSettings} ${isTempDialog}`,
     );
     if (isButton || isMenu || isSettings || isTempDialog) return;
-    if (!isVideo) overlayView.updateButtonOpacity(0);
+    if (!isVideo && !isVkLikeSiteHost(self.site.host)) {
+      overlayView.updateButtonOpacity(0);
+    }
     if (menu && !menu.hidden) {
       menu.hidden = true;
       self.overlayVisibility?.queueAutoHide();
@@ -418,18 +430,24 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
     if (document.hidden) clearUserPressedKeys();
   });
   add(globalThis, "blur", clearUserPressedKeys);
+  const hostInteractionTargets = new Set<EventTarget>();
   const eventContainer = self.getEventContainer();
   if (eventContainer) {
-    addMany(eventContainer, ["pointerenter", "pointerdown"], (event) =>
+    hostInteractionTargets.add(eventContainer);
+  }
+  hostInteractionTargets.add(self.container);
+  hostInteractionTargets.add(self.video);
+  for (const target of hostInteractionTargets) {
+    addMany(target, ["pointerenter", "pointerdown"], (event) =>
       self.overlayVisibility.handleHostInteraction(event),
     );
     add(
-      eventContainer,
+      target,
       "pointermove",
       (event) => self.overlayVisibility.handleHostInteraction(event),
       { passive: true },
     );
-    add(eventContainer, "pointerleave", (event) =>
+    add(target, "pointerleave", (event) =>
       self.overlayVisibility.scheduleHide(event),
     );
   }
@@ -481,6 +499,10 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
     if (self.videoData && videoId && videoId === self.videoData.videoId) {
       // Quality changes can trigger media reload (`emptied`) for the same
       // logical video. Keep translation state intact in this case.
+      return;
+    }
+    if (self.site.host === "custom" && getTunnelPlayerContext()) {
+      debug.log("[VOT][custom][tunnel] ignore video emptied");
       return;
     }
     debug.log("lipsync mode is emptied");
@@ -558,6 +580,10 @@ export function isOverlayInteractiveNode(
   );
 }
 export function getAutoHideDelay(this: VideoHandler): number {
+  if (isVkLikeSiteHost(this.site.host)) {
+    return 60_000;
+  }
+
   const delay = this.data?.autoHideButtonDelay;
   return typeof delay === "number" && Number.isFinite(delay)
     ? delay

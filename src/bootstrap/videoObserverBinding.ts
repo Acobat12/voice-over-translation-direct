@@ -31,6 +31,13 @@ type SiteContainerMatch = {
 };
 
 const boundObservers = new WeakSet<VideoObserver>();
+const loggedNativeSubtitleSignatures = new WeakMap<HTMLVideoElement, string>();
+
+function isVkProbeHost(): boolean {
+  return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
+    String(globalThis.location.hostname || ""),
+  );
+}
 
 function isRenderableVideo(video: HTMLVideoElement): boolean {
   if (!video.isConnected) {
@@ -52,6 +59,102 @@ function isRenderableVideo(video: HTMLVideoElement): boolean {
   }
 
   return true;
+}
+
+function getVideoArea(video: HTMLVideoElement): number {
+  const rect = video.getBoundingClientRect();
+  return Math.max(0, rect.width) * Math.max(0, rect.height);
+}
+
+function hasResolvableMediaSource(video: HTMLVideoElement): boolean {
+  if (video.currentSrc || video.src || video.srcObject) {
+    return true;
+  }
+
+  const source = video.querySelector("source");
+  return Boolean(source?.getAttribute("src") || source?.src);
+}
+
+function logNativeSubtitleTracks(video: HTMLVideoElement): void {
+  const trackEntries = Array.from(video.querySelectorAll("track"))
+    .map((track, index) => {
+      const rawUrl = String(track.src || track.getAttribute("src") || "").trim();
+      if (!rawUrl) {
+        return null;
+      }
+
+      let url = rawUrl;
+      try {
+        url = new URL(rawUrl, document.baseURI).href;
+      } catch {
+        // Keep raw URL.
+      }
+
+      return {
+        index,
+        kind: String(track.kind || track.getAttribute("kind") || "").trim(),
+        srclang: String(
+          track.srclang || track.track?.language || track.getAttribute("srclang") || "",
+        ).trim(),
+        label: String(track.label || track.getAttribute("label") || "").trim(),
+        url,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+
+  const signature = trackEntries
+    .map((entry) =>
+      [entry.index, entry.kind, entry.srclang, entry.label, entry.url].join("|"),
+    )
+    .join("||");
+
+  if (loggedNativeSubtitleSignatures.get(video) === signature) {
+    return;
+  }
+
+  loggedNativeSubtitleSignatures.set(video, signature);
+  (globalThis as Record<string, unknown>).__VOT_DETECTED_NATIVE_SUBTITLE_TRACKS__ =
+    trackEntries;
+
+  if (!trackEntries.length) {
+    console.log("[VOT][subtitles][native] no <track> subtitle URLs detected for video");
+    return;
+  }
+
+  console.log(
+    `[VOT][subtitles][native] detected ${trackEntries.length} <track> subtitle URL(s). Inspect window.__VOT_DETECTED_NATIVE_SUBTITLE_TRACKS__.`,
+  );
+  console.table(trackEntries);
+}
+
+function shouldReplaceActiveVideo(
+  activeVideo: HTMLVideoElement,
+  nextVideo: HTMLVideoElement,
+): boolean {
+  if (!activeVideo.isConnected) {
+    return true;
+  }
+
+  const activeArea = getVideoArea(activeVideo);
+  const nextArea = getVideoArea(nextVideo);
+  const activeRenderable = isRenderableVideo(activeVideo);
+  const nextRenderable = isRenderableVideo(nextVideo);
+  const activeHasSource = hasResolvableMediaSource(activeVideo);
+  const nextHasSource = hasResolvableMediaSource(nextVideo);
+
+  if (!activeRenderable && nextRenderable) {
+    return true;
+  }
+
+  if (!activeHasSource && nextHasSource) {
+    return true;
+  }
+
+  if (nextArea > activeArea * 1.1) {
+    return true;
+  }
+
+  return false;
 }
 
 export function bindObserverListeners(
@@ -164,11 +267,34 @@ export function bindObserverListeners(
         return;
       }
 
+      logNativeSubtitleTracks(video);
+
       const match = getMatchedSiteAndContainer(video);
       if (!match) {
+        if (isVkProbeHost()) {
+          const rect = video.getBoundingClientRect();
+          console.warn("[VOT][VK probe] video detected but no site/container match", {
+            src: video.currentSrc || video.src || "",
+            w: rect.width,
+            h: rect.height,
+            path: globalThis.location.pathname,
+          });
+        }
         return;
       }
       const { site, container } = match;
+      if (isVkProbeHost()) {
+        const rect = video.getBoundingClientRect();
+        console.log("[VOT][VK probe] matched video", {
+          site: site.host,
+          selector: site.selector,
+          container: container?.tagName,
+          classes: container?.className,
+          w: rect.width,
+          h: rect.height,
+          src: video.currentSrc || video.src || "",
+        });
+      }
       if (
         (site.host === "googledrive" ||
           globalThis.location.hostname === "youtube.googleapis.com") &&
@@ -179,20 +305,7 @@ export function bindObserverListeners(
       const activeVideoForContainer = containerOwners.get(container);
       if (activeVideoForContainer && activeVideoForContainer !== video) {
         if (activeVideoForContainer.isConnected) {
-          const activeRect = activeVideoForContainer.getBoundingClientRect();
-          const nextRect = video.getBoundingClientRect();
-
-          const activeArea = activeRect.width * activeRect.height;
-          const nextArea = nextRect.width * nextRect.height;
-
-          if (
-            site.host === "googledrive" ||
-            globalThis.location.hostname === "youtube.googleapis.com"
-          ) {
-            if (nextArea <= activeArea) {
-              return;
-            }
-
+          if (shouldReplaceActiveVideo(activeVideoForContainer, video)) {
             await releaseVideoHandler(activeVideoForContainer, "smaller duplicate");
             clearContainerOwner(activeVideoForContainer);
           } else {
