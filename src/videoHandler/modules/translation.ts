@@ -1,8 +1,8 @@
-
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import { defaultAutoVolume } from "../../config/config";
 import { YANDEX_TTL_MS } from "../../core/cacheManager";
 import { isTranslationDownloadHost } from "../../core/hostPolicies";
+import { isCustomPlaybackTarget } from "../../core/playbackPolicy";
 import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
@@ -123,11 +123,15 @@ const smartDuckingAnalyserState = new WeakMap<
 
 function isMediaAbortError(error: unknown): boolean {
   const name = String((error as { name?: unknown })?.name ?? "");
-  const message = String((error as { message?: unknown })?.message ?? error ?? "");
+  const message = String(
+    (error as { message?: unknown })?.message ?? error ?? "",
+  );
 
   return (
     name === "AbortError" ||
-    message.includes("The fetching process for the media resource was aborted") ||
+    message.includes(
+      "The fetching process for the media resource was aborted",
+    ) ||
     message.includes("media resource was aborted by the user agent")
   );
 }
@@ -298,11 +302,14 @@ function buildPvlTranslationReadyPayload(
     url: audioUrl,
     videoSrc: getPvlVideoSourceUrl(handler),
     videoTitle:
-      String(handler.videoData?.downloadTitle || handler.videoData?.title || "").trim() ||
-      baseName,
+      String(
+        handler.videoData?.downloadTitle || handler.videoData?.title || "",
+      ).trim() || baseName,
     suggestedFileName: `${baseName}.translated.mp3`,
     subtitlesUrl,
-    suggestedSubtitlesFileName: subtitlesUrl ? `${baseName}.translated.vtt` : null,
+    suggestedSubtitlesFileName: subtitlesUrl
+      ? `${baseName}.translated.vtt`
+      : null,
   };
 }
 
@@ -318,15 +325,17 @@ async function notifyPvlTranslationReady(
   const payload = buildPvlTranslationReadyPayload(handler, audioUrl);
 
   try {
-const state = globalThis as Record<string, unknown>;
-const dedupeKey = `${handler.videoData?.videoId || ""}|${audioUrl}`;
+    const state = globalThis as Record<string, unknown>;
+    const dedupeKey = `${handler.videoData?.videoId || ""}|${audioUrl}`;
 
-if (state.__PVL_LAST_TRANSLATION_READY_KEY__ === dedupeKey) {
-  debug.log("[VOT][tunnel] skip duplicate translation-ready", { dedupeKey });
-  return true;
-}
+    if (state.__PVL_LAST_TRANSLATION_READY_KEY__ === dedupeKey) {
+      debug.log("[VOT][tunnel] skip duplicate translation-ready", {
+        dedupeKey,
+      });
+      return true;
+    }
 
-state.__PVL_LAST_TRANSLATION_READY_KEY__ = dedupeKey;
+    state.__PVL_LAST_TRANSLATION_READY_KEY__ = dedupeKey;
     const response = await fetch("/translation-ready", {
       method: "POST",
       headers: {
@@ -377,7 +386,10 @@ function setPendingAutoplayDebugValue(
     try {
       globalRecord.__VOT_PENDING_AUTOPLAY_RECOVERY__ = null;
     } catch (error) {
-      debug.log("[VOT][audio] failed to reset pending autoplay debug value", error);
+      debug.log(
+        "[VOT][audio] failed to reset pending autoplay debug value",
+        error,
+      );
     }
     return;
   }
@@ -389,7 +401,10 @@ function setPendingAutoplayDebugValue(
       pageUrl: globalThis.location.href,
     };
   } catch (error) {
-    debug.log("[VOT][audio] failed to store pending autoplay debug value", error);
+    debug.log(
+      "[VOT][audio] failed to store pending autoplay debug value",
+      error,
+    );
   }
 }
 
@@ -424,7 +439,7 @@ function hasStartedAudiblePlayback(
   media: HTMLMediaElement,
   player?: AudioPlayerLike,
 ): boolean {
-  if (media.paused || media.readyState < 2 || Boolean(media.error)) {
+  if (media.paused || media.readyState < 2 || media.error) {
     return false;
   }
 
@@ -439,13 +454,21 @@ function hasStartedAudiblePlayback(
 }
 
 function isLikelyAutoplayBlocked(handler: VideoHandler): boolean {
-  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const player = handler.audioPlayer?.player as unknown as
+    | AudioPlayerLike
+    | undefined;
   const media = getPlayerMediaElement(player);
   const sourceUrl = String(player?.currentSrc || player?.src || "");
   const audioContextState =
     handler.audioPlayer?.audioContext?.state ?? handler.audioContext?.state;
 
-  if (!player || !media || !sourceUrl || !handler.video || handler.video.paused) {
+  if (
+    !player ||
+    !media ||
+    !sourceUrl ||
+    !handler.video ||
+    handler.video.paused
+  ) {
     return false;
   }
 
@@ -485,13 +508,18 @@ async function resumePendingAutoplayRecoveryInternal(
     videoId: pending.videoId,
   });
 
-  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const player = handler.audioPlayer?.player as unknown as
+    | AudioPlayerLike
+    | undefined;
   const currentSource = String(player?.currentSrc || player?.src || "");
   const normalizedPendingSource = normalizeManagedAudioUrl(
     handler,
     pending.sourceUrl,
   );
-  const normalizedCurrentSource = normalizeManagedAudioUrl(handler, currentSource);
+  const normalizedCurrentSource = normalizeManagedAudioUrl(
+    handler,
+    currentSource,
+  );
 
   if (
     normalizedPendingSource &&
@@ -514,17 +542,26 @@ async function resumePendingAutoplayRecoveryInternal(
 
   const resumeResult = await resumePlayerAudioContextIfNeeded(handler);
   if (resumeResult === "failed") {
-    debug.log("[VOT][audio] AudioContext resume failed during autoplay recovery");
+    debug.log(
+      "[VOT][audio] AudioContext resume failed during autoplay recovery",
+    );
   }
 
   await attemptTranslatedPlaybackStart(handler, actionContext);
 
-  const started = await ensureTranslatedAudioStarted(handler, actionContext, 1800);
+  const started = await ensureTranslatedAudioStarted(
+    handler,
+    actionContext,
+    1800,
+  );
   if (!started) {
-    debug.log("[VOT][audio] translated audio still did not start after gesture", {
-      trigger,
-      sourceUrl: pending.sourceUrl,
-    });
+    debug.log(
+      "[VOT][audio] translated audio still did not start after gesture",
+      {
+        trigger,
+        sourceUrl: pending.sourceUrl,
+      },
+    );
     return false;
   }
 
@@ -553,13 +590,21 @@ function markAutoplayRecoveryPending(
   };
 
   const abortController = new AbortController();
-  const gestureEvents = ["pointerdown", "touchstart", "click", "keydown"] as const;
+  const gestureEvents = [
+    "pointerdown",
+    "touchstart",
+    "click",
+    "keydown",
+  ] as const;
   const onUserGesture = (event: Event) => {
-    debug.log("[VOT][audio] user gesture detected while autoplay recovery is pending", {
-      type: event.type,
-      sourceUrl,
-      videoId: pending.videoId,
-    });
+    debug.log(
+      "[VOT][audio] user gesture detected while autoplay recovery is pending",
+      {
+        type: event.type,
+        sourceUrl,
+        videoId: pending.videoId,
+      },
+    );
     void resumePendingAutoplayRecoveryInternal(
       handler,
       `gesture:${event.type}`,
@@ -587,7 +632,9 @@ async function attemptTranslatedPlaybackStart(
     return;
   }
 
-  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const player = handler.audioPlayer?.player as unknown as
+    | AudioPlayerLike
+    | undefined;
   const media = getPlayerMediaElement(player);
   const hostVideo = handler.video;
   const hasSource = Boolean(player?.currentSrc || player?.src);
@@ -672,8 +719,11 @@ export async function resumePendingAutoplayRecovery(
 }
 
 export function syncTranslationPlaybackVolume(this: VideoHandler): void {
-  const player = this.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
-  const nextVolume = this.uiManager.votOverlayView?.translationVolumeSlider?.value;
+  const player = this.audioPlayer?.player as unknown as
+    | AudioPlayerLike
+    | undefined;
+  const nextVolume =
+    this.uiManager.votOverlayView?.translationVolumeSlider?.value;
   applyTranslationPlaybackVolume(player, nextVolume, this.data?.defaultVolume);
 }
 
@@ -1252,9 +1302,7 @@ export async function validateAudioUrl(
   const normalizedInput = this.proxifyAudio(directUrl);
 
   const currentSource =
-    this.audioPlayer?.player?.currentSrc ||
-    this.audioPlayer?.player?.src ||
-    "";
+    this.audioPlayer?.player?.currentSrc || this.audioPlayer?.player?.src || "";
 
   const normalizedCurrent = this.proxifyAudio(
     this.unproxifyAudio(currentSource),
@@ -1382,7 +1430,6 @@ export async function refreshTranslationAudio(
     this.videoData.translationHelp,
   );
   try {
-
     const translateRes = await requestApplyAndCacheTranslation(this, {
       videoData,
       requestLang: resolvedReqLang,
@@ -1497,10 +1544,13 @@ async function applyTranslationSource(
           throw error;
         }
 
-        debug.log("[updateTranslation] transient media abort, retrying init once", {
-          sourceUrl,
-          error,
-        });
+        debug.log(
+          "[updateTranslation] transient media abort, retrying init once",
+          {
+            sourceUrl,
+            error,
+          },
+        );
 
         await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -1582,7 +1632,9 @@ async function ensureTranslatedAudioStarted(
   actionContext?: ActionContext,
   timeoutMs = TRANSLATED_AUDIO_START_TIMEOUT_MS,
 ): Promise<boolean> {
-  const player = handler.audioPlayer?.player as unknown as AudioPlayerLike | undefined;
+  const player = handler.audioPlayer?.player as unknown as
+    | AudioPlayerLike
+    | undefined;
   const media = getPlayerMediaElement(player);
 
   if (!player) return false;
@@ -1727,7 +1779,6 @@ async function recoverAfterMediaAbort(
   return true;
 }
 
-
 export async function updateTranslation(
   this: VideoHandler,
   audioUrl: string,
@@ -1810,102 +1861,32 @@ export async function updateTranslation(
 
   if (applyResult.status === "stale") return;
 
-if (applyResult.status === "error") {
-  debug.log("this.audioPlayer.init() error", applyResult.error);
+  if (applyResult.status === "error") {
+    debug.log("this.audioPlayer.init() error", applyResult.error);
 
-  if (isMediaAbortError(applyResult.error)) {
-    debug.log(
-      "[updateTranslation] media abort detected, recreating player and retrying once",
-      applyResult.error,
-    );
-
-    const recovered = await recoverAfterMediaAbort(
-      this,
-      nextAudioUrl,
-      actionContext,
-    );
-
-    if (recovered) {
-      return;
-    }
-  }
-
-  await rollbackStaleAppliedSourceIfStillCurrent(this, appliedSourceUrl);
-
-  try {
-    await this.audioPlayer?.player?.clear();
-  } catch (err) {
-    debug.log("[updateTranslation] player.clear failed", err);
-  }
-
-  try {
-    if (this.audioPlayer?.player) {
-      this.audioPlayer.player.src = "";
-    }
-  } catch {
-    // ignore
-  }
-
-  this.downloadTranslationUrl = null;
-
-  const msg = toErrorMessage(applyResult.error);
-  this.transformBtn("error", msg);
-
-  throw applyResult.error instanceof Error
-    ? applyResult.error
-    : new Error(msg);
-}
-
-if (shouldRequireImmediateTranslatedStart(this)) {
-  const started = await ensureTranslatedAudioStarted(
-    this,
-    actionContext,
-    TRANSLATED_AUDIO_START_TIMEOUT_MS,
-  );
-
-  if (!started) {
-    debug.log("[updateTranslation] audio source attached but playback did not start");
-
-    if (this.videoData?.host === "custom") {
+    if (isMediaAbortError(applyResult.error)) {
       debug.log(
-        "[updateTranslation] custom source: translated audio did not auto-start, keeping translation active",
+        "[updateTranslation] media abort detected, recreating player and retrying once",
+        applyResult.error,
       );
 
-        this.setupAudioSettings();
-        this.transformBtn("success", localizationProvider.get("disableTranslate"));
-        this.afterUpdateTranslation(nextAudioUrl);
+      const recovered = await recoverAfterMediaAbort(
+        this,
+        nextAudioUrl,
+        actionContext,
+      );
+
+      if (recovered) {
         return;
+      }
     }
 
-    if (isLikelyAutoplayBlocked(this)) {
-      debug.log("[VOT][audio] translated audio is waiting for a user gesture", {
-        sourceUrl: nextAudioUrl,
-        videoId: actionContext?.videoId ?? this.videoData?.videoId,
-      });
-        markAutoplayRecoveryPending(this, nextAudioUrl, actionContext);
-        this.setupAudioSettings();
-        this.transformBtn("success", getAutoplayRecoveryButtonText());
-        this.afterUpdateTranslation(nextAudioUrl);
-        this.syncPopupOverlayState({
-          hint: getAutoplayRecoveryHintText(),
-        });
-        return;
-    }
-
-    const recovered = await recoverAfterMediaAbort(
-      this,
-      nextAudioUrl,
-      actionContext,
-    );
-
-    if (recovered) {
-      return;
-    }
+    await rollbackStaleAppliedSourceIfStillCurrent(this, appliedSourceUrl);
 
     try {
       await this.audioPlayer?.player?.clear();
     } catch (err) {
-      debug.log("[updateTranslation] player.clear after no-start failed", err);
+      debug.log("[updateTranslation] player.clear failed", err);
     }
 
     try {
@@ -1917,18 +1898,99 @@ if (shouldRequireImmediateTranslatedStart(this)) {
     }
 
     this.downloadTranslationUrl = null;
-    this.transformBtn("error", "Translated audio did not start");
-    throw new Error("Translated audio did not start");
-  }
-} else {
-  debug.log(
-    "[updateTranslation] translated source attached while host video is paused; skip immediate start check",
-  );
-}
 
-this.setupAudioSettings();
-this.transformBtn("success", localizationProvider.get("disableTranslate"));
-this.afterUpdateTranslation(nextAudioUrl);
+    const msg = toErrorMessage(applyResult.error);
+    this.transformBtn("error", msg);
+
+    throw applyResult.error instanceof Error
+      ? applyResult.error
+      : new Error(msg);
+  }
+
+  if (shouldRequireImmediateTranslatedStart(this)) {
+    const started = await ensureTranslatedAudioStarted(
+      this,
+      actionContext,
+      TRANSLATED_AUDIO_START_TIMEOUT_MS,
+    );
+
+    if (!started) {
+      debug.log(
+        "[updateTranslation] audio source attached but playback did not start",
+      );
+
+      if (isCustomPlaybackTarget(this.site.host, this.videoData?.host)) {
+        debug.log(
+          "[updateTranslation] custom source: translated audio did not auto-start, keeping translation active",
+        );
+
+        this.setupAudioSettings();
+        this.transformBtn(
+          "success",
+          localizationProvider.get("disableTranslate"),
+        );
+        this.afterUpdateTranslation(nextAudioUrl);
+        return;
+      }
+
+      if (isLikelyAutoplayBlocked(this)) {
+        debug.log(
+          "[VOT][audio] translated audio is waiting for a user gesture",
+          {
+            sourceUrl: nextAudioUrl,
+            videoId: actionContext?.videoId ?? this.videoData?.videoId,
+          },
+        );
+        markAutoplayRecoveryPending(this, nextAudioUrl, actionContext);
+        this.setupAudioSettings();
+        this.transformBtn("success", getAutoplayRecoveryButtonText());
+        this.afterUpdateTranslation(nextAudioUrl);
+        this.syncPopupOverlayState({
+          hint: getAutoplayRecoveryHintText(),
+        });
+        return;
+      }
+
+      const recovered = await recoverAfterMediaAbort(
+        this,
+        nextAudioUrl,
+        actionContext,
+      );
+
+      if (recovered) {
+        return;
+      }
+
+      try {
+        await this.audioPlayer?.player?.clear();
+      } catch (err) {
+        debug.log(
+          "[updateTranslation] player.clear after no-start failed",
+          err,
+        );
+      }
+
+      try {
+        if (this.audioPlayer?.player) {
+          this.audioPlayer.player.src = "";
+        }
+      } catch {
+        // ignore
+      }
+
+      this.downloadTranslationUrl = null;
+      this.transformBtn("error", "Translated audio did not start");
+      throw new Error("Translated audio did not start");
+    }
+  } else {
+    debug.log(
+      "[updateTranslation] translated source attached while host video is paused; skip immediate start check",
+    );
+  }
+
+  this.setupAudioSettings();
+  this.transformBtn("success", localizationProvider.get("disableTranslate"));
+  this.afterUpdateTranslation(nextAudioUrl);
 }
 
 export async function translateFunc(
@@ -1982,7 +2044,7 @@ export async function translateFunc(
       prev: this.lastTranslationVideoId,
       next: currentVideoId,
     });
-   
+
     this.resetActionsAbortController("translateFunc video changed");
 
     try {
@@ -2027,7 +2089,10 @@ export async function translateFunc(
 
   const normalizedTranslationHelp = normalizeTranslationHelp(translationHelp);
   await this.videoManager.ensureDetectedLanguageForTranslation(videoData);
-  const resolvedRequestLang = requestLang === "auto" && videoData.detectedLanguage !== "auto" ? videoData.detectedLanguage : requestLang;
+  const resolvedRequestLang =
+    requestLang === "auto" && videoData.detectedLanguage !== "auto"
+      ? videoData.detectedLanguage
+      : requestLang;
   const cacheKey = this.getTranslationCacheKey(
     VIDEO_ID,
     resolvedRequestLang,
@@ -2064,31 +2129,31 @@ export async function translateFunc(
           this.updateTranslation(nextUrl, ctx),
         scheduleTranslationRefresh: () => this.scheduleTranslationRefresh(),
       });
-const cachedEntry = this.cacheManager.getTranslation(cacheKey);
-if (cachedEntry?.url) {
-  try {
-    const updated = await applyTranslationUrl(cachedEntry.url);
-    if (updated && this.hasActiveSource()) {
-      debug.log("[translateFunc] Cached translation was received");
-      return;
+    const cachedEntry = this.cacheManager.getTranslation(cacheKey);
+    if (cachedEntry?.url) {
+      try {
+        const updated = await applyTranslationUrl(cachedEntry.url);
+        if (updated && this.hasActiveSource()) {
+          debug.log("[translateFunc] Cached translation was received");
+          return;
+        }
+
+        debug.log(
+          "[translateFunc] Cached translation did not activate source, dropping cache and requesting fresh URL",
+        );
+      } catch (err) {
+        debug.log(
+          "[translateFunc] Cached translation failed, dropping cache and requesting fresh URL",
+          err,
+        );
+      }
+
+      if (typeof this.cacheManager.deleteTranslation === "function") {
+        this.cacheManager.deleteTranslation(cacheKey);
+      } else {
+        this.cacheManager.clear();
+      }
     }
-
-    debug.log(
-      "[translateFunc] Cached translation did not activate source, dropping cache and requesting fresh URL",
-    );
-  } catch (err) {
-    debug.log(
-      "[translateFunc] Cached translation failed, dropping cache and requesting fresh URL",
-      err,
-    );
-  }
-
-  if (typeof this.cacheManager.deleteTranslation === "function") {
-    this.cacheManager.deleteTranslation(cacheKey);
-  } else {
-    this.cacheManager.clear();
-  }
-}
     // Do not short-circuit on cached failures.
     // Users must be able to retry immediately (especially after changing
     // proxy settings or recovering from transient backend issues).
@@ -2144,20 +2209,20 @@ if (cachedEntry?.url) {
   };
 
   try {
-  return await translationPromise;
-} catch (err) {
-  debug.log("[translateFunc] transient media abort", err);
-  
-  this.hadAsyncWait = notifyTranslationFailureIfNeeded({
-    aborted: this.actionsAbortController.signal.aborted,
-    translateApiErrorsEnabled: Boolean(this.data?.translateAPIErrors),
-    hadAsyncWait: this.hadAsyncWait,
-    videoId: VIDEO_ID,
-    error: err,
-    notify: (params) => this.notifier.translationFailed(params),
-  });
-  throw err;
-} finally {
+    return await translationPromise;
+  } catch (err) {
+    debug.log("[translateFunc] transient media abort", err);
+
+    this.hadAsyncWait = notifyTranslationFailureIfNeeded({
+      aborted: this.actionsAbortController.signal.aborted,
+      translateApiErrorsEnabled: Boolean(this.data?.translateAPIErrors),
+      hadAsyncWait: this.hadAsyncWait,
+      videoId: VIDEO_ID,
+      error: err,
+      notify: (params) => this.notifier.translationFailed(params),
+    });
+    throw err;
+  } finally {
     if (this.activeTranslation?.promise === translationPromise) {
       this.activeTranslation = null;
     }

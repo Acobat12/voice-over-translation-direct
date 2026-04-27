@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.19
+// @version         1.11.5.20
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -9508,7 +9508,7 @@ get isSupportOnlyLS() {
         return buildVersion || scriptVersion || "unknown";
       }
       function getRuntimeLocaleVersion() {
-        const buildVersion = String("1.11.5.19");
+        const buildVersion = String("1.11.5.20");
         const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
         return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
       }
@@ -10296,6 +10296,27 @@ locale;
           portalContainer: base,
           subtitlesMountContainer
         };
+      }
+      function isCustomPlaybackTarget(siteHost, videoHost) {
+        return siteHost === "custom" || videoHost === "custom";
+      }
+      function shouldUsePlainAudioPlayback(input) {
+        if (isCustomPlaybackTarget(input.siteHost, input.videoHost)) {
+          return true;
+        }
+        if (input.isStream) {
+          return true;
+        }
+        if (!input.hasAudioContext) {
+          return true;
+        }
+        if (!input.newAudioPlayer) {
+          return true;
+        }
+        if (!input.onlyBypassMediaCSP) {
+          return false;
+        }
+        return !input.needBypassCSP;
       }
       class EventImpl {
         listeners = new Set();
@@ -30678,7 +30699,7 @@ headers: {
             TRANSLATED_AUDIO_START_TIMEOUT_MS
           );
           if (!started) {
-            if (this.videoData?.host === "custom") {
+            if (isCustomPlaybackTarget(this.site.host, this.videoData?.host)) {
               this.setupAudioSettings();
               this.transformBtn("success", localizationProvider.get("disableTranslate"));
               this.afterUpdateTranslation(nextAudioUrl);
@@ -31327,18 +31348,23 @@ getAudioContext() {
           return globalThis.AudioContext !== void 0 || globalThis.webkitAudioContext !== void 0;
         }
 getPreferAudio() {
-          if (this.site.host === "custom" || this.videoData?.host === "custom" || this.site.host === "youtube" || this.site.host === "vk" || this.site.host === "rutube" || location.hostname === "vkvideo.ru" || this.site.host === "ok" || this.site.host === "odnoklassniki" || location.hostname === "ok.ru" || location.hostname.endsWith(".ok.ru")) {
+          const siteHost = this.site.host;
+          const videoHost = this.videoData?.host;
+          const isStream = this.videoData?.isStream ?? false;
+          if (isCustomPlaybackTarget(siteHost, videoHost) || isStream) {
             return true;
           }
           const hasAudioContext = Boolean(this.getAudioContext());
           const data = this.data;
-          if (!hasAudioContext) return true;
-          if (!data) return true;
-          if (this.site.needBypassCSP) return false;
-          if (this.videoData?.isStream) return false;
-          if (!data.newAudioPlayer) return true;
-          if (!data.onlyBypassMediaCSP) return false;
-          return true;
+          return shouldUsePlainAudioPlayback({
+            siteHost,
+            videoHost,
+            isStream,
+            hasAudioContext,
+            newAudioPlayer: data?.newAudioPlayer,
+            onlyBypassMediaCSP: data?.onlyBypassMediaCSP,
+            needBypassCSP: this.site.needBypassCSP
+          });
         }
 createPlayer() {
           const preferAudio = this.getPreferAudio();
@@ -31351,7 +31377,7 @@ debug: Boolean(false),
             },
             preferAudio
           });
-          if (preferAudio && (this.site.host === "custom" || this.videoData?.host === "custom")) {
+          if (preferAudio) {
             const playerAudioContext = this.audioPlayer.audioContext;
             this.audioPlayer.audioContext = void 0;
             if (playerAudioContext && playerAudioContext.state !== "closed") {
@@ -31909,16 +31935,16 @@ isYouTubeHosts() {
           );
           const canForceLocalFileUpload = (() => {
             if (!rawUrl) {
-              return host === "custom" || this.videoData?.host === "custom";
+              return isCustomPlaybackTarget(host, this.videoData?.host);
             }
             try {
               const normalizedUrl = new URL(rawUrl, globalThis.location.href).toString();
               if (!this.votClient.isDirectMediaUrl(normalizedUrl)) {
-                return host === "custom" || this.videoData?.host === "custom";
+                return isCustomPlaybackTarget(host, this.videoData?.host);
               }
-              return host === "custom" || this.videoData?.host === "custom" || new URL(normalizedUrl).hostname !== globalThis.location.hostname;
+              return isCustomPlaybackTarget(host, this.videoData?.host) || new URL(normalizedUrl).hostname !== globalThis.location.hostname;
             } catch {
-              return host === "custom" || this.videoData?.host === "custom";
+              return isCustomPlaybackTarget(host, this.videoData?.host);
             }
           })();
           if (canForceLocalFileUpload) {

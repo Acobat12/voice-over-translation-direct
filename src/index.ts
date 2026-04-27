@@ -4,9 +4,7 @@ import { getService } from "@vot.js/ext/utils/videoData";
 import { availableLangs, availableTTS } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { ClientSession, SessionModule } from "@vot.js/shared/types/secure";
-import Chaimu from "./core/chaimuClient";
 import { initAudioContext } from "chaimu/player";
-
 import { getOrCreateBootState } from "./bootstrap/bootState";
 import { ensureRuntimeActivated } from "./bootstrap/runtimeActivation";
 import { bindObserverListeners } from "./bootstrap/videoObserverBinding";
@@ -20,16 +18,21 @@ import { extraSites } from "./config/extraSites";
 import { GENERIC_PLAYER_SELECTOR } from "./config/playerSelectors";
 import { resolveBootstrapMode } from "./core/bootstrapPolicy";
 import { CacheManager, VOTSessionStorageCache } from "./core/cacheManager";
+import Chaimu from "./core/chaimuClient";
 import { findConnectedContainerBySelector } from "./core/containerResolution";
 import { resolveOverlayMountTargets } from "./core/overlayMountTargets";
-import { getTunnelPlayerContext } from "./core/tunnelPlayer";
+import {
+  isCustomPlaybackTarget,
+  shouldUsePlainAudioPlayback,
+} from "./core/playbackPolicy";
+import { shouldUsePopupOverlayWindow } from "./core/popupOverlayPolicy";
 import { VOTTranslationHandler } from "./core/translationHandler";
 import { TranslationOrchestrator } from "./core/translationOrchestrator";
+import { getTunnelPlayerContext } from "./core/tunnelPlayer";
 import { VideoLifecycleController } from "./core/videoLifecycleController";
 import { VOTVideoManager } from "./core/videoManager";
-import { shouldUsePopupOverlayWindow } from "./core/popupOverlayPolicy";
-import { PopupOverlayBridge } from "./popup/popupOverlayBridge";
 import { localizationProvider } from "./localization/localizationProvider";
+import type { PopupOverlayBridge } from "./popup/popupOverlayBridge";
 import type { ProcessedSubtitles } from "./subtitles/processor";
 import type { SubtitleFontFamily } from "./subtitles/types";
 import { SubtitlesWidget } from "./subtitles/widget";
@@ -49,6 +52,7 @@ import {
 } from "./utils/intervalIdleChecker";
 import { installManifestSniffer } from "./utils/manifestSniffer";
 import { Notifier } from "./utils/notify";
+import { votStorage } from "./utils/storage";
 import { translate } from "./utils/translateApis";
 import {
   calculatedResLang,
@@ -56,7 +60,6 @@ import {
   fnv1a32ToKeyPart,
   stableStringify,
 } from "./utils/utils";
-import { votStorage } from "./utils/storage";
 import { VideoObserver } from "./utils/VideoObserver";
 import VOTLocalizedError from "./utils/VOTLocalizedError";
 import {
@@ -100,8 +103,8 @@ import {
   resumePendingAutoplayRecovery as resumePendingAutoplayRecoveryImpl,
   scheduleTranslationRefresh as scheduleTranslationRefreshImpl,
   setupAudioSettings as setupAudioSettingsImpl,
-  syncTranslationPlaybackVolume as syncTranslationPlaybackVolumeImpl,
   stopSmartVolumeDucking as stopSmartVolumeDuckingImpl,
+  syncTranslationPlaybackVolume as syncTranslationPlaybackVolumeImpl,
   translateFunc as translateFuncImpl,
   unproxifyAudio as unproxifyAudioImpl,
   updateTranslation as updateTranslationImpl,
@@ -232,9 +235,12 @@ export class VideoHandler {
   activeTranslation: { key: string; promise: Promise<unknown> } | null = null;
   lastTranslationVideoId: string | null = null;
   externalTranslationSourceUrl: string | null = null;
-  pendingAutoplayRecovery:
-    | { gen: number; videoId: string; sourceUrl: string; createdAt: number }
-    | null = null;
+  pendingAutoplayRecovery: {
+    gen: number;
+    videoId: string;
+    sourceUrl: string;
+    createdAt: number;
+  } | null = null;
   pendingAutoplayRecoveryAbortController?: AbortController;
   pendingAutoplayRecoveryPromise: Promise<boolean> | null = null;
   /**
@@ -402,7 +408,9 @@ export class VideoHandler {
       this.translateToLang,
   ): string | undefined {
     const normalize = (value?: string): string | undefined => {
-      const nextValue = String(value || "").trim().toLowerCase();
+      const nextValue = String(value || "")
+        .trim()
+        .toLowerCase();
       if (!nextValue || nextValue === "auto") {
         return undefined;
       }
@@ -757,31 +765,27 @@ export class VideoHandler {
    * Determines if audio should be preferred.
    * @returns {boolean} True if audio is preferred.
    */
-getPreferAudio() {
-  if (this.site.host === "custom" || this.videoData?.host === "custom" ||
-      this.site.host === "youtube" || this.site.host === "vk" || 
-this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
-    this.site.host === "ok" ||
-    this.site.host === "odnoklassniki" ||
-    location.hostname === "ok.ru" ||
-    location.hostname.endsWith(".ok.ru")) 
-  {
-    return true;
+  getPreferAudio() {
+    const siteHost = this.site.host;
+    const videoHost = this.videoData?.host;
+    const isStream = this.videoData?.isStream ?? false;
+
+    if (isCustomPlaybackTarget(siteHost, videoHost) || isStream) {
+      return true;
+    }
+
+    const hasAudioContext = Boolean(this.getAudioContext());
+    const data = this.data;
+    return shouldUsePlainAudioPlayback({
+      siteHost,
+      videoHost,
+      isStream,
+      hasAudioContext,
+      newAudioPlayer: data?.newAudioPlayer,
+      onlyBypassMediaCSP: data?.onlyBypassMediaCSP,
+      needBypassCSP: this.site.needBypassCSP,
+    });
   }
-
-  const hasAudioContext = Boolean(this.getAudioContext());
-  const data = this.data;
-
-  if (!hasAudioContext) return true;
-  if (!data) return true;
-
-  if (this.site.needBypassCSP) return false;
-  if (this.videoData?.isStream) return false;
-  if (!data.newAudioPlayer) return true;
-  if (!data.onlyBypassMediaCSP) return false;
-
-  return true;
-}
   /**
    * Creates the audio player.
    * @returns {VideoHandler} The VideoHandler instance.
@@ -799,10 +803,7 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
       },
       preferAudio,
     });
-    if (
-      preferAudio &&
-      (this.site.host === "custom" || this.videoData?.host === "custom")
-    ) {
+    if (preferAudio) {
       const playerAudioContext = this.audioPlayer.audioContext;
       this.audioPlayer.audioContext = undefined;
 
@@ -945,7 +946,9 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
   }
 
   syncPopupOverlayState(
-    overrides: Partial<import("./popup/popupMessages").MainToPopupMessage["payload"]> = {},
+    overrides: Partial<
+      import("./popup/popupMessages").MainToPopupMessage["payload"]
+    > = {},
   ): void {
     if (!shouldUsePopupOverlayWindow()) {
       return;
@@ -954,7 +957,7 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
     if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
       return;
     }
-    
+
     if (!this.popupOverlayBridge.isOpen()) {
       try {
         this.popupOverlayBridge.open();
@@ -965,26 +968,38 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
     }
 
     const overlayView = this.uiManager.votOverlayView;
-    const fromLangValue = this.videoData?.detectedLanguage ?? this.translateFromLang ?? "auto";
-    const toLangValue = this.videoData?.responseLanguage ?? this.translateToLang ?? "ru";
-    const fromLangLabel = localizationProvider.getLangLabel(fromLangValue) || fromLangValue;
-    const toLangLabel = localizationProvider.getLangLabel(toLangValue) || toLangValue;
+    const fromLangValue =
+      this.videoData?.detectedLanguage ?? this.translateFromLang ?? "auto";
+    const toLangValue =
+      this.videoData?.responseLanguage ?? this.translateToLang ?? "ru";
+    const fromLangLabel =
+      localizationProvider.getLangLabel(fromLangValue) || fromLangValue;
+    const toLangLabel =
+      localizationProvider.getLangLabel(toLangValue) || toLangValue;
     const videoVolume = Number(
-      overlayView?.videoVolumeSlider?.value ?? Math.round(this.getVideoVolume() * 100),
+      overlayView?.videoVolumeSlider?.value ??
+        Math.round(this.getVideoVolume() * 100),
     );
     const translationVolume = Number(
-      overlayView?.translationVolumeSlider?.value ?? this.data?.defaultVolume ?? 100,
+      overlayView?.translationVolumeSlider?.value ??
+        this.data?.defaultVolume ??
+        100,
     );
     const selectedSubtitlesValue = overlayView?.subtitlesSelect
-     ? Array.from(overlayView.subtitlesSelect.selectedValues)[0] 
-     : undefined;
+      ? Array.from(overlayView.subtitlesSelect.selectedValues)[0]
+      : undefined;
 
     const subtitlesEnabled = Boolean(
-      this.yandexSubtitles && selectedSubtitlesValue && selectedSubtitlesValue !== "disabled",
+      this.yandexSubtitles &&
+        selectedSubtitlesValue &&
+        selectedSubtitlesValue !== "disabled",
     );
     const fromLangOptions = ["auto", ...availableLangs].map((value) => ({
       value,
-      label: value === "auto" ? localizationProvider.get("langs.auto" as any) : localizationProvider.getLangLabel(value),
+      label:
+        value === "auto"
+          ? localizationProvider.get("langs.auto" as any)
+          : localizationProvider.getLangLabel(value),
     }));
     const toLangOptions = availableTTS.map((value) => ({
       value,
@@ -1614,7 +1629,9 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
     this.syncTranslationPlaybackVolume();
     this.syncPopupOverlayState({
       status: isSuccess ? "success" : "none",
-      label: isSuccess ? "Turn off" : localizationProvider.get("translateVideo"),
+      label: isSuccess
+        ? "Turn off"
+        : localizationProvider.get("translateVideo"),
       canDownload: Boolean(this.downloadTranslationUrl),
       canDownloadSubtitles: Boolean(this.yandexSubtitles),
       hint: this.downloadTranslationUrl
@@ -1750,23 +1767,25 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
 
     const canForceLocalFileUpload = (() => {
       if (!rawUrl) {
-        return host === "custom" || this.videoData?.host === "custom";
+        return isCustomPlaybackTarget(host, this.videoData?.host);
       }
 
       try {
-        const normalizedUrl = new URL(rawUrl, globalThis.location.href).toString();
+        const normalizedUrl = new URL(
+          rawUrl,
+          globalThis.location.href,
+        ).toString();
 
         if (!this.votClient.isDirectMediaUrl(normalizedUrl)) {
-          return host === "custom" || this.videoData?.host === "custom";
+          return isCustomPlaybackTarget(host, this.videoData?.host);
         }
 
         return (
-          host === "custom" ||
-          this.videoData?.host === "custom" ||
+          isCustomPlaybackTarget(host, this.videoData?.host) ||
           new URL(normalizedUrl).hostname !== globalThis.location.hostname
         );
       } catch {
-        return host === "custom" || this.videoData?.host === "custom";
+        return isCustomPlaybackTarget(host, this.videoData?.host);
       }
     })();
 
@@ -1782,7 +1801,7 @@ this.site.host === "rutube" || location.hostname === "vkvideo.ru" ||
       host === "youtube" ||
       host === "invidious" ||
       host === "piped" ||
-      host === "yandexdisk"||
+      host === "yandexdisk" ||
       host === "custom"
     );
   }
@@ -1930,8 +1949,7 @@ function getGoogleDriveTopFrameTitle(): string | undefined {
   const headingTitle =
     document
       .querySelector('h1, [role="heading"], div[role="heading"]')
-      ?.textContent
-      ?.trim() || "";
+      ?.textContent?.trim() || "";
 
   const metaTitle =
     document
@@ -2014,7 +2032,6 @@ function matchSite(entry: ServiceConf, url: URL): boolean {
     : isMatches(entry.match);
 }
 
-
 function getServicesCached(): ServiceConf[] {
   if (!servicesCache) {
     const base = getService();
@@ -2035,7 +2052,9 @@ function getServicesCached(): ServiceConf[] {
     } as ServiceConf;
 
     const hasGenericFallback = servicesCache.some(
-      (site) => String(site.host) === "custom" && site.selector === GENERIC_PLAYER_SELECTOR,
+      (site) =>
+        String(site.host) === "custom" &&
+        site.selector === GENERIC_PLAYER_SELECTOR,
     );
 
     if (!hasGenericFallback) {
@@ -2097,34 +2116,34 @@ async function main(): Promise<void> {
     return;
   }
 
-if (iframeMode && document.visibilityState === "hidden") {
-  logBootstrap("Hidden iframe detected; delaying bootstrap until visible");
+  if (iframeMode && document.visibilityState === "hidden") {
+    logBootstrap("Hidden iframe detected; delaying bootstrap until visible");
 
-  await new Promise<void>((resolve) => {
-    const onVisibilityChange = () => {
-      if (document.visibilityState !== "hidden") {
+    await new Promise<void>((resolve) => {
+      const onVisibilityChange = () => {
+        if (document.visibilityState !== "hidden") {
+          document.removeEventListener("visibilitychange", onVisibilityChange);
+          resolve();
+        }
+      };
+
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
+      setTimeout(() => {
         document.removeEventListener("visibilitychange", onVisibilityChange);
         resolve();
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    setTimeout(() => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      resolve();
-    }, 1500);
-  });
-}
+      }, 1500);
+    });
+  }
 
   logBootstrap("Loading extension");
   if (bootstrapMode === "top-full") {
-  void ensureRuntimeActivated("top-frame", logBootstrap).catch((err) => {
-    console.error("[VOT] Failed to activate runtime", err);
-  });
-} else {
-  logBootstrap("Lazy iframe bootstrap enabled; waiting for video detection");
-}
+    void ensureRuntimeActivated("top-frame", logBootstrap).catch((err) => {
+      console.error("[VOT] Failed to activate runtime", err);
+    });
+  } else {
+    logBootstrap("Lazy iframe bootstrap enabled; waiting for video detection");
+  }
 
   bindObserverListeners({
     videoObserver,
