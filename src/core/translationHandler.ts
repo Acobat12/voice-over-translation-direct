@@ -8,6 +8,10 @@ import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 
 import type { VideoData, VideoHandler } from "..";
 import { AudioDownloader } from "../audioDownloader";
+import {
+  VK_AUDIO_STRATEGY,
+  YT_AUDIO_STRATEGY,
+} from "../audioDownloader/strategies";
 import { localizationProvider } from "../localization/localizationProvider";
 import type {
   DownloadedAudioData,
@@ -65,10 +69,7 @@ function getServerErrorMessage(value: unknown): string | undefined {
  * We now keep the dependency unpatched and instead map known error messages
  * coming from the VOT client to the corresponding localized UI errors.
  */
-function mapVotClientErrorForUi(
-  error: unknown,
-  siteHost?: string,
-): unknown {
+function mapVotClientErrorForUi(error: unknown, siteHost?: string): unknown {
   const err = asVotClientErrorShape(error);
   if (!err) {
     return error;
@@ -139,13 +140,15 @@ export class VOTTranslationHandler {
     this.videoHandler = videoHandler;
 
     const strategy =
-      this.videoHandler.site.host === "youtube"
-        ? "ytAudio"
-        : this.videoHandler.site.host === "yandexdisk"
-          ? "yandexDisk"
-          : this.videoHandler.site.host === "custom"
-            ? "localFile"
-            : "ytAudio";
+      this.videoHandler.site.host === "vk"
+        ? VK_AUDIO_STRATEGY
+        : this.videoHandler.site.host === "youtube"
+          ? YT_AUDIO_STRATEGY
+          : this.videoHandler.site.host === "yandexdisk"
+            ? "yandexDisk"
+            : this.videoHandler.site.host === "custom"
+              ? "localFile"
+              : YT_AUDIO_STRATEGY;
 
     this.audioDownloader = new AudioDownloader(strategy as any);
     this.downloading = false;
@@ -196,25 +199,25 @@ export class VOTTranslationHandler {
       ),
     );
   }
-private isHlsManifestUrl(url: string): boolean {
-  return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
-}
-
-private isDirectMediaUrlCandidate(url: string): boolean {
-  if (!url) {
-    return false;
+  private isHlsManifestUrl(url: string): boolean {
+    return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
   }
 
-  if (this.isHlsManifestUrl(url)) {
-    return false;
-  }
+  private isDirectMediaUrlCandidate(url: string): boolean {
+    if (!url) {
+      return false;
+    }
 
-  try {
-    return this.videoHandler.votClient.isDirectMediaUrl(url);
-  } catch {
-    return false;
+    if (this.isHlsManifestUrl(url)) {
+      return false;
+    }
+
+    try {
+      return this.videoHandler.votClient.isDirectMediaUrl(url);
+    } catch {
+      return false;
+    }
   }
-}
 
   private isCrossOriginMediaUrl(url: string): boolean {
     try {
@@ -256,7 +259,8 @@ private isDirectMediaUrlCandidate(url: string): boolean {
     }
 
     const videoId =
-      typeof videoData.videoId === "string" && videoData.videoId.trim().length > 0
+      typeof videoData.videoId === "string" &&
+      videoData.videoId.trim().length > 0
         ? videoData.videoId
         : url;
 
@@ -268,36 +272,38 @@ private isDirectMediaUrlCandidate(url: string): boolean {
     };
   }
 
-private updateAudioDownloaderStrategy(videoData?: VideoData): void {
-  const url = videoData ? this.getCurrentMediaRequestUrl(videoData) : "";
+  private updateAudioDownloaderStrategy(videoData?: VideoData): void {
+    const url = videoData ? this.getCurrentMediaRequestUrl(videoData) : "";
 
-  const isLocalFileCompatibleCustom =
-    (this.videoHandler.site.host === "custom" || videoData?.host === "custom") &&
-    !this.isHlsManifestUrl(url) &&
-    this.isDirectMediaUrlCandidate(url);
+    const isLocalFileCompatibleCustom =
+      (this.videoHandler.site.host === "custom" ||
+        videoData?.host === "custom") &&
+      !this.isHlsManifestUrl(url) &&
+      this.isDirectMediaUrlCandidate(url);
 
-  const useLocalFileWorkflow =
-    isLocalFileCompatibleCustom || this.shouldUseLocalFileWorkflow(videoData);
+    const useLocalFileWorkflow =
+      isLocalFileCompatibleCustom || this.shouldUseLocalFileWorkflow(videoData);
 
-  const nextStrategy =
-    useLocalFileWorkflow
+    const nextStrategy = useLocalFileWorkflow
       ? "localFile"
-      : this.videoHandler.site.host === "yandexdisk"
-        ? "yandexDisk"
-        : "ytAudio";
+      : this.videoHandler.site.host === "vk"
+        ? VK_AUDIO_STRATEGY
+        : this.videoHandler.site.host === "yandexdisk"
+          ? "yandexDisk"
+          : YT_AUDIO_STRATEGY;
 
-  if (this.audioDownloader.strategy === nextStrategy) {
-    return;
+    if (this.audioDownloader.strategy === nextStrategy) {
+      return;
+    }
+
+    this.audioDownloader.strategy = nextStrategy;
+    console.log("[VOT][audio] switched downloader strategy", {
+      siteHost: this.videoHandler.site.host,
+      videoHost: videoData?.host,
+      strategy: nextStrategy,
+      url: videoData?.url,
+    });
   }
-
-  this.audioDownloader.strategy = nextStrategy;
-  console.log("[VOT][audio] switched downloader strategy", {
-    siteHost: this.videoHandler.site.host,
-    videoHost: videoData?.host,
-    strategy: nextStrategy,
-    url: videoData?.url,
-  });
-}
 
   private isDirectResolvedUploadVideoData(
     data: VideoData | undefined,
@@ -397,41 +403,6 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
     return String(rawUrl || globalThis.location.href || "")
       .split("?")[0]
       .split("#")[0];
-  }
-
-  private makeStableShortHash(value: string): string {
-    let hash = 2166136261;
-
-    for (let i = 0; i < value.length; i += 1) {
-      hash ^= value.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-
-    return (hash >>> 0).toString(36);
-  }
-
-  private extractYandexDiskPublicId(url: string): string {
-    try {
-      const parsed = new URL(url, globalThis.location.href);
-
-      const fileMatch = parsed.pathname.match(/^\/i\/([^/]+)$/i);
-      if (fileMatch) {
-        return fileMatch[1];
-      }
-
-      const publicMatch = parsed.pathname.match(/^\/d\/([^/]+)(\/.*)?$/i);
-      if (publicMatch) {
-        const suffix = publicMatch[2] || "";
-        if (!suffix || suffix === "/") {
-          return publicMatch[1];
-        }
-        return `ydisk-${publicMatch[1]}-${this.makeStableShortHash(parsed.pathname)}`;
-      }
-
-      return `yandexdisk-${this.makeStableShortHash(parsed.pathname)}`;
-    } catch {
-      return `yandexdisk-${this.makeStableShortHash(String(url || "yandexdisk-public"))}`;
-    }
   }
 
   private extractYandexDiskPublicTarget(
@@ -571,7 +542,9 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
     try {
       const raw =
         (globalThis as Record<string, unknown>).__VOT_DIRECT_SOURCES__ ||
-        JSON.parse(document?.documentElement?.dataset?.votDirectSources || "null");
+        JSON.parse(
+          document?.documentElement?.dataset?.votDirectSources || "null",
+        );
 
       if (!raw || typeof raw !== "object") {
         return null;
@@ -710,7 +683,9 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
     }
 
     const publicKey = `${parsed.origin}/d/${parsed.folderId}`;
-    const apiUrl = new URL("https://cloud-api.yandex.com/v1/disk/public/resources");
+    const apiUrl = new URL(
+      "https://cloud-api.yandex.com/v1/disk/public/resources",
+    );
 
     apiUrl.searchParams.set("public_key", publicKey);
     apiUrl.searchParams.set("path", relativePath);
@@ -780,7 +755,11 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
         };
       }
 
-      if (payload.type === "file" && typeof payload.file === "string" && payload.file) {
+      if (
+        payload.type === "file" &&
+        typeof payload.file === "string" &&
+        payload.file
+      ) {
         const directUrl = this.normalizeUrlForRequest(payload.file);
 
         console.log("[VOT][yandexdisk] use direct file url from API", {
@@ -818,25 +797,6 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
     }
 
     return null;
-  }
-
-  private isResolvedYandexDiskVideoData(videoData: VideoData): boolean {
-    if (videoData.host !== "yandexdisk") {
-      return false;
-    }
-
-    const rawUrl = String(videoData.url || "");
-    if (!rawUrl || this.isYandexDiskDownloadUrl(rawUrl)) {
-      return false;
-    }
-
-    const parsed = this.parseYandexDiskUrl(rawUrl);
-
-    return (
-      parsed.mode === "file" ||
-      parsed.mode === "folderRoot" ||
-      parsed.mode === "folderFile"
-    );
   }
 
   private isYandexDiskDownloadUrl(url: string): boolean {
@@ -994,7 +954,9 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
     return null;
   }
 
-  private async buildYandexDiskVideoData(videoData: VideoData): Promise<VideoData> {
+  private async buildYandexDiskVideoData(
+    videoData: VideoData,
+  ): Promise<VideoData> {
     const bridgeTarget = this.extractBridgeDirectMediaTarget();
     if (bridgeTarget) {
       return {
@@ -1087,7 +1049,10 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
       return {
         ...videoData,
         url: directTarget.url,
-        videoId: this.getYandexDiskServiceVideoId(directTarget.url, parsed.pathname),
+        videoId: this.getYandexDiskServiceVideoId(
+          directTarget.url,
+          parsed.pathname,
+        ),
         host: "yandexdisk" as VideoData["host"],
       };
     }
@@ -1097,7 +1062,10 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
       return {
         ...videoData,
         url: mediaTarget.url,
-        videoId: this.getYandexDiskServiceVideoId(mediaTarget.url, parsed.pathname),
+        videoId: this.getYandexDiskServiceVideoId(
+          mediaTarget.url,
+          parsed.pathname,
+        ),
         host: "yandexdisk" as VideoData["host"],
       };
     }
@@ -1220,7 +1188,10 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
       Boolean(this.videoHandler.data?.useAudioDownload);
 
     console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
-    console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy);
+    console.log(
+      "[VOT] downloadAudioError strategy:",
+      this.audioDownloader.strategy,
+    );
 
     if (!shouldUseFallback) {
       this.finishDownloadFailure(
@@ -1357,17 +1328,15 @@ private updateAudioDownloaderStrategy(videoData?: VideoData): void {
     this.updateAudioDownloaderStrategy(videoData);
 
     const currentUrl = this.getCurrentMediaRequestUrl(videoData);
-const canUseLocalFileWorkflow =
-  !this.isHlsManifestUrl(currentUrl) &&
-  (
-    this.videoHandler.site.host === "custom" ||
-    videoData.host === "custom" ||
-    this.shouldUseLocalFileWorkflow(videoData)
-  );
+    const canUseLocalFileWorkflow =
+      !this.isHlsManifestUrl(currentUrl) &&
+      (this.videoHandler.site.host === "custom" ||
+        videoData.host === "custom" ||
+        this.shouldUseLocalFileWorkflow(videoData));
 
-if (canUseLocalFileWorkflow) {
-  normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData);
-} else {
+    if (canUseLocalFileWorkflow) {
+      normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData);
+    } else {
       const cachedVideoData =
         this.activeYandexDiskResolvedVideoData &&
         this.isDirectResolvedUploadVideoData(
@@ -1395,7 +1364,9 @@ if (canUseLocalFileWorkflow) {
       normalizedVideoData.host === "odysee" &&
       typeof normalizedVideoData.url === "string"
     ) {
-      const rewrittenUrl = this.normalizeOdyseeDirectUrl(normalizedVideoData.url);
+      const rewrittenUrl = this.normalizeOdyseeDirectUrl(
+        normalizedVideoData.url,
+      );
 
       normalizedVideoData =
         rewrittenUrl !== normalizedVideoData.url
@@ -1474,9 +1445,8 @@ if (canUseLocalFileWorkflow) {
 
       await this.videoHandler.updateTranslationErrorMsg(
         res.remainingTime > 0
-          ? formatTranslationEta(
-              res.remainingTime,
-              (key) => localizationProvider.get(key),
+          ? formatTranslationEta(res.remainingTime, (key) =>
+              localizationProvider.get(key),
             )
           : message,
         signal,
@@ -1513,8 +1483,7 @@ if (canUseLocalFileWorkflow) {
       ) {
         this.videoHandler.hadAsyncWait = true;
 
-        const retryDelay =
-          normalizedVideoData.host === "custom" ? 15000 : 5000;
+        const retryDelay = normalizedVideoData.host === "custom" ? 15000 : 5000;
 
         return this.scheduleRetry(
           () =>
@@ -1549,7 +1518,9 @@ if (canUseLocalFileWorkflow) {
       );
 
       this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
-        aborted: Boolean(this.videoHandler.actionsAbortController?.signal?.aborted),
+        aborted: Boolean(
+          this.videoHandler.actionsAbortController?.signal?.aborted,
+        ),
         translateApiErrorsEnabled: Boolean(
           this.videoHandler.data?.translateAPIErrors,
         ),
@@ -1715,6 +1686,27 @@ if (canUseLocalFileWorkflow) {
       );
       console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
 
+      if (
+        this.videoHandler.site.host === "vk" &&
+        this.videoHandler.canUploadAudioForCurrentSite() &&
+        res.translationId &&
+        videoData.videoId
+      ) {
+        debug.log("[VOT][VK subtitles] force audio upload", {
+          videoId: videoData.videoId,
+          translationId: res.translationId,
+          strategy: this.audioDownloader.strategy,
+        });
+        this.downloading = true;
+
+        void this.audioDownloader.runAudioDownload(
+          videoData.videoId,
+          String(res.translationId),
+          signal,
+        );
+        await this.waitForAudioDownloadCompletion(signal, 120000);
+      }
+
       throwIfAborted(signal);
 
       if (res.translated && res.remainingTime < 1) {
@@ -1727,9 +1719,8 @@ if (canUseLocalFileWorkflow) {
 
       await this.videoHandler.updateTranslationErrorMsg(
         res.remainingTime > 0
-          ? formatTranslationEta(
-              res.remainingTime,
-              (key) => localizationProvider.get(key),
+          ? formatTranslationEta(res.remainingTime, (key) =>
+              localizationProvider.get(key),
             )
           : message,
         signal,
@@ -1780,7 +1771,9 @@ if (canUseLocalFileWorkflow) {
       );
 
       this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
-        aborted: Boolean(this.videoHandler.actionsAbortController?.signal?.aborted),
+        aborted: Boolean(
+          this.videoHandler.actionsAbortController?.signal?.aborted,
+        ),
         translateApiErrorsEnabled: Boolean(
           this.videoHandler.data?.translateAPIErrors,
         ),

@@ -112,7 +112,12 @@ function ensureVkOverlayStyle(): void {
       continue;
     }
 
-    const root = scope instanceof Document ? scope : scope instanceof ShadowRoot ? scope : null;
+    const root =
+      scope instanceof Document
+        ? scope
+        : scope instanceof ShadowRoot
+          ? scope
+          : null;
     if (!root) {
       continue;
     }
@@ -184,7 +189,8 @@ export function installVkOverlayPatch(): void {
     const refreshAndLog = () => {
       ensureVkOverlayStyle();
       const count = refreshVkOverlayProbe();
-      const currentProbe = (globalThis as Record<string, unknown>).__VOT_VK_PROBE__;
+      const currentProbe = (globalThis as Record<string, unknown>)
+        .__VOT_VK_PROBE__;
       const signature = JSON.stringify(currentProbe);
       if (count > 0 && signature !== lastProbeSignature) {
         lastProbeSignature = signature;

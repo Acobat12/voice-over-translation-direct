@@ -313,7 +313,7 @@ function buildPvlTranslationReadyPayload(
   };
 }
 
-async function notifyPvlTranslationReady(
+async function _notifyPvlTranslationReady(
   handler: VideoHandler,
   audioUrl: string,
 ): Promise<boolean> {
@@ -1776,6 +1776,15 @@ async function recoverAfterMediaAbort(
   handler.setupAudioSettings();
   handler.transformBtn("success", localizationProvider.get("disableTranslate"));
   handler.afterUpdateTranslation(sourceUrl);
+  if (this.data?.autoSubtitles) {
+    setTimeout(() => {
+      void this.enableSubtitlesForCurrentLangPair();
+    }, 1500);
+
+    setTimeout(() => {
+      void this.enableSubtitlesForCurrentLangPair();
+    }, 5000);
+  }
   return true;
 }
 
@@ -1930,6 +1939,16 @@ export async function updateTranslation(
           localizationProvider.get("disableTranslate"),
         );
         this.afterUpdateTranslation(nextAudioUrl);
+
+        if (this.data?.autoSubtitles) {
+          setTimeout(() => {
+            void this.enableSubtitlesForCurrentLangPair();
+          }, 1500);
+
+          setTimeout(() => {
+            void this.enableSubtitlesForCurrentLangPair();
+          }, 5000);
+        }
         return;
       }
 
@@ -1945,6 +1964,15 @@ export async function updateTranslation(
         this.setupAudioSettings();
         this.transformBtn("success", getAutoplayRecoveryButtonText());
         this.afterUpdateTranslation(nextAudioUrl);
+        if (this.data?.autoSubtitles) {
+          setTimeout(() => {
+            void this.enableSubtitlesForCurrentLangPair();
+          }, 1500);
+
+          setTimeout(() => {
+            void this.enableSubtitlesForCurrentLangPair();
+          }, 5000);
+        }
         this.syncPopupOverlayState({
           hint: getAutoplayRecoveryHintText(),
         });

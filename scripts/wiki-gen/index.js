@@ -43,9 +43,9 @@ function normalizeDomain(domain) {
   return domain
     .trim()
     .toLowerCase()
-    .replaceAll(String.raw`\.`,".")
-    .replaceAll(String.raw`\-`,"-")
-    .replaceAll(String.raw`\/`,"/")
+    .replaceAll(String.raw`\.`, ".")
+    .replaceAll(String.raw`\-`, "-")
+    .replaceAll(String.raw`\/`, "/")
     .replace(/^https?:\/\//, "")
     .replace(/\/.*$/, "")
     .replaceAll(/[()]/g, "")
@@ -420,7 +420,9 @@ function extractDomainsFromRegex(regex) {
   const parsed = parseExpression(source, 0);
   const variants = parsed.variants.length ? parsed.variants : [source];
 
-  return unique(variants.map((domain) => normalizeDomain(domain)).filter(Boolean));
+  return unique(
+    variants.map((domain) => normalizeDomain(domain)).filter(Boolean),
+  );
 }
 
 function parseRegexLiteral(literal) {
@@ -510,7 +512,8 @@ function mergeByHost(supportedSites) {
       domains: new Set(),
     };
 
-    existing.needBypassCSP = existing.needBypassCSP || Boolean(site.needBypassCSP);
+    existing.needBypassCSP =
+      existing.needBypassCSP || Boolean(site.needBypassCSP);
     for (const domain of extractDomainsFromMatch(site.match)) {
       existing.domains.add(domain);
     }
@@ -564,7 +567,9 @@ ${locales.availabledDomains[lang]}:
 }
 
 function genMarkdown(supportedSites, lang = "ru") {
-  return mergeByHost(supportedSites).map((site) => renderSiteMarkdown(site, lang));
+  return mergeByHost(supportedSites).map((site) =>
+    renderSiteMarkdown(site, lang),
+  );
 }
 
 function getSupportedSites() {
@@ -576,7 +581,9 @@ function getSupportedSites() {
       host,
       match: host === "custom" ? "any" : site.match,
       status: hasExtraData ? extraData[host].status : "✅",
-      statusPhrase: hasExtraData ? extraData[host].statusPhrase : locales.working,
+      statusPhrase: hasExtraData
+        ? extraData[host].statusPhrase
+        : locales.working,
       needBypassCSP: site.needBypassCSP,
     };
   });

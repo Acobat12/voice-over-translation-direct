@@ -81,24 +81,21 @@ export async function getAudioFromLocalFile({
   const contentLength = getContentLength(response);
 
   if (response.body && contentLength) {
-    const mediaPartsLength = Math.max(
-      1,
-      Math.ceil(contentLength / chunkSize),
-    );
+    const mediaPartsLength = Math.max(1, Math.ceil(contentLength / chunkSize));
     const fileId = makeSimpleFileId(contentLength, chunkSize);
 
     return {
       fileId,
       mediaPartsLength,
       async *getMediaBuffers(): AsyncGenerator<Uint8Array> {
-        const reader = response.body!.getReader();
+        const reader = response.body?.getReader();
         let pending = new Uint8Array(0);
 
         try {
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
-            if (!value || !value.byteLength) continue;
+            if (!value?.byteLength) continue;
 
             let merged: Uint8Array;
             if (pending.byteLength === 0) {

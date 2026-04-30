@@ -25,6 +25,26 @@ import { isYandexApiHostname, shouldStripYandexHeader } from "./yandexHeaders";
 
 const BRIDGE_BOOT_KEY = "__VOT_EXT_BRIDGE_BOOTED__";
 
+function injectPageModule(fileName: string): void {
+  const parent = document.head ?? document.documentElement;
+  if (!parent) {
+    console.error("[VOT Extension] bridge: missing document root");
+    return;
+  }
+
+  const script = document.createElement("script");
+  script.type = "module";
+  script.src = ext.runtime?.getURL(fileName);
+  script.addEventListener(
+    "error",
+    () => {
+      console.error(`[VOT Extension] bridge: failed to inject ${fileName}`);
+    },
+    { once: true },
+  );
+  parent.appendChild(script);
+}
+
 /**
  * VOT Extension bridge (ISOLATED world content script).
  *
@@ -644,6 +664,9 @@ if (bridgeGlobal[BRIDGE_BOOT_KEY]) {
   if (!ext?.runtime || !ext?.storage?.local) {
     console.warn("[VOT Extension] bridge: missing WebExtension APIs");
   } else {
+    injectPageModule("prelude.module.js");
+    injectPageModule("content.module.js");
+
     globalThis.addEventListener("message", async (event) => {
       if (event.source !== globalThis.window) return;
       const data = event.data as BridgeWireMessage;

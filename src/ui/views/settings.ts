@@ -58,7 +58,11 @@ import {
   proxyOnlyCountries,
   proxyWorkerHost,
 } from "../../config/config";
-import { createPkceAuthUrl, exchangeCodeForToken, saveOAuthAccount } from "../../core/auth";
+import {
+  createPkceAuthUrl,
+  exchangeCodeForToken,
+  saveOAuthAccount,
+} from "../../core/auth";
 import { EventImpl } from "../../core/eventImpl";
 import {
   type LangOverride,
@@ -250,60 +254,66 @@ export class SettingsView {
     return this.initialized;
   }
 
-private bindOAuthMessageListener(): void {
-  if (this.oauthMessageListenerBound) return;
-  this.oauthMessageListenerBound = true;
+  private bindOAuthMessageListener(): void {
+    if (this.oauthMessageListenerBound) return;
+    this.oauthMessageListenerBound = true;
 
-  globalThis.addEventListener("message", async (event: MessageEvent) => {
-    const data = event.data as OAuthMessage | undefined;
-    if (!data || typeof data !== "object") return;
-    if (data.source !== "vot-auth") return;
+    globalThis.addEventListener("message", async (event: MessageEvent) => {
+      const data = event.data as OAuthMessage | undefined;
+      if (!data || typeof data !== "object") return;
+      if (data.source !== "vot-auth") return;
 
-    if (event.origin !== authCallbackOrigin) {
-      debug.log("[VOT] Ignoring OAuth message from unexpected origin:", event.origin);
-      return;
-    }
-
-    if (data.type === "error") {
-      debug.log("[VOT] OAuth error:", data.error, data.error_description);
-      return;
-    }
-
-    if (data.type !== "code") return;
-
-    const expectedState = sessionStorage.getItem("vot-yandex-oauth-state") ?? undefined;
-    if (!data.state || !expectedState || data.state !== expectedState) {
-      debug.log("[VOT] OAuth state mismatch");
-      return;
-    }
-
-    try {
-      const tokenData = await exchangeCodeForToken(data.code);
-      await saveOAuthAccount(tokenData);
-
-      this.data.account = {
-        ...(this.data.account ?? {}),
-        token: tokenData.access_token,
-        expires: Date.now() + tokenData.expires_in * 1000,
-      };
-
-      debug.log("[VOT] OAuth login success");
-    } catch (err) {
-      console.error("[VOT] OAuth token exchange failed:", err);
-      return;
-    }
-
-    if (this.isInitialized()) {
-      try {
-        this.updateAccountInfo();
-      } catch (err) {
-        console.warn("[VOT] Failed to update account UI:", err);
+      if (event.origin !== authCallbackOrigin) {
+        debug.log(
+          "[VOT] Ignoring OAuth message from unexpected origin:",
+          event.origin,
+        );
+        return;
       }
-    } else {
-      debug.log("[VOT] SettingsView is not initialized, skipping account UI update");
-    }
-  });
-}
+
+      if (data.type === "error") {
+        debug.log("[VOT] OAuth error:", data.error, data.error_description);
+        return;
+      }
+
+      if (data.type !== "code") return;
+
+      const expectedState =
+        sessionStorage.getItem("vot-yandex-oauth-state") ?? undefined;
+      if (!data.state || !expectedState || data.state !== expectedState) {
+        debug.log("[VOT] OAuth state mismatch");
+        return;
+      }
+
+      try {
+        const tokenData = await exchangeCodeForToken(data.code);
+        await saveOAuthAccount(tokenData);
+
+        this.data.account = {
+          ...(this.data.account ?? {}),
+          token: tokenData.access_token,
+          expires: Date.now() + tokenData.expires_in * 1000,
+        };
+
+        debug.log("[VOT] OAuth login success");
+      } catch (err) {
+        console.error("[VOT] OAuth token exchange failed:", err);
+        return;
+      }
+
+      if (this.isInitialized()) {
+        try {
+          this.updateAccountInfo();
+        } catch (err) {
+          console.warn("[VOT] Failed to update account UI:", err);
+        }
+      } else {
+        debug.log(
+          "[VOT] SettingsView is not initialized, skipping account UI update",
+        );
+      }
+    });
+  }
 
   private createAccordionSection(
     title: string,
@@ -1226,11 +1236,13 @@ private bindOAuthMessageListener(): void {
 
       const authUrl = await createPkceAuthUrl();
 
-      globalThis.open(
-        authUrl,
-        "yandex-oauth",
-        "popup=yes,width=520,height=720,resizable=yes,scrollbars=yes",
-      )?.focus();
+      globalThis
+        .open(
+          authUrl,
+          "yandex-oauth",
+          "popup=yes,width=520,height=720,resizable=yes,scrollbars=yes",
+        )
+        ?.focus();
     });
 
     this.accountButton.addEventListener("click:secret", async () => {

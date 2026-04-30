@@ -36,7 +36,7 @@ function isBadSegmentUrl(url: string): boolean {
 }
 function rememberManifest(url: string): void {
   const normalized = normalizeUrl(url);
-  
+
   if (isBadSegmentUrl(normalized)) {
     return;
   }
@@ -45,27 +45,38 @@ function rememberManifest(url: string): void {
     return;
   }
 
+  console.log("[VOT][manifestSniffer] candidate", normalized);
+
   if (!bestManifest) {
     bestManifest = { url: normalized, seenAt: Date.now() };
+    console.log("[VOT][manifestSniffer] selected", bestManifest.url);
     return;
   }
 
-  // Предпочитаем более "явные" URL поверх слишком общих manifest endpoint-ов.
   const currentScore = scoreManifestUrl(bestManifest.url);
   const nextScore = scoreManifestUrl(normalized);
 
   if (nextScore >= currentScore) {
     bestManifest = { url: normalized, seenAt: Date.now() };
+    console.log("[VOT][manifestSniffer] selected", bestManifest.url);
   }
 }
 
 function scoreManifestUrl(url: string): number {
   let score = 0;
-  if (/\.m3u8(?:$|[?#])/i.test(url)) score += 3;
-  if (/\.mpd(?:$|[?#])/i.test(url)) score += 3;
-  if (/master\.m3u8/i.test(url)) score += 2;
+
+  if (/\.mp4(?:$|[?#])/i.test(url)) score += 5;
+  if (/\.m3u8(?:$|[?#])/i.test(url)) score += 4;
+  if (/master\.m3u8/i.test(url)) score += 3;
+  if (/\.mpd(?:$|[?#])/i.test(url)) score += 2;
   if (/manifest/i.test(url)) score += 1;
   if (/dashplaylist/i.test(url)) score += 1;
+
+  // VK/OK CDN чаще всего полезный источник.
+  if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(url)) {
+    score += 2;
+  }
+
   return score;
 }
 

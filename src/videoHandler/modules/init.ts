@@ -1,4 +1,3 @@
-import { localizationProvider } from "../../localization/localizationProvider";
 import {
   actualCompatVersion,
   defaultAutoHideDelay,
@@ -9,15 +8,16 @@ import {
   proxyOnlyCountries,
   proxyWorkerHost,
 } from "../../config/config";
+import { shouldUsePopupOverlayWindow } from "../../core/popupOverlayPolicy";
 import type { VideoHandler } from "../../index";
+import { localizationProvider } from "../../localization/localizationProvider";
+import { PopupOverlayBridge } from "../../popup/popupOverlayBridge";
 import type { LanguageSelectKey } from "../../types/components/select";
 import debug from "../../utils/debug";
 import { GM_fetch, isProxyOnlyExtension, isSupportGMXhr } from "../../utils/gm";
 import { updateConfig, votStorage } from "../../utils/storage";
 import { calculatedResLang } from "../../utils/utils";
 import { countryCode, setCountryCode } from "../shared";
-import { shouldUsePopupOverlayWindow } from "../../core/popupOverlayPolicy";
-import { PopupOverlayBridge } from "../../popup/popupOverlayBridge";
 
 let countryCodeRequestInFlight: Promise<void> | null = null;
 
@@ -158,8 +158,7 @@ export async function init(this: VideoHandler) {
 
   if (shouldUsePopupOverlayWindow()) {
     const popupBridge =
-      (globalThis as any).__votPopupOverlayBridge ??
-      new PopupOverlayBridge();
+      (globalThis as any).__votPopupOverlayBridge ?? new PopupOverlayBridge();
 
     (globalThis as any).__votPopupOverlayBridge = popupBridge;
     this.popupOverlayBridge = popupBridge;
@@ -178,7 +177,7 @@ export async function init(this: VideoHandler) {
         }
         void this.stopTranslation();
       },
-      
+
       onDownload: () => {
         void (this.uiManager as any).handleDownloadTranslationClick?.();
       },
@@ -195,8 +194,8 @@ export async function init(this: VideoHandler) {
             this.syncPopupOverlayState({
               subtitlesEnabled: Boolean(
                 this.yandexSubtitles &&
-                Array.isArray(this.yandexSubtitles.subtitles) &&
-                this.yandexSubtitles.subtitles.length > 0
+                  Array.isArray(this.yandexSubtitles.subtitles) &&
+                  this.yandexSubtitles.subtitles.length > 0,
               ),
               canDownloadSubtitles: Boolean(this.yandexSubtitles),
             });
@@ -206,9 +205,15 @@ export async function init(this: VideoHandler) {
       onFromLanguageChange: (value) => {
         if (this.videoData) {
           this.videoData.detectedLanguage = value as any;
-          this.videoManager.rememberUserLanguageSelection(this.videoData.videoId, value as any);
+          this.videoManager.rememberUserLanguageSelection(
+            this.videoData.videoId,
+            value as any,
+          );
         }
-        this.setSelectMenuValues(value, this.videoData?.responseLanguage ?? this.translateToLang);
+        this.setSelectMenuValues(
+          value,
+          this.videoData?.responseLanguage ?? this.translateToLang,
+        );
         this.syncPopupOverlayState({ fromLangValue: value });
       },
       onToLanguageChange: (value) => {
@@ -218,7 +223,10 @@ export async function init(this: VideoHandler) {
         }
         this.data.responseLanguage = value as any;
         void votStorage.set("responseLanguage", value as any);
-        this.setSelectMenuValues(this.videoData?.detectedLanguage ?? this.translateFromLang, value);
+        this.setSelectMenuValues(
+          this.videoData?.detectedLanguage ?? this.translateFromLang,
+          value,
+        );
         this.syncPopupOverlayState({ toLangValue: value });
       },
       onAutoTranslateChange: (value) => {
@@ -240,7 +248,9 @@ export async function init(this: VideoHandler) {
         this.data.showVideoSlider = value;
         void votStorage.set("showVideoSlider", value);
         if (this.uiManager.votOverlayView?.videoVolumeSlider) {
-          this.uiManager.votOverlayView.videoVolumeSlider.hidden = !value || this.uiManager.votOverlayView.votButton?.status !== "success";
+          this.uiManager.votOverlayView.videoVolumeSlider.hidden =
+            !value ||
+            this.uiManager.votOverlayView.votButton?.status !== "success";
         }
         this.syncPopupOverlayState({ showVideoSliderEnabled: value });
       },
@@ -258,7 +268,11 @@ export async function init(this: VideoHandler) {
         }
         this.syncPopupOverlayState({
           audioBoosterEnabled: value,
-          translationVolume: Number(this.uiManager.votOverlayView?.translationVolumeSlider?.value ?? this.data.defaultVolume ?? 100),
+          translationVolume: Number(
+            this.uiManager.votOverlayView?.translationVolumeSlider?.value ??
+              this.data.defaultVolume ??
+              100,
+          ),
         });
       },
       onAutoVolumeChange: (value) => {
@@ -302,10 +316,7 @@ export async function init(this: VideoHandler) {
       label: localizationProvider.get("translateVideo"),
       hint: "Popup mode for Google-hosted players.",
     });
-  } 
-
-  // Get video data and create player.
-  this.createPlayer();
+  }
 
   this.translateToLang = this.data.responseLanguage ?? "ru";
   this.initExtraEvents();

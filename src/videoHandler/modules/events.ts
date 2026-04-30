@@ -1,5 +1,4 @@
 import YoutubeHelper from "@vot.js/ext/helpers/youtube";
-import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
 import { getVideoID } from "@vot.js/ext/utils/videoData";
 import { availableLangs } from "@vot.js/shared/consts";
 import type { RequestLang } from "@vot.js/shared/types/data";
@@ -10,6 +9,7 @@ import {
   isYouTubeLikeHost,
 } from "../../core/hostPolicies";
 import { resetAndHideLifecycle } from "../../core/lifecycleShared";
+import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
 import type { VideoHandler } from "../../index";
 import debug from "../../utils/debug";
 import { GM_fetch } from "../../utils/gm";

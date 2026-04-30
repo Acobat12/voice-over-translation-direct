@@ -85,7 +85,7 @@ const FOSWLYTranslateAPI = new (class {
           ttlMs: IMMUTABLE_API_CACHE_TTL_MS,
           cacheName: "vot-foswly-api-v1",
           allowStaleOnError: true,
-        },        
+        },
       });
 
       const data = (await res.json()) as T | FOSWLYErrorResponse;
@@ -217,8 +217,8 @@ async function detect(text: string) {
 const detectServices = [...foswlyServices, "rust-server"] as const;
 
 export {
-  translate,
   detect,
-  foswlyServices as translateServices,
   detectServices,
+  foswlyServices as translateServices,
+  translate,
 };

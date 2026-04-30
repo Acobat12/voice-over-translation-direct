@@ -1,7 +1,7 @@
-import { installYandexDiskOverlayPatch } from "../core/yandex-disk-overlay";
-import { installVkOverlayPatch } from "../core/vk-overlay";
 import { authCallbackOrigin, authCallbackPath } from "../config/config";
 import { initAuth } from "../core/auth";
+import { installVkOverlayPatch } from "../core/vk-overlay";
+import { installYandexDiskOverlayPatch } from "../core/yandex-disk-overlay";
 import {
   ensureLocalizationProviderReady,
   localizationProvider,

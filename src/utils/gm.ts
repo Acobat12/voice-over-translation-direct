@@ -55,7 +55,9 @@ function getRequestHost(url: string): string | undefined {
     return undefined;
   }
 }
-function serializeGmBody(body: unknown): string | Blob | ArrayBuffer | FormData | undefined {
+function serializeGmBody(
+  body: unknown,
+): string | Blob | ArrayBuffer | FormData | undefined {
   if (body == null) return undefined;
 
   if (typeof body === "string") return body;

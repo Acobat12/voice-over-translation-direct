@@ -6,9 +6,11 @@ import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { ClientSession, SessionModule } from "@vot.js/shared/types/secure";
 import { initAudioContext } from "chaimu/player";
 import { getOrCreateBootState } from "./bootstrap/bootState";
+import { startLightweightVideoProbe } from "./bootstrap/lightweightVideoProbe";
 import { ensureRuntimeActivated } from "./bootstrap/runtimeActivation";
 import { bindObserverListeners } from "./bootstrap/videoObserverBinding";
 import {
+  authCallbackOrigin,
   minLongWaitingCount,
   proxyWorkerHost,
   votBackendUrl,
@@ -16,6 +18,7 @@ import {
 } from "./config/config";
 import { extraSites } from "./config/extraSites";
 import { GENERIC_PLAYER_SELECTOR } from "./config/playerSelectors";
+import { resolveVideoObserverPolicy } from "./config/videoObserverPolicy";
 import { resolveBootstrapMode } from "./core/bootstrapPolicy";
 import { CacheManager, VOTSessionStorageCache } from "./core/cacheManager";
 import Chaimu from "./core/chaimuClient";
@@ -28,7 +31,6 @@ import {
 import { shouldUsePopupOverlayWindow } from "./core/popupOverlayPolicy";
 import { VOTTranslationHandler } from "./core/translationHandler";
 import { TranslationOrchestrator } from "./core/translationOrchestrator";
-import { getTunnelPlayerContext } from "./core/tunnelPlayer";
 import { VideoLifecycleController } from "./core/videoLifecycleController";
 import { VOTVideoManager } from "./core/videoManager";
 import { localizationProvider } from "./localization/localizationProvider";
@@ -52,6 +54,7 @@ import {
 } from "./utils/intervalIdleChecker";
 import { installManifestSniffer } from "./utils/manifestSniffer";
 import { Notifier } from "./utils/notify";
+import { installSiteSubtitlesSniffer } from "./utils/siteSubtitlesSniffer";
 import { votStorage } from "./utils/storage";
 import { translate } from "./utils/translateApis";
 import {
@@ -129,7 +132,10 @@ type InternalVideoVolumeSetHistoryEntry = {
   percent: number;
   suppressMs: number;
 };
-
+if (/(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(location.hostname)) {
+  installSiteSubtitlesSniffer();
+  installManifestSniffer();
+}
 /*─────────────────────────────────────────────────────────────*/
 /*                        Main class: VideoHandler             */
 /*  Composes the helper classes and retains full functionality.  */
@@ -270,6 +276,7 @@ export class VideoHandler {
 
   // Init guard
   initialized = false;
+  onPrimaryAttachReady?: () => void;
 
   /**
    * Cached overlay mount points (root/portal). Recomputed when container changes.
@@ -497,8 +504,6 @@ export class VideoHandler {
       isAutoTranslateEnabled: () => Boolean(this.data?.autoTranslate),
       getVideoId: () => this.videoData?.videoId,
       scheduleAutoTranslate: () => this.runAutoTranslate(),
-      enableSubtitlesForCurrentLangPair: () =>
-        this.enableSubtitlesForCurrentLangPair(),
       isMobileYouTubeMuted: () =>
         this.site.host === "youtube" &&
         this.site.additionalData === "mobile" &&
@@ -615,6 +620,7 @@ export class VideoHandler {
       translationOrchestrator: this.translationOrchestrator,
       resetSubtitlesWidget: () => this.resetSubtitlesWidget(),
       queueOverlayAutoHide: () => this.overlayVisibility?.queueAutoHide(),
+      onPrimaryAttachReady: () => this.onPrimaryAttachReady?.(),
     };
     this.lifecycleController = new VideoLifecycleController(lifecycleHost);
     this.translationHandler = new VOTTranslationHandler(this);
@@ -629,7 +635,9 @@ export class VideoHandler {
     if (!this.subtitlesWidget) {
       const { subtitlesMountContainer } = this.getOverlayMountPoints();
       const widgetContainer =
-        this.uiManager.votOverlayView?.root ?? subtitlesMountContainer;
+        this.site.host === "googledrive"
+          ? subtitlesMountContainer
+          : (this.uiManager.votOverlayView?.root ?? subtitlesMountContainer);
       this.subtitlesWidget = new SubtitlesWidget(
         this.video,
         widgetContainer,
@@ -1379,7 +1387,7 @@ export class VideoHandler {
   sanitizeDownloadName(value: string): string {
     return value
       .replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "")
-      .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+      .replace(/[<>:"/\\|?*]/g, "_")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -1802,7 +1810,8 @@ export class VideoHandler {
       host === "invidious" ||
       host === "piped" ||
       host === "yandexdisk" ||
-      host === "custom"
+      host === "custom" ||
+      host === "vk"
     );
   }
   /**
@@ -1813,11 +1822,11 @@ export class VideoHandler {
   }
 
   syncTranslationPlaybackVolume(): void {
-    return this.callModule(syncTranslationPlaybackVolumeImpl);
+    this.callModule(syncTranslationPlaybackVolumeImpl);
   }
 
   applyManualVideoVolumeOverride(volume: number): void {
-    return this.callModule(applyManualVideoVolumeOverrideImpl, volume);
+    this.callModule(applyManualVideoVolumeOverrideImpl, volume);
   }
 
   /**
@@ -2098,17 +2107,37 @@ function findContainer(
   return video.parentElement;
 }
 
+function isYouTubePage(): boolean {
+  const hostname = String(globalThis.location.hostname || "").toLowerCase();
+
+  return (
+    hostname === "youtube.com" ||
+    hostname.endsWith(".youtube.com") ||
+    hostname === "youtu.be" ||
+    hostname.endsWith(".youtube-nocookie.com") ||
+    hostname.endsWith(".youtubekids.com") ||
+    hostname === "youtube.googleapis.com"
+  );
+}
+
+function shouldInstallManifestSniffer(): boolean {
+  return !isYouTubePage();
+}
+
 /**
  * Main function to start the extension.
  */
 async function main(): Promise<void> {
   await persistGoogleDriveTopFrameTitleIfNeeded();
-  installManifestSniffer();
+  if (shouldInstallManifestSniffer()) {
+    installManifestSniffer();
+  }
   const iframeMode = isIframe();
   const bootstrapMode = resolveBootstrapMode({
     isIframe: isIframe(),
     href: String(globalThis.location.href || ""),
     origin: globalThis.location.origin,
+    authOrigin: authCallbackOrigin,
   });
 
   if (bootstrapMode === "skip") {
@@ -2137,12 +2166,12 @@ async function main(): Promise<void> {
   }
 
   logBootstrap("Loading extension");
-  if (bootstrapMode === "top-full") {
-    void ensureRuntimeActivated("top-frame", logBootstrap).catch((err) => {
+  if (bootstrapMode === "auth-eager") {
+    void ensureRuntimeActivated("auth-page", logBootstrap).catch((err) => {
       console.error("[VOT] Failed to activate runtime", err);
     });
   } else {
-    logBootstrap("Lazy iframe bootstrap enabled; waiting for video detection");
+    logBootstrap("Lazy bootstrap enabled; waiting for video detection");
   }
 
   bindObserverListeners({
@@ -2155,6 +2184,31 @@ async function main(): Promise<void> {
     createVideoHandler: (video, container, site) =>
       new VideoHandler(video, container, site),
   });
+  const services = getServicesCached();
+  const videoObserverPolicy = resolveVideoObserverPolicy({
+    hostname: globalThis.location.hostname,
+    services,
+  });
+  videoObserver.setPolicy(videoObserverPolicy);
+
+  if (videoObserverPolicy.preferProbeBootstrap) {
+    logBootstrap("Lightweight video probe enabled", {
+      strategy: videoObserverPolicy.probeStrategy,
+      selectors: videoObserverPolicy.probeSelectors.join(", "),
+    });
+    startLightweightVideoProbe({
+      strategy: videoObserverPolicy.probeStrategy,
+      selectors: videoObserverPolicy.probeSelectors,
+      pollIntervalMs: videoObserverPolicy.probePollIntervalMs,
+      pollTimeoutMs: videoObserverPolicy.probePollTimeoutMs,
+      onVideoDetected: (reason, video) => {
+        logBootstrap("Probe detected candidate video", { reason });
+        videoObserver.enable(video);
+      },
+    });
+    return;
+  }
+
   videoObserver.enable();
 }
 

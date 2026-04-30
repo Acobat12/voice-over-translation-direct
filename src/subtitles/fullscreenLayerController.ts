@@ -104,11 +104,25 @@ export class FullscreenLayerController {
     if (!this.fullscreenLayer) {
       const layer = document.createElement("vot-block");
       layer.classList.add("vot-subtitles-layer");
+      Object.assign(layer.style, {
+        position: "absolute",
+        inset: "0",
+        zIndex: "2147483647",
+        pointerEvents: "none",
+      });
       this.fullscreenLayer = layer;
     }
 
-    if (this.fullscreenLayer.parentElement !== this.container) {
-      this.container.appendChild(this.fullscreenLayer);
+    const fullscreenEl = this.getActiveFullscreenElement();
+    const parent =
+      fullscreenEl instanceof HTMLElement ? fullscreenEl : this.container;
+
+    if (getComputedStyle(parent).position === "static") {
+      parent.style.position = "relative";
+    }
+
+    if (this.fullscreenLayer.parentElement !== parent) {
+      parent.appendChild(this.fullscreenLayer);
     }
 
     return this.fullscreenLayer;

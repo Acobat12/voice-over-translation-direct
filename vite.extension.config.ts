@@ -4,8 +4,8 @@ import { defineConfig } from "vite";
 import {
   buildExtensionBundles,
   cleanupExtensionTmpDir,
-  type ExtensionBuildTarget,
   createExtensionBuildContext,
+  type ExtensionBuildTarget,
   finalizeExtensionBuildArtifacts,
   getExtensionHeaders,
   outBase,
@@ -72,7 +72,9 @@ export default defineConfig(async ({ mode }) => {
     root: rootDir,
     plugins: [
       verifyVirtualEntryPlugin(),
-      mode === "verify" ? verifyOnlyPlugin("all") : extensionPipelinePlugin(target),
+      mode === "verify"
+        ? verifyOnlyPlugin("all")
+        : extensionPipelinePlugin(target),
     ],
     build: {
       outDir: outBase,

@@ -1,5 +1,4 @@
 export function installYandexDiskOverlayPatch(): void {
-
   let patchedHost: Element | null = null;
   let hideTimer: number | null = null;
   const IDLE_TIME = 3000;
@@ -12,7 +11,9 @@ export function installYandexDiskOverlayPatch(): void {
   };
 
   const showButton = () => {
-    const overlay = document.querySelector<HTMLElement>(".vot-segmented-button");
+    const overlay = document.querySelector<HTMLElement>(
+      ".vot-segmented-button",
+    );
     if (!overlay) return;
 
     overlay.hidden = false;
@@ -22,7 +23,9 @@ export function installYandexDiskOverlayPatch(): void {
 
     clearHideTimer();
     hideTimer = window.setTimeout(() => {
-      const currentOverlay = document.querySelector<HTMLElement>(".vot-segmented-button");
+      const currentOverlay = document.querySelector<HTMLElement>(
+        ".vot-segmented-button",
+      );
       if (!currentOverlay) return;
 
       currentOverlay.style.opacity = "0";

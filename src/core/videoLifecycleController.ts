@@ -56,6 +56,7 @@ interface VideoLifecycleHost {
   };
   enableSubtitlesForCurrentLangPair(): Promise<unknown>;
   queueOverlayAutoHide?(): void;
+  onPrimaryAttachReady?(): void;
 }
 
 export class VideoLifecycleController {
@@ -65,6 +66,7 @@ export class VideoLifecycleController {
   private activeSetCanPlaySourceKey = "";
   private setCanPlayRequested = false;
   private setCanPlayLoopPromise?: Promise<void>;
+  private deferredAutoStartupTimer?: ReturnType<typeof setTimeout>;
 
   constructor(host: VideoLifecycleHost) {
     this.host = host;
@@ -83,6 +85,7 @@ export class VideoLifecycleController {
   }
 
   private invalidateActiveSession(reason: string): void {
+    this.clearDeferredAutoStartup();
     if (this.lifecycleGeneration === 0) return;
     this.lifecycleGeneration += 1;
     this.resetActions(`[VideoLifecycle] ${reason}`);
@@ -128,8 +131,100 @@ export class VideoLifecycleController {
   }
 
   teardown() {
+    this.clearDeferredAutoStartup();
     this.setCanPlayRequested = false;
     this.invalidateActiveSession("teardown");
+  }
+
+  private clearDeferredAutoStartup(): void {
+    if (this.deferredAutoStartupTimer === undefined) {
+      return;
+    }
+
+    clearTimeout(this.deferredAutoStartupTimer);
+    this.deferredAutoStartupTimer = undefined;
+  }
+
+  private shouldDeferAutoStartup(): boolean {
+    return this.host.site.host === "youtube" && !this.host.site.additionalData;
+  }
+
+  private hasAutoStartupWork(): boolean {
+    return Boolean(
+      this.host.data.autoTranslate || this.host.data.autoSubtitles,
+    );
+  }
+
+  private async runAutoStartupSequence(
+    sessionId: number,
+    mode: "immediate" | "deferred",
+  ): Promise<void> {
+    if (mode === "immediate") {
+      const autoSubtitlesPromise = this.runAutoSubtitlesIfEnabled(sessionId);
+      await this.host.translationOrchestrator.runAutoTranslationIfEligible();
+      if (this.isStale(sessionId)) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] auto-translation result ignored (stale session)`,
+        );
+        return;
+      }
+
+      await autoSubtitlesPromise;
+      if (this.isStale(sessionId)) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] auto-subtitles result ignored (stale session)`,
+        );
+      }
+      return;
+    }
+
+    await this.host.translationOrchestrator.runAutoTranslationIfEligible();
+    if (this.isStale(sessionId)) {
+      debug.log(
+        `[VideoLifecycle][session:${sessionId}] deferred auto-translation ignored (stale session)`,
+      );
+      return;
+    }
+
+    await this.runAutoSubtitlesIfEnabled(sessionId);
+    if (this.isStale(sessionId)) {
+      debug.log(
+        `[VideoLifecycle][session:${sessionId}] deferred auto-subtitles ignored (stale session)`,
+      );
+    }
+  }
+
+  private scheduleDeferredAutoStartup(
+    sessionId: number,
+    sourceKey: string,
+  ): void {
+    if (!this.hasAutoStartupWork()) {
+      return;
+    }
+
+    this.clearDeferredAutoStartup();
+    this.deferredAutoStartupTimer = globalThis.setTimeout(() => {
+      this.deferredAutoStartupTimer = undefined;
+
+      if (this.isStale(sessionId)) {
+        return;
+      }
+
+      if (this.getCurrentSourceKey() !== sourceKey) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] deferred auto startup skipped after source change`,
+          { sourceKey },
+        );
+        return;
+      }
+
+      void this.runAutoStartupSequence(sessionId, "deferred").catch((err) => {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] deferred auto startup failed`,
+          err,
+        );
+      });
+    }, 800);
   }
 
   private getCurrentSourceKey(): string {
@@ -212,6 +307,9 @@ export class VideoLifecycleController {
       debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
         sourceKey,
       });
+      if (this.shouldDeferAutoStartup()) {
+        return;
+      }
       await this.runAutoSubtitlesIfEnabled(this.lifecycleGeneration);
       return;
     }
@@ -275,29 +373,16 @@ export class VideoLifecycleController {
         return;
       }
 
-      await this.host.translationOrchestrator.runAutoTranslationIfEligible();
-
-console.warn("[VOT][lifecycle] after auto translation, before subtitles", {
-  autoSubtitles: this.host.data.autoSubtitles,
-  videoId: this.host.videoData?.videoId,
-});
-
-      const autoSubtitlesPromise = this.runAutoSubtitlesIfEnabled(currentId);
-
-      if (this.isStale(currentId)) {
+      if (this.shouldDeferAutoStartup()) {
+        this.scheduleDeferredAutoStartup(currentId, sourceKey);
         debug.log(
-          `[VideoLifecycle][session:${currentId}] auto-translation result ignored (stale session)`,
+          `[VideoLifecycle][session:${currentId}] deferred auto startup scheduled`,
+          { sourceKey },
         );
         return;
       }
 
-      await autoSubtitlesPromise;
-      if (this.isStale(currentId)) {
-        debug.log(
-          `[VideoLifecycle][session:${currentId}] auto-subtitles result ignored (stale session)`,
-        );
-        return;
-      }
+      await this.runAutoStartupSequence(currentId, "immediate");
       debug.log(`[VideoLifecycle][session:${currentId}] setCanPlay finished`);
     } finally {
       if (this.activeSetCanPlaySourceKey === sourceKey) {
@@ -306,26 +391,20 @@ console.warn("[VOT][lifecycle] after auto translation, before subtitles", {
     }
   }
 
-private async runAutoSubtitlesIfEnabled(sessionId: number): Promise<void> {
-  console.warn("[VOT][lifecycle] runAutoSubtitlesIfEnabled", {
-    autoSubtitles: this.host.data.autoSubtitles,
-    videoId: this.host.videoData?.videoId,
-    sessionId,
-  });
+  private async runAutoSubtitlesIfEnabled(sessionId: number): Promise<void> {
+    if (!this.host.data.autoSubtitles || !this.host.videoData?.videoId) {
+      return;
+    }
 
-  if (!this.host.data.autoSubtitles || !this.host.videoData?.videoId) {
-    return;
+    try {
+      await this.host.enableSubtitlesForCurrentLangPair();
+    } catch (err) {
+      debug.log(
+        `[VideoLifecycle][session:${sessionId}] auto-subtitles failed`,
+        err,
+      );
+    }
   }
-
-  try {
-    await this.host.enableSubtitlesForCurrentLangPair();
-  } catch (err) {
-    debug.log(
-      `[VideoLifecycle][session:${sessionId}] auto-subtitles failed`,
-      err,
-    );
-  }
-}
 
   async handleSrcChanged(callId?: number, expectedSourceKey?: string) {
     const sessionId =
@@ -374,9 +453,7 @@ private async runAutoSubtitlesIfEnabled(sessionId: number): Promise<void> {
     }
 
     if (!this.host.videoData?.videoId) {
-      debug.log(
-        `[VideoLifecycle][session:${sessionId}] No videoId resolved`,
-      );
+      debug.log(`[VideoLifecycle][session:${sessionId}] No videoId resolved`);
       if (this.hasResolvableMediaSource()) {
         debug.log(
           `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
@@ -413,6 +490,7 @@ private async runAutoSubtitlesIfEnabled(sessionId: number): Promise<void> {
 
     this.showOverlayButton(overlayView);
     this.lastSetCanPlaySourceKey = sourceKey;
+    this.host.onPrimaryAttachReady?.();
     debug.log(`[VideoLifecycle][session:${sessionId}] src handling finished`);
   }
 }

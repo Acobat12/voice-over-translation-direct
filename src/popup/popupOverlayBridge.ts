@@ -350,14 +350,20 @@ export class PopupOverlayBridge {
     translationVolumeValue.id = "vot-translation-volume-value";
     translationVolumeValue.className = "vot-slider-value";
     translationVolumeValue.textContent = "100%";
-    translationVolumeHead.append(translationVolumeLabel, translationVolumeValue);
+    translationVolumeHead.append(
+      translationVolumeLabel,
+      translationVolumeValue,
+    );
     const translationVolumeInput = doc.createElement("input");
     translationVolumeInput.id = "vot-translation-volume";
     translationVolumeInput.type = "range";
     translationVolumeInput.min = "0";
     translationVolumeInput.max = "300";
     translationVolumeInput.value = "100";
-    translationVolumeField.append(translationVolumeHead, translationVolumeInput);
+    translationVolumeField.append(
+      translationVolumeHead,
+      translationVolumeInput,
+    );
 
     const statusEl = doc.createElement("div");
     statusEl.id = "vot-status";
@@ -393,7 +399,9 @@ export class PopupOverlayBridge {
       }
     });
     downloadBtn.addEventListener("click", () => this.onDownload?.());
-    downloadSubtitlesBtn.addEventListener("click", () => this.onDownloadSubtitles?.());
+    downloadSubtitlesBtn.addEventListener("click", () =>
+      this.onDownloadSubtitles?.(),
+    );
 
     subtitlesBtn.addEventListener("click", () => this.onToggleSubtitles?.());
     videoVolumeInput.addEventListener("input", () => {
@@ -404,15 +412,33 @@ export class PopupOverlayBridge {
       translationVolumeValue.textContent = `${translationVolumeInput.value}%`;
       this.onTranslationVolumeChange?.(Number(translationVolumeInput.value));
     });
-    fromSelect.addEventListener("change", () => this.onFromLanguageChange?.(fromSelect.value));
-    toSelect.addEventListener("change", () => this.onToLanguageChange?.(toSelect.value));
-    autoTranslateInput.addEventListener("change", () => this.onAutoTranslateChange?.(autoTranslateInput.checked));
-    autoSubtitlesInput.addEventListener("change", () => this.onAutoSubtitlesChange?.(autoSubtitlesInput.checked));
-    syncVolumeInput.addEventListener("change", () => this.onSyncVolumeChange?.(syncVolumeInput.checked));
-    showVideoSliderInput.addEventListener("change", () => this.onShowVideoSliderChange?.(showVideoSliderInput.checked));
-    audioBoosterInput.addEventListener("change", () => this.onAudioBoosterChange?.(audioBoosterInput.checked));
-    autoVolumeInput.addEventListener("change", () => this.onAutoVolumeChange?.(autoVolumeInput.checked));
-    smartDuckingInput.addEventListener("change", () => this.onSmartDuckingChange?.(smartDuckingInput.checked));
+    fromSelect.addEventListener("change", () =>
+      this.onFromLanguageChange?.(fromSelect.value),
+    );
+    toSelect.addEventListener("change", () =>
+      this.onToLanguageChange?.(toSelect.value),
+    );
+    autoTranslateInput.addEventListener("change", () =>
+      this.onAutoTranslateChange?.(autoTranslateInput.checked),
+    );
+    autoSubtitlesInput.addEventListener("change", () =>
+      this.onAutoSubtitlesChange?.(autoSubtitlesInput.checked),
+    );
+    syncVolumeInput.addEventListener("change", () =>
+      this.onSyncVolumeChange?.(syncVolumeInput.checked),
+    );
+    showVideoSliderInput.addEventListener("change", () =>
+      this.onShowVideoSliderChange?.(showVideoSliderInput.checked),
+    );
+    audioBoosterInput.addEventListener("change", () =>
+      this.onAudioBoosterChange?.(audioBoosterInput.checked),
+    );
+    autoVolumeInput.addEventListener("change", () =>
+      this.onAutoVolumeChange?.(autoVolumeInput.checked),
+    );
+    smartDuckingInput.addEventListener("change", () =>
+      this.onSmartDuckingChange?.(smartDuckingInput.checked),
+    );
 
     doc.addEventListener("keydown", (event) => {
       const isInputTarget =
@@ -505,20 +531,32 @@ export class PopupOverlayBridge {
     const mainBtn = this.getEl<HTMLButtonElement>("vot-main-btn");
     const subtitlesBtn = this.getEl<HTMLButtonElement>("vot-subtitles-btn");
     const downloadBtn = this.getEl<HTMLButtonElement>("vot-download-btn");
-    const downloadSubtitlesBtn = this.getEl<HTMLButtonElement>("vot-download-subtitles-btn");
+    const downloadSubtitlesBtn = this.getEl<HTMLButtonElement>(
+      "vot-download-subtitles-btn",
+    );
     const statusEl = this.getEl<HTMLDivElement>("vot-status");
     const hintEl = this.getEl<HTMLDivElement>("vot-hint");
     const fromSelect = this.getEl<HTMLSelectElement>("vot-from-lang");
     const toSelect = this.getEl<HTMLSelectElement>("vot-to-lang");
     const badge = this.getEl<HTMLDivElement>("vot-badge");
     const videoVolumeInput = this.getEl<HTMLInputElement>("vot-video-volume");
-    const videoVolumeValue = this.getEl<HTMLDivElement>("vot-video-volume-value");
-    const translationVolumeInput = this.getEl<HTMLInputElement>("vot-translation-volume");
-    const translationVolumeValue = this.getEl<HTMLDivElement>("vot-translation-volume-value");
-    const autoTranslateInput = this.getEl<HTMLInputElement>("vot-auto-translate");
-    const autoSubtitlesInput = this.getEl<HTMLInputElement>("vot-auto-subtitles");
+    const videoVolumeValue = this.getEl<HTMLDivElement>(
+      "vot-video-volume-value",
+    );
+    const translationVolumeInput = this.getEl<HTMLInputElement>(
+      "vot-translation-volume",
+    );
+    const translationVolumeValue = this.getEl<HTMLDivElement>(
+      "vot-translation-volume-value",
+    );
+    const autoTranslateInput =
+      this.getEl<HTMLInputElement>("vot-auto-translate");
+    const autoSubtitlesInput =
+      this.getEl<HTMLInputElement>("vot-auto-subtitles");
     const syncVolumeInput = this.getEl<HTMLInputElement>("vot-sync-volume");
-    const showVideoSliderInput = this.getEl<HTMLInputElement>("vot-show-video-slider");
+    const showVideoSliderInput = this.getEl<HTMLInputElement>(
+      "vot-show-video-slider",
+    );
     const audioBoosterInput = this.getEl<HTMLInputElement>("vot-audio-booster");
     const autoVolumeInput = this.getEl<HTMLInputElement>("vot-auto-volume");
     const smartDuckingInput = this.getEl<HTMLInputElement>("vot-smart-ducking");
@@ -528,7 +566,8 @@ export class PopupOverlayBridge {
 
     if (mainBtn) {
       mainBtn.textContent = payload.label;
-      mainBtn.dataset.mode = payload.status === "success" ? "turn-off" : "translate";
+      mainBtn.dataset.mode =
+        payload.status === "success" ? "turn-off" : "translate";
       mainBtn.disabled = isLoading;
     }
     if (badge) {
@@ -537,25 +576,42 @@ export class PopupOverlayBridge {
     }
     if (subtitlesBtn) {
       subtitlesBtn.dataset.active = String(Boolean(payload.subtitlesEnabled));
-      subtitlesBtn.textContent = payload.subtitlesEnabled ? "Subtitles: on" : "Subtitles: off";
+      subtitlesBtn.textContent = payload.subtitlesEnabled
+        ? "Subtitles: on"
+        : "Subtitles: off";
     }
     if (downloadBtn) {
       downloadBtn.disabled = !payload.canDownload || isLoading;
-      downloadBtn.title = payload.canDownload ? "Download translated audio" : "Translation audio is not available yet";
+      downloadBtn.title = payload.canDownload
+        ? "Download translated audio"
+        : "Translation audio is not available yet";
     }
     if (downloadSubtitlesBtn) {
-      downloadSubtitlesBtn.disabled = !payload.canDownloadSubtitles || isLoading;
+      downloadSubtitlesBtn.disabled =
+        !payload.canDownloadSubtitles || isLoading;
       downloadSubtitlesBtn.title = payload.canDownloadSubtitles
         ? "Download subtitles"
         : "Subtitles are not available yet";
     }
     if (statusEl) statusEl.textContent = `Status: ${payload.status}`;
-    if (hintEl) hintEl.textContent = payload.hint ?? "Popup mode for Google-hosted players.";
+    if (hintEl)
+      hintEl.textContent =
+        payload.hint ?? "Popup mode for Google-hosted players.";
     if (fromSelect) {
-      this.renderSelectOptions(fromSelect, payload.fromLangOptions ?? [], payload.fromLangValue, payload.fromLangLabel);
+      this.renderSelectOptions(
+        fromSelect,
+        payload.fromLangOptions ?? [],
+        payload.fromLangValue,
+        payload.fromLangLabel,
+      );
     }
     if (toSelect) {
-      this.renderSelectOptions(toSelect, payload.toLangOptions ?? [], payload.toLangValue, payload.toLangLabel);
+      this.renderSelectOptions(
+        toSelect,
+        payload.toLangOptions ?? [],
+        payload.toLangValue,
+        payload.toLangLabel,
+      );
     }
     if (fromSelect) fromSelect.disabled = isLoading;
     if (toSelect) toSelect.disabled = isLoading;
@@ -591,14 +647,31 @@ export class PopupOverlayBridge {
       smartDuckingInput.disabled = isLoading || !payload.autoVolumeEnabled;
     }
     if (videoVolumeInput && typeof payload.videoVolume === "number") {
-      videoVolumeInput.value = String(Math.max(0, Math.min(100, Math.round(payload.videoVolume))));
-      videoVolumeInput.disabled = isLoading || payload.showVideoSliderEnabled === false;
-      if (videoVolumeValue) videoVolumeValue.textContent = `${videoVolumeInput.value}%`;
+      videoVolumeInput.value = String(
+        Math.max(0, Math.min(100, Math.round(payload.videoVolume))),
+      );
+      videoVolumeInput.disabled =
+        isLoading || payload.showVideoSliderEnabled === false;
+      if (videoVolumeValue)
+        videoVolumeValue.textContent = `${videoVolumeInput.value}%`;
     }
-    if (translationVolumeInput && typeof payload.translationVolume === "number") {
-      translationVolumeInput.value = String(Math.max(0, Math.min(Number(translationVolumeInput.max), Math.round(payload.translationVolume))));
-      translationVolumeInput.disabled = payload.canAdjustTranslationVolume === false || isLoading;
-      if (translationVolumeValue) translationVolumeValue.textContent = `${translationVolumeInput.value}%`;
+    if (
+      translationVolumeInput &&
+      typeof payload.translationVolume === "number"
+    ) {
+      translationVolumeInput.value = String(
+        Math.max(
+          0,
+          Math.min(
+            Number(translationVolumeInput.max),
+            Math.round(payload.translationVolume),
+          ),
+        ),
+      );
+      translationVolumeInput.disabled =
+        payload.canAdjustTranslationVolume === false || isLoading;
+      if (translationVolumeValue)
+        translationVolumeValue.textContent = `${translationVolumeInput.value}%`;
     }
   }
 
@@ -617,47 +690,50 @@ export class PopupOverlayBridge {
   }
 
   private renderSelectOptions(
-  select: HTMLSelectElement,
-  options: PopupOption[],
-  value?: string,
-  fallbackLabel?: string,
-): void {
-  const currentSignature = JSON.stringify(options);
+    select: HTMLSelectElement,
+    options: PopupOption[],
+    value?: string,
+    fallbackLabel?: string,
+  ): void {
+    const currentSignature = JSON.stringify(options);
 
-  if ((select.dataset.signature ?? "") !== currentSignature) {
-    while (select.firstChild) {
-      select.removeChild(select.firstChild);
+    if ((select.dataset.signature ?? "") !== currentSignature) {
+      while (select.firstChild) {
+        select.removeChild(select.firstChild);
+      }
+
+      for (const option of options) {
+        const el = select.ownerDocument.createElement("option");
+        el.value = option.value;
+        el.textContent = option.label;
+        select.appendChild(el);
+      }
+
+      select.dataset.signature = currentSignature;
     }
 
-    for (const option of options) {
-      const el = select.ownerDocument.createElement("option");
-      el.value = option.value;
-      el.textContent = option.label;
-      select.appendChild(el);
-    }
+    if (
+      value &&
+      Array.from(select.options).some((option) => option.value === value)
+    ) {
+      select.value = value;
+    } else if (fallbackLabel) {
+      const exists = Array.from(select.options).some(
+        (option) => option.value === (value ?? ""),
+      );
 
-    select.dataset.signature = currentSignature;
+      if (!exists) {
+        const fallback = select.ownerDocument.createElement("option");
+        fallback.value = value ?? "";
+        fallback.textContent = fallbackLabel;
+        select.appendChild(fallback);
+      }
+
+      select.value = value ?? "";
+    } else if (select.options.length > 0) {
+      select.selectedIndex = 0;
+    }
   }
-
-  if (value && Array.from(select.options).some((option) => option.value === value)) {
-    select.value = value;
-  } else if (fallbackLabel) {
-    const exists = Array.from(select.options).some(
-      (option) => option.value === (value ?? ""),
-    );
-
-    if (!exists) {
-      const fallback = select.ownerDocument.createElement("option");
-      fallback.value = value ?? "";
-      fallback.textContent = fallbackLabel;
-      select.appendChild(fallback);
-    }
-
-    select.value = value ?? "";
-  } else if (select.options.length > 0) {
-    select.selectedIndex = 0;
-  }
-}
 
   private getEl<T extends HTMLElement>(id: string): T | null {
     if (!this.popup || this.popup.closed) return null;
@@ -678,7 +754,12 @@ export class PopupOverlayBridge {
   }
 
   private buildPopupFeatures(geometry: PopupGeometry | null): string {
-    const defaults = geometry ?? { width: 500, height: 520, left: 120, top: 120 };
+    const defaults = geometry ?? {
+      width: 500,
+      height: 520,
+      left: 120,
+      top: 120,
+    };
     return [
       `width=${defaults.width}`,
       `height=${defaults.height}`,
@@ -691,17 +772,33 @@ export class PopupOverlayBridge {
 
   private readGeometry(): PopupGeometry | null {
     try {
-      const raw = window.localStorage.getItem(PopupOverlayBridge.GEOMETRY_STORAGE_KEY);
+      const raw = window.localStorage.getItem(
+        PopupOverlayBridge.GEOMETRY_STORAGE_KEY,
+      );
       if (!raw) return null;
       const parsed = JSON.parse(raw) as Partial<PopupGeometry>;
-      if ([parsed.width, parsed.height, parsed.left, parsed.top].some((v) => typeof v !== "number")) {
+      if (
+        [parsed.width, parsed.height, parsed.left, parsed.top].some(
+          (v) => typeof v !== "number",
+        )
+      ) {
+        return null;
+      }
+      const { width, height, left, top } = parsed;
+
+      if (
+        width === undefined ||
+        height === undefined ||
+        left === undefined ||
+        top === undefined
+      ) {
         return null;
       }
       return {
-        width: Math.max(420, Math.round(parsed.width!)),
-        height: Math.max(420, Math.round(parsed.height!)),
-        left: Math.round(parsed.left!),
-        top: Math.round(parsed.top!),
+        width: Math.max(420, Math.round(width)),
+        height: Math.max(420, Math.round(height)),
+        left: Math.round(left),
+        top: Math.round(top),
       };
     } catch {
       return null;
@@ -736,7 +833,10 @@ export class PopupOverlayBridge {
         left: this.popup.screenX,
         top: this.popup.screenY,
       };
-      window.localStorage.setItem(PopupOverlayBridge.GEOMETRY_STORAGE_KEY, JSON.stringify(geometry));
+      window.localStorage.setItem(
+        PopupOverlayBridge.GEOMETRY_STORAGE_KEY,
+        JSON.stringify(geometry),
+      );
     } catch {
       // ignore
     }

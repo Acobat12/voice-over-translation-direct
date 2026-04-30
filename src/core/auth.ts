@@ -1,5 +1,10 @@
+import {
+  authCallbackOrigin,
+  authCallbackPath,
+  authCallbackUrl,
+  yandexOauthClientId,
+} from "../config/config";
 import type { Account } from "../types/storage";
-import { authCallbackOrigin, authCallbackPath, authCallbackUrl, yandexOauthClientId } from "../config/config";
 import { votStorage } from "../utils/storage";
 
 type AuthProfilePayload = {
@@ -49,7 +54,10 @@ function getProfilePayload(): AuthProfilePayload | null {
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 async function sha256Base64Url(input: string): Promise<string> {
@@ -190,7 +198,9 @@ export async function saveOAuthAccount(tokenData: {
   sessionStorage.removeItem("vot-yandex-oauth-code-verifier");
 }
 
-async function postResultToOpener(message: OAuthPopupSuccessMessage | OAuthPopupErrorMessage) {
+async function postResultToOpener(
+  message: OAuthPopupSuccessMessage | OAuthPopupErrorMessage,
+) {
   if (globalThis.opener && !globalThis.opener.closed) {
     globalThis.opener.postMessage(message, "*");
   }

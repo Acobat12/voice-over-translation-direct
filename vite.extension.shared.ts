@@ -1,6 +1,6 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import { build as viteBuild } from "vite";
@@ -18,12 +18,13 @@ const DEFAULT_EXTENSION_NAME = "Voice Over Translation";
 const DEFAULT_EXTENSION_DESCRIPTION = "Voice Over Translation";
 const DEFAULT_EXTENSION_VERSION = "0.0.0";
 const EXTENSION_ICON_SIZES = [16, 32, 48, 64, 96, 128, 256] as const;
-const EXTENSION_ASSET_FILES = [
-  "bridge.js",
-  "prelude.js",
-  "content.js",
-  "content.css",
+const EXTENSION_LOADER_FILES = ["prelude.js", "content.js"] as const;
+const EXTENSION_MODULE_FILES = [
+  "prelude.module.js",
+  "content.module.js",
 ] as const;
+const EXTENSION_WEB_ACCESSIBLE_JS_GLOBS = ["*.js"] as const;
+const _EXTENSION_ASSET_FILES = ["bridge.js", "content.css"] as const;
 
 const GITHUB_DIST_EXT_RAW_BASE =
   "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext";
@@ -58,14 +59,14 @@ interface ExtensionEntry {
 const extensionEntries: ExtensionEntry[] = [
   {
     entry: "src/index.ts",
-    format: "iife",
-    fileName: "content.js",
+    format: "es",
+    fileName: "content.module.js",
     emptyOutDir: true,
   },
   {
     entry: "src/extension/prelude.ts",
-    format: "iife",
-    fileName: "prelude.js",
+    format: "es",
+    fileName: "prelude.module.js",
     emptyOutDir: false,
   },
   {
@@ -244,11 +245,15 @@ async function buildEntry({
         formats: [format],
         fileName: () => fileName,
       },
-      rollupOptions: {
-        output: {
-          inlineDynamicImports: true,
-        },
-      },
+      ...(format === "iife"
+        ? {
+            rollupOptions: {
+              output: {
+                inlineDynamicImports: true,
+              },
+            },
+          }
+        : {}),
     },
   });
 }
@@ -298,9 +303,23 @@ async function copyExtensionFiles(
 ): Promise<void> {
   await fs.mkdir(targetDir, { recursive: true });
 
-  for (const fileName of EXTENSION_ASSET_FILES) {
-    await fs.copyFile(path.join(outTmp, fileName), path.join(targetDir, fileName));
+  const bundleFiles = await fs.readdir(outTmp);
+  const frontEndFiles = bundleFiles.filter((fileName) => {
+    if (["background.js", "background-ff.js"].includes(fileName)) {
+      return false;
+    }
+
+    return fileName.endsWith(".js") || fileName === "content.css";
+  });
+
+  for (const fileName of frontEndFiles) {
+    await fs.copyFile(
+      path.join(outTmp, fileName),
+      path.join(targetDir, fileName),
+    );
   }
+
+  await writeExtensionLoaders(targetDir);
 
   await fs.copyFile(
     path.join(outTmp, backgroundSrc),
@@ -319,7 +338,9 @@ async function copyExtensionFiles(
   }
 }
 
-function normalizeHostPermission(entry: string | undefined | null): string | null {
+function normalizeHostPermission(
+  entry: string | undefined | null,
+): string | null {
   if (!entry) return null;
   const value = String(entry).trim();
   if (!value) return null;
@@ -370,6 +391,36 @@ function splitMatchesForOriginFallback(matches: string[] = []): {
   return { originFallbackMatches, directMatches };
 }
 
+function normalizeWebAccessibleResourceMatch(
+  pattern: string | undefined | null,
+): string | null {
+  if (!pattern) return null;
+  const value = String(pattern).trim();
+  if (!value) return null;
+  if (value === "<all_urls>") {
+    return "*://*/*";
+  }
+
+  const match = /^([^:]+:\/\/[^/]+)(\/.*)?$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  return `${match[1]}/*`;
+}
+
+function normalizeWebAccessibleResourceMatches(
+  matches: string[] = [],
+): string[] {
+  return [
+    ...new Set(
+      matches
+        .map((pattern) => normalizeWebAccessibleResourceMatch(pattern))
+        .filter((pattern): pattern is string => Boolean(pattern)),
+    ),
+  ];
+}
+
 function buildIconsMap(sizes: readonly number[]): Record<number, string> {
   return Object.fromEntries(
     sizes.map((size) => [size, `icons/icon-${size}.png`]),
@@ -413,6 +464,22 @@ function createContentScriptEntries({
       run_at: "document_idle",
       ...(includeWorld ? { world: "MAIN" } : {}),
       ...fallbackConfig,
+    },
+  ];
+}
+
+function createWebAccessibleResources(
+  matches: string[],
+): Array<Record<string, unknown>> {
+  const normalizedMatches = normalizeWebAccessibleResourceMatches(matches);
+  if (!normalizedMatches.length) {
+    return [];
+  }
+
+  return [
+    {
+      resources: [...EXTENSION_WEB_ACCESSIBLE_JS_GLOBS],
+      matches: normalizedMatches,
     },
   ];
 }
@@ -468,6 +535,7 @@ function buildManifestChrome({
     },
     icons: buildIconsMap(EXTENSION_ICON_SIZES),
     content_scripts: contentScripts,
+    web_accessible_resources: createWebAccessibleResources(matches),
   };
 }
 
@@ -484,7 +552,9 @@ function getFirefoxStrictMinVersion(): string {
 }
 
 function compareFirefoxVersions(left: string, right: string): number {
-  const leftParts = left.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const leftParts = left
+    .split(".")
+    .map((part) => Number.parseInt(part, 10) || 0);
   const rightParts = right
     .split(".")
     .map((part) => Number.parseInt(part, 10) || 0);
@@ -501,8 +571,10 @@ function compareFirefoxVersions(left: string, right: string): number {
 }
 
 function getFirefoxAndroidSettings(): Record<string, string> {
-  const strictMinVersion = process.env.FIREFOX_ANDROID_STRICT_MIN_VERSION?.trim();
-  const strictMaxVersion = process.env.FIREFOX_ANDROID_STRICT_MAX_VERSION?.trim();
+  const strictMinVersion =
+    process.env.FIREFOX_ANDROID_STRICT_MIN_VERSION?.trim();
+  const strictMaxVersion =
+    process.env.FIREFOX_ANDROID_STRICT_MAX_VERSION?.trim();
 
   return {
     ...(strictMinVersion ? { strict_min_version: strictMinVersion } : {}),
@@ -528,7 +600,7 @@ function getFirefoxDataCollectionPermissions(): {
 
   return {
     required,
-    ...(optional && optional.length ? { optional } : {}),
+    ...(optional?.length ? { optional } : {}),
   };
 }
 
@@ -568,7 +640,9 @@ function buildManifestFirefox({
   const dataCollectionPermissions = getFirefoxDataCollectionPermissions();
 
   const action = manifest.action as Record<string, unknown> | undefined;
-  const defaultIcon = action?.default_icon as Record<string, unknown> | undefined;
+  const defaultIcon = action?.default_icon as
+    | Record<string, unknown>
+    | undefined;
   if (defaultIcon) {
     defaultIcon[64] = "icons/icon-64.png";
   }
@@ -636,7 +710,10 @@ async function writeFirefoxUpdatesManifest({
   return updatesManifestPath;
 }
 
-async function zipDir(sourceDirPath: string, outZipPath: string): Promise<void> {
+async function zipDir(
+  sourceDirPath: string,
+  outZipPath: string,
+): Promise<void> {
   await fs.rm(outZipPath, { force: true });
   await fs.mkdir(path.dirname(outZipPath), { recursive: true });
   await zip(sourceDirPath, outZipPath, {
@@ -654,7 +731,11 @@ function getCrx3Bin(): string {
   );
 }
 
-async function runCmd(cmd: string, args: string[], cwd?: string): Promise<void> {
+async function runCmd(
+  cmd: string,
+  args: string[],
+  cwd?: string,
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, {
       cwd,
@@ -671,7 +752,7 @@ async function runCmd(cmd: string, args: string[], cwd?: string): Promise<void> 
   });
 }
 
-async function maybeBuildCrx({
+async function _maybeBuildCrx({
   sourceDir,
   version,
 }: {
@@ -688,27 +769,23 @@ async function maybeBuildCrx({
 
   const crx3Bin = getCrx3Bin();
   if (!(await exists(crx3Bin))) {
-    throw new Error(`CRX builder not found: ${crx3Bin}. Install dependencies first.`);
+    throw new Error(
+      `CRX builder not found: ${crx3Bin}. Install dependencies first.`,
+    );
   }
   const outCrx = path.join(outBase, `vot-extension-chrome-${version}.zip`);
   try {
     await runCmd(
       crx3Bin,
-      [
-        "-p",
-        keyPath,
-        "-o",
-        outCrx,
-        "--appVersion",
-        version,
-        sourceDir,
-      ],
+      ["-p", keyPath, "-o", outCrx, "--appVersion", version, sourceDir],
       rootDir,
     );
   } finally {
     if (useTemporaryKey) {
       await fs.rm(keyPath, { force: true });
-      await fs.rm(path.join(outBase, "vot-extension-chrome.pem"), { force: true });
+      await fs.rm(path.join(outBase, "vot-extension-chrome.pem"), {
+        force: true,
+      });
     }
   }
   return {
@@ -735,6 +812,19 @@ function assertValidPatterns(
       );
     }
   }
+}
+
+async function writeExtensionLoaders(targetDir: string): Promise<void> {
+  const loaders: Record<(typeof EXTENSION_LOADER_FILES)[number], string> = {
+    "prelude.js": "\n",
+    "content.js": "\n",
+  };
+
+  await Promise.all(
+    EXTENSION_LOADER_FILES.map((fileName) =>
+      fs.writeFile(path.join(targetDir, fileName), loaders[fileName], "utf8"),
+    ),
+  );
 }
 
 function assertOriginFallbackPathIsWildcard(
@@ -847,7 +937,10 @@ async function verifyOne(browserName: "chrome" | "firefox"): Promise<void> {
   }
 
   const requiredFiles = [
-    ...EXTENSION_ASSET_FILES,
+    "bridge.js",
+    ...EXTENSION_LOADER_FILES,
+    ...EXTENSION_MODULE_FILES,
+    "content.css",
     "background.js",
     ...EXTENSION_ICON_SIZES.map((size) => `icons/icon-${size}.png`),
   ];
@@ -861,11 +954,22 @@ async function verifyOne(browserName: "chrome" | "firefox"): Promise<void> {
 
   const bridge = await fs.readFile(path.join(dir, "bridge.js"), "utf8");
   const prelude = await fs.readFile(path.join(dir, "prelude.js"), "utf8");
+  const preludeModule = await fs.readFile(
+    path.join(dir, "prelude.module.js"),
+    "utf8",
+  );
   const content = await fs.readFile(path.join(dir, "content.js"), "utf8");
+  const contentModule = await fs.readFile(
+    path.join(dir, "content.module.js"),
+    "utf8",
+  );
   const background = await fs.readFile(path.join(dir, "background.js"), "utf8");
-  const combined = `${bridge}\n${prelude}\n${content}\n${background}`;
+  const combined = `${bridge}\n${prelude}\n${preludeModule}\n${content}\n${contentModule}\n${background}`;
 
-  const forbiddenSnippets = ["cdnjs.cloudflare.com/ajax/libs/hls.js", "@require"];
+  const forbiddenSnippets = [
+    "cdnjs.cloudflare.com/ajax/libs/hls.js",
+    "@require",
+  ];
   for (const snippet of forbiddenSnippets) {
     if (combined.includes(snippet)) {
       throw new Error(
@@ -874,8 +978,48 @@ async function verifyOne(browserName: "chrome" | "firefox"): Promise<void> {
     }
   }
 
+  if (/import\s*\(/.test(bridge)) {
+    throw new Error(
+      `${browserName}: expected bridge.js to avoid dynamic imports`,
+    );
+  }
+
+  for (const [fileName, source] of [
+    ["prelude.js", prelude],
+    ["content.js", content],
+  ] as const) {
+    if (/import\s*\(/.test(source)) {
+      throw new Error(
+        `${browserName}: expected ${fileName} to stay inert and avoid dynamic imports`,
+      );
+    }
+  }
+
+  const moduleImportTargets = Array.from(
+    new Set(
+      [preludeModule, contentModule]
+        .flatMap((source) =>
+          Array.from(
+            source.matchAll(/from\s+"(\.\/[^"]+\.js)"/g),
+            (match) => match[1],
+          ),
+        )
+        .map((pathValue) => pathValue.replace(/^\.\//, "")),
+    ),
+  );
+  for (const importedFile of moduleImportTargets) {
+    if (!(await exists(path.join(dir, importedFile)))) {
+      throw new Error(
+        `${browserName}: missing module dependency referenced by extension bundle: ${importedFile}`,
+      );
+    }
+  }
+
   const bridgeSrcPath = path.join(rootDir, "src/extension/bridge.ts");
-  const serializationSrcPath = path.join(rootDir, "src/extension/bodySerialization.ts");
+  const serializationSrcPath = path.join(
+    rootDir,
+    "src/extension/bodySerialization.ts",
+  );
   let sourceToCheck: string | null = null;
   if (await exists(serializationSrcPath)) {
     sourceToCheck = await fs.readFile(serializationSrcPath, "utf8");
@@ -967,7 +1111,10 @@ async function buildBrowserArtifacts({
   });
   await writeManifest(outDir, buildManifest({ headers, includeWorld }));
 
-  const packagePath = path.join(outBase, `${artifactPrefix}-${version}${fileExtension}`);
+  const packagePath = path.join(
+    outBase,
+    `${artifactPrefix}-${version}${fileExtension}`,
+  );
   await zipDir(outDir, packagePath);
 
   const updatesPath = afterPackage ? await afterPackage() : undefined;
@@ -984,7 +1131,9 @@ export async function finalizeExtensionBuildArtifacts(
 
   await renameContentCss();
   if (shouldBuildChrome) {
-    await fs.rm(path.join(outBase, CHROME_UPDATES_MANIFEST_FILE), { force: true });
+    await fs.rm(path.join(outBase, CHROME_UPDATES_MANIFEST_FILE), {
+      force: true,
+    });
   }
 
   const version = headers.version || DEFAULT_EXTENSION_VERSION;

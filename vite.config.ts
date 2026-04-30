@@ -34,6 +34,15 @@ interface LocaleHeadersFile {
   name: string;
   description: string;
 }
+const USERSCRIPT_ALWAYS_EXCLUDED_MATCHES = new Set<string>();
+const USERSCRIPT_PROD_EXCLUDED_MATCHES = new Set([
+  "file://*/*",
+  "*://localhost/*",
+  "*://127.0.0.1/*",
+  "*://*.ngrok-free.app/*",
+  "*://*.ngrok-free.dev/*",
+  "*://*.ngrok.app/*",
+]);
 
 function readJsonFile<T>(filePath: string): T {
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
@@ -71,6 +80,23 @@ function altUrlsToMatch(): string[] {
   );
 }
 
+function filterUserscriptBaseMatches(
+  matches: string[],
+  repoBranch: UserscriptBranch,
+): string[] {
+  return matches.filter((pattern) => {
+    if (USERSCRIPT_ALWAYS_EXCLUDED_MATCHES.has(pattern)) {
+      return false;
+    }
+
+    if (repoBranch !== "dev" && USERSCRIPT_PROD_EXCLUDED_MATCHES.has(pattern)) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 function buildUserscriptMeta(
   filename: string,
   repoBranch: UserscriptBranch,
@@ -99,7 +125,10 @@ function buildUserscriptMeta(
   }
 
   const finalUrl = `${contentUrl}/${repoUpdateBranch}/dist/${filename}.user.js`;
-  const baseMatch = Array.isArray(baseMeta.match) ? baseMeta.match : [];
+  const baseMatch = filterUserscriptBaseMatches(
+    Array.isArray(baseMeta.match) ? baseMeta.match : [],
+    repoBranch,
+  );
   const match = Array.from(new Set([...baseMatch, ...altUrlsToMatch()]));
 
   const userscript: MonkeyUserScript = {
@@ -150,6 +179,7 @@ export default defineConfig(async ({ command, mode }) => {
   const config: UserConfig = {
     define: {
       DEBUG_MODE: JSON.stringify(debugMode),
+      IS_EXTENSION: JSON.stringify(false),
       AVAILABLE_LOCALES: JSON.stringify(availableLocales),
       REPO_BRANCH: JSON.stringify(repoBranch),
       VOT_VERSION: JSON.stringify(String((mainHeaders as any).version || "")),

@@ -1,15 +1,15 @@
 import YoutubeHelper from "@vot.js/ext/helpers/youtube";
 import { getVideoData } from "@vot.js/ext/utils/videoData";
-import { getLastManifestUrl } from "../utils/manifestSniffer";
 import votConfig from "@vot.js/shared/config";
 import { availableLangs } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
-
 import type { VideoHandler } from "..";
 import { localizationProvider } from "../localization/localizationProvider";
 import debug from "../utils/debug";
-import { votStorage } from "../utils/storage";
 import { GM_fetch } from "../utils/gm";
+import { getLastManifestUrl } from "../utils/manifestSniffer";
+import { getSniffedSiteSubtitles } from "../utils/siteSubtitlesSniffer";
+import { votStorage } from "../utils/storage";
 import { cleanText } from "../utils/text";
 import { detect } from "../utils/translateApis";
 import VOTLocalizedError from "../utils/VOTLocalizedError";
@@ -20,8 +20,8 @@ import {
   volume01ToPercent,
 } from "../utils/volume";
 import type { VideoData as RuntimeVideoData } from "../videoHandler/shared";
-import { isExternalVolumeHost } from "./hostPolicies";
 import { resolveCustomSiteVideo } from "./customSiteResolvers";
+import { isExternalVolumeHost } from "./hostPolicies";
 
 const FORCED_DETECTED_LANGUAGE_BY_HOST: Record<string, RequestLang> = {
   rutube: "ru",
@@ -34,8 +34,6 @@ const FORCED_DETECTED_LANGUAGE_BY_HOST: Record<string, RequestLang> = {
   weibo: "zh",
   zdf: "de",
 };
-
-
 
 const YT_VOLUME_NOW_SELECTOR = ".ytp-volume-panel [aria-valuenow]";
 const MIN_DETECT_TEXT_LENGTH = 35;
@@ -86,7 +84,9 @@ function normalizeLocalTitleFromUrl(value: unknown): string | undefined {
 
   try {
     const parsed = new URL(value, globalThis.location.href);
-    const lastSegment = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+    const lastSegment = decodeURIComponent(
+      parsed.pathname.split("/").pop() || "",
+    );
     return lastSegment.replace(/\.[^.]+$/u, "").trim() || undefined;
   } catch {
     return undefined;
@@ -109,9 +109,10 @@ function getGoogleDrivePageTitle(): string | undefined {
 
   const headerTitle =
     document
-      .querySelector('h1, [role="heading"], div[role="heading"], [data-tooltip]')
-      ?.textContent
-      ?.trim() || "";
+      .querySelector(
+        'h1, [role="heading"], div[role="heading"], [data-tooltip]',
+      )
+      ?.textContent?.trim() || "";
 
   const docTitle = String(document.title || "").trim();
 
@@ -123,7 +124,6 @@ function getGoogleDrivePageTitle(): string | undefined {
     .replace(/\s*-\s*Google Диск\s*$/i, "")
     .trim();
 }
-
 
 function isBadGoogleDriveTitle(value: unknown): boolean {
   if (typeof value !== "string") return true;
@@ -193,7 +193,10 @@ function getElementTrackSubtitles(
     }
 
     const language = String(
-      track.srclang || track.track?.language || track.getAttribute("srclang") || "",
+      track.srclang ||
+        track.track?.language ||
+        track.getAttribute("srclang") ||
+        "",
     )
       .trim()
       .toLowerCase();
@@ -682,161 +685,167 @@ export class VOTVideoManager {
     }
   }
 
-async getVideoData() {
-  const pageUrl = String(globalThis.location.href || "").trim();
-  const hostname = String(globalThis.location.hostname || "").trim();
-  const sniffedManifestUrl = getLastManifestUrl();
-  const mediaUrl = String(
-    this.videoHandler.video.currentSrc ||
-      this.videoHandler.video.src ||
-      "",
-  ).trim();
-  const nativeTrackSubtitles = getElementTrackSubtitles(
-    this.videoHandler.video,
-    getTrackSubtitleSource(this.videoHandler.site.host),
-  );
+  async getVideoData() {
+    const pageUrl = String(globalThis.location.href || "").trim();
+    const hostname = String(globalThis.location.hostname || "").trim();
+    const sniffedManifestUrl = getLastManifestUrl();
+    const mediaUrl = String(
+      this.videoHandler.video.currentSrc || this.videoHandler.video.src || "",
+    ).trim();
+    const nativeTrackSubtitles = getElementTrackSubtitles(
+      this.videoHandler.video,
+      getTrackSubtitleSource(this.videoHandler.site.host),
+    );
 
-  let rawVideoDataError: unknown;
-  let rawVideoData:
-    | Awaited<ReturnType<typeof getVideoData>>
-    | {
-        duration: number;
-        url: string;
-        videoId: string;
-        host: string;
-        title?: string;
-        translationHelp: null;
-        localizedTitle?: string;
-        description?: string;
-        detectedLanguage: "auto";
-        subtitles: RuntimeVideoData["subtitles"];
-        isStream: false;
+    let rawVideoDataError: unknown;
+    let rawVideoData:
+      | Awaited<ReturnType<typeof getVideoData>>
+      | {
+          duration: number;
+          url: string;
+          videoId: string;
+          host: string;
+          title?: string;
+          translationHelp: null;
+          localizedTitle?: string;
+          description?: string;
+          detectedLanguage: "auto";
+          subtitles: RuntimeVideoData["subtitles"];
+          isStream: false;
+        };
+
+    try {
+      rawVideoData = await getVideoData(this.videoHandler.site, {
+        fetchFn: GM_fetch,
+        video: this.videoHandler.video,
+        language: localizationProvider.lang,
+      });
+    } catch (error) {
+      rawVideoDataError = error;
+      console.warn(
+        "[VOT][fallback:getVideoData] site getVideoData() failed, using DOM fallback",
+        {
+          siteHost: this.videoHandler.site.host,
+          hostname,
+          error,
+        },
+      );
+
+      rawVideoData = {
+        duration:
+          this.videoHandler.video?.duration || votConfig.defaultDuration,
+        url: "",
+        videoId: "",
+        host: this.videoHandler.site.host,
+        title: document.title,
+        translationHelp: null,
+        localizedTitle: document.title,
+        description: undefined,
+        detectedLanguage: "auto",
+        subtitles: nativeTrackSubtitles,
+        isStream: false,
       };
+    }
 
-  try {
-    rawVideoData = await getVideoData(this.videoHandler.site, {
-      fetchFn: GM_fetch,
-      video: this.videoHandler.video,
-      language: localizationProvider.lang,
-    });
-  } catch (error) {
-    rawVideoDataError = error;
-    console.warn(
-      "[VOT][fallback:getVideoData] site getVideoData() failed, using DOM fallback",
-      {
-        siteHost: this.videoHandler.site.host,
-        hostname,
-        error,
-      },
-    );
-
-    rawVideoData = {
-      duration:
-        this.videoHandler.video?.duration || votConfig.defaultDuration,
-      url: "",
-      videoId: "",
-      host: this.videoHandler.site.host,
-      title: document.title,
-      translationHelp: null,
-      localizedTitle: document.title,
-      description: undefined,
-      detectedLanguage: "auto",
-      subtitles: nativeTrackSubtitles,
-      isStream: false,
-    };
-  }
-
-  let {
-    duration,
-    url,
-    videoId,
-    host,
-    title,
-    translationHelp = null,
-    localizedTitle,
-    description,
-    detectedLanguage: possibleLanguage,
-    subtitles,
-    isStream = false,
-  } = rawVideoData;
-  subtitles = mergeSubtitleDescriptors(subtitles, nativeTrackSubtitles);
-
-  const resolvedFallback = await resolveCustomSiteVideo(hostname, pageUrl);
-  const shouldUseDomFallback =
-    this.videoHandler.site.host === "custom" ||
-    Boolean(rawVideoDataError) ||
-    isUsefulResolvedFallback(url, videoId, resolvedFallback);
-
-  if (shouldUseDomFallback) {
-    const fallbackUrl = pickPreferredVideoUrl(
-      resolvedFallback?.url,
-      sniffedManifestUrl,
-      mediaUrl,
+    let {
+      duration,
       url,
-      pageUrl,
-    );
-
-    if (fallbackUrl) {
-      url = fallbackUrl;
-    }
-
-    if (
-      isBadGenericVideoId(videoId) ||
-      isPageScopedVideoId(videoId, pageUrl)
-    ) {
-      const fallbackVideoIdCandidate =
-        !isBadGenericVideoId(fallbackUrl) &&
-        !isPageScopedVideoId(fallbackUrl, pageUrl)
-          ? fallbackUrl
-          : "";
-      const resolvedVideoIdCandidate =
-        !isBadGenericVideoId(resolvedFallback?.videoId) &&
-        !isPageScopedVideoId(String(resolvedFallback?.videoId || ""), pageUrl)
-          ? String(resolvedFallback?.videoId).trim()
-          : "";
-
-      videoId = fallbackVideoIdCandidate || resolvedVideoIdCandidate || pageUrl;
-    }
-
-    host = "custom";
-
-    const fallbackTitle =
-      resolvedFallback?.title ||
-      normalizeLocalTitleFromUrl(url) ||
-      (typeof document.title === "string" ? document.title.trim() : undefined);
-
-    if (fallbackTitle) {
-      title = fallbackTitle;
-      if (!localizedTitle) {
-        localizedTitle = fallbackTitle;
-      }
-    }
-
-    console.log("[VOT][fallback:getVideoData] using DOM/media fallback", {
-      siteHost: this.videoHandler.site.host,
-      sniffedManifestUrl,
-      mediaUrl,
-      pageUrl,
-      resolvedFallback,
-      finalUrl: url,
-      finalVideoId: videoId,
-      finalHost: host,
-    });
-  }
-
-  if (this.videoHandler.site.host === "googledrive") {
-    subtitles = mergeSubtitleDescriptors(
+      videoId,
+      host,
+      title,
+      translationHelp = null,
+      localizedTitle,
+      description,
+      detectedLanguage: possibleLanguage,
       subtitles,
-      getElementTrackSubtitles(this.videoHandler.video, "googledrive"),
-    );
+      isStream = false,
+    } = rawVideoData;
+    subtitles = mergeSubtitleDescriptors(subtitles, nativeTrackSubtitles);
+    if (this.videoHandler.site.host === "vk") {
+      subtitles = mergeSubtitleDescriptors(
+        subtitles,
+        getSniffedSiteSubtitles("vk", videoId),
+      );
+    }
 
-    const pageTitle = normalizeGoogleDriveTitle(getGoogleDrivePageTitle());
-    const storedTitle = await getStoredGoogleDriveTitle(videoId);
-    const safeTitle = normalizeGoogleDriveTitle(title);
-    const safeLocalizedTitle = normalizeGoogleDriveTitle(localizedTitle);
+    const resolvedFallback = await resolveCustomSiteVideo(hostname, pageUrl);
+    const shouldUseDomFallback =
+      this.videoHandler.site.host === "custom" ||
+      Boolean(rawVideoDataError) ||
+      isUsefulResolvedFallback(url, videoId, resolvedFallback);
 
-    const resolvedGoogleDriveTitle =
-      !isBadGoogleDriveTitle(safeTitle)
+    if (shouldUseDomFallback) {
+      const fallbackUrl = pickPreferredVideoUrl(
+        resolvedFallback?.url,
+        sniffedManifestUrl,
+        mediaUrl,
+        url,
+        pageUrl,
+      );
+
+      if (fallbackUrl) {
+        url = fallbackUrl;
+      }
+
+      if (
+        isBadGenericVideoId(videoId) ||
+        isPageScopedVideoId(videoId, pageUrl)
+      ) {
+        const fallbackVideoIdCandidate =
+          !isBadGenericVideoId(fallbackUrl) &&
+          !isPageScopedVideoId(fallbackUrl, pageUrl)
+            ? fallbackUrl
+            : "";
+        const resolvedVideoIdCandidate =
+          !isBadGenericVideoId(resolvedFallback?.videoId) &&
+          !isPageScopedVideoId(String(resolvedFallback?.videoId || ""), pageUrl)
+            ? String(resolvedFallback?.videoId).trim()
+            : "";
+
+        videoId =
+          fallbackVideoIdCandidate || resolvedVideoIdCandidate || pageUrl;
+      }
+
+      host = "custom";
+
+      const fallbackTitle =
+        resolvedFallback?.title ||
+        normalizeLocalTitleFromUrl(url) ||
+        (typeof document.title === "string"
+          ? document.title.trim()
+          : undefined);
+
+      if (fallbackTitle) {
+        title = fallbackTitle;
+        if (!localizedTitle) {
+          localizedTitle = fallbackTitle;
+        }
+      }
+
+      console.log("[VOT][fallback:getVideoData] using DOM/media fallback", {
+        siteHost: this.videoHandler.site.host,
+        sniffedManifestUrl,
+        mediaUrl,
+        pageUrl,
+        resolvedFallback,
+        finalUrl: url,
+        finalVideoId: videoId,
+        finalHost: host,
+      });
+    }
+
+    if (this.videoHandler.site.host === "googledrive") {
+      subtitles = mergeSubtitleDescriptors(
+        subtitles,
+        getElementTrackSubtitles(this.videoHandler.video, "googledrive"),
+      );
+
+      const pageTitle = normalizeGoogleDriveTitle(getGoogleDrivePageTitle());
+      const storedTitle = await getStoredGoogleDriveTitle(videoId);
+      const safeTitle = normalizeGoogleDriveTitle(title);
+      const safeLocalizedTitle = normalizeGoogleDriveTitle(localizedTitle);
+
+      const resolvedGoogleDriveTitle = !isBadGoogleDriveTitle(safeTitle)
         ? safeTitle
         : !isBadGoogleDriveTitle(storedTitle)
           ? storedTitle
@@ -846,105 +855,103 @@ async getVideoData() {
               ? safeLocalizedTitle
               : undefined;
 
-    if (resolvedGoogleDriveTitle) {
-      title = resolvedGoogleDriveTitle;
+      if (resolvedGoogleDriveTitle) {
+        title = resolvedGoogleDriveTitle;
 
-      if (isBadGoogleDriveTitle(localizedTitle)) {
-        localizedTitle = resolvedGoogleDriveTitle;
+        if (isBadGoogleDriveTitle(localizedTitle)) {
+          localizedTitle = resolvedGoogleDriveTitle;
+        }
       }
     }
-  }
 
-  const sharedLanguageState = getSharedLanguageState(videoId);
-  const { detectedLanguage, cacheLanguage } =
-    await resolveDetectedLanguageForVideo({
+    const sharedLanguageState = getSharedLanguageState(videoId);
+    const { detectedLanguage, cacheLanguage } =
+      await resolveDetectedLanguageForVideo({
+        isStream,
+        host: this.videoHandler.site.host,
+        possibleLanguage,
+        subtitles,
+        userOverrideLanguage: sharedLanguageState.userLanguageOverride,
+        cachedDetectedLanguage: sharedLanguageState.detectedLanguage,
+        title,
+        description,
+        allowTextLanguageDetection: false,
+        detectLanguage: async (text) =>
+          await this.detectLanguageSingleFlight(videoId, text),
+      });
+
+    if (cacheLanguage) {
+      this.setDetectedLanguageCache(videoId, cacheLanguage);
+    }
+
+    if (host === "custom") {
+      const localTitle =
+        normalizeLocalTitleFromUrl(url) ||
+        (typeof document.title === "string"
+          ? document.title.trim()
+          : undefined);
+
+      if (localTitle) {
+        title = localTitle;
+        if (!localizedTitle) {
+          localizedTitle = localTitle;
+        }
+      }
+    }
+
+    const videoData = {
+      translationHelp,
       isStream,
-      host: this.videoHandler.site.host,
-      possibleLanguage,
+      duration:
+        duration ||
+        this.videoHandler.video?.duration ||
+        votConfig.defaultDuration,
+      videoId,
+      url,
+      host,
+      detectedLanguage,
+      responseLanguage: this.videoHandler.translateToLang,
       subtitles,
-      userOverrideLanguage: sharedLanguageState.userLanguageOverride,
-      cachedDetectedLanguage: sharedLanguageState.detectedLanguage,
       title,
+      localizedTitle,
       description,
-      allowTextLanguageDetection: false,
-      detectLanguage: async (text) =>
-        await this.detectLanguageSingleFlight(videoId, text),
-    });
-
-  if (cacheLanguage) {
-    this.setDetectedLanguageCache(videoId, cacheLanguage);
-  }
-
-  if (host === "custom") {
-    const localTitle =
-      normalizeLocalTitleFromUrl(url) ||
-      (typeof document.title === "string" ? document.title.trim() : undefined);
-
-    if (localTitle) {
-      title = localTitle;
-      if (!localizedTitle) {
-        localizedTitle = localTitle;
-      }
-    }
-  }
-
-  const videoData = {
-    translationHelp,
-    isStream,
-    duration:
-      duration ||
-      this.videoHandler.video?.duration ||
-      votConfig.defaultDuration,
-    videoId,
-    url,
-    host,
-    detectedLanguage,
-    responseLanguage: this.videoHandler.translateToLang,
-    subtitles,
-    title,
-    localizedTitle,
-    description,
-    downloadTitle:
-      this.videoHandler.site.host === "googledrive"
-        ? (
-            normalizeGoogleDriveTitle(title) ??
+      downloadTitle:
+        this.videoHandler.site.host === "googledrive"
+          ? (normalizeGoogleDriveTitle(title) ??
             normalizeGoogleDriveTitle(localizedTitle) ??
             normalizeGoogleDriveTitle(getGoogleDrivePageTitle()) ??
-            videoId
-          )
-        : host === "custom"
-          ? (
-              normalizeLocalTitleFromUrl(url) ??
+            videoId)
+          : host === "custom"
+            ? (normalizeLocalTitleFromUrl(url) ??
               title ??
               localizedTitle ??
-              videoId
-            )
-          : (localizedTitle ?? title ?? videoId),
-  } satisfies RuntimeVideoData;
+              videoId)
+            : (localizedTitle ?? title ?? videoId),
+    } satisfies RuntimeVideoData;
 
-  if (sharedLanguageState.lastLoggedDetectedLanguage !== detectedLanguage) {
-    console.log("[VOT] Detected language:", detectedLanguage);
-    sharedLanguageState.lastLoggedDetectedLanguage = detectedLanguage;
+    if (sharedLanguageState.lastLoggedDetectedLanguage !== detectedLanguage) {
+      console.log("[VOT] Detected language:", detectedLanguage);
+      sharedLanguageState.lastLoggedDetectedLanguage = detectedLanguage;
+    }
+
+    if (Array.isArray(videoData.subtitles) && videoData.subtitles.length > 0) {
+      console.log(
+        `[VOT][subtitles] video data contains ${videoData.subtitles.length} subtitle track(s).`,
+      );
+      console.table(
+        videoData.subtitles.map((subtitle, index) => ({
+          index,
+          language: subtitle.language,
+          translatedFromLanguage: subtitle.translatedFromLanguage ?? "",
+          source: subtitle.source,
+          isAutoGenerated: Boolean(subtitle.isAutoGenerated),
+          url: subtitle.url,
+        })),
+      );
+    }
+
+    return videoData;
   }
-
-  if (Array.isArray(videoData.subtitles) && videoData.subtitles.length > 0) {
-    console.log(
-      `[VOT][subtitles] video data contains ${videoData.subtitles.length} subtitle track(s).`,
-    );
-    console.table(
-      videoData.subtitles.map((subtitle, index) => ({
-        index,
-        language: subtitle.language,
-        translatedFromLanguage: subtitle.translatedFromLanguage ?? "",
-        source: subtitle.source,
-        isAutoGenerated: Boolean(subtitle.isAutoGenerated),
-        url: subtitle.url,
-      })),
-    );
-  }
-
-  return videoData;
-}
 
   async videoValidator() {
     const videoData = this.videoHandler.videoData;

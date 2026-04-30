@@ -102,14 +102,12 @@ export async function resolveCustomSiteVideo(
     const resourceUrl = pickBestResourceUrl(names);
     const video = document.querySelector("video") as HTMLVideoElement | null;
     const currentSrc = String(video?.currentSrc || video?.src || "").trim();
-const resolvedUrl =
-  (!isBadDirectVideoUrl(tunnelPlayer.sourceUrl || "")
-    ? String(tunnelPlayer.sourceUrl)
-    : "") ||
-  (!isBadDirectVideoUrl(currentSrc)
-    ? currentSrc
-    : "") ||
-  tunnelPlayer.playerUrl;
+    const resolvedUrl =
+      (!isBadDirectVideoUrl(tunnelPlayer.sourceUrl || "")
+        ? String(tunnelPlayer.sourceUrl)
+        : "") ||
+      (!isBadDirectVideoUrl(currentSrc) ? currentSrc : "") ||
+      tunnelPlayer.playerUrl;
 
     console.log("[VOT][custom][tunnel] resolved tunnel player source", {
       playerUrl: tunnelPlayer.playerUrl,
@@ -132,42 +130,45 @@ const resolvedUrl =
 
   let direct = (globalThis as any).__VOT_DIRECT_SOURCES__;
 
-if (!direct) {
-  try {
-    const raw = document.documentElement.dataset.votDirectSources;
-    if (raw) {
-      direct = JSON.parse(raw);
-    }
-  } catch {}
-}
-
-if (direct && typeof direct === "object") {
-  const bestDirect = pickBestDirectSource(direct);
-  const unitedVideoId = String(direct.unitedVideoId || href).trim();
-
-  if (bestDirect && !isBadDirectVideoUrl(bestDirect)) {
-    console.log("[VOT][custom][direct-sources] resolved direct source", {
-      bestDirect,
-      unitedVideoId,
-    });
-
-    return {
-      url: bestDirect,
-      videoId: toStableVideoId(unitedVideoId || bestDirect, bestDirect || href),
-      title: String(direct.title || document.title || ""),
-    };
+  if (!direct) {
+    try {
+      const raw = document.documentElement.dataset.votDirectSources;
+      if (raw) {
+        direct = JSON.parse(raw);
+      }
+    } catch {}
   }
-}
+
+  if (direct && typeof direct === "object") {
+    const bestDirect = pickBestDirectSource(direct);
+    const unitedVideoId = String(direct.unitedVideoId || href).trim();
+
+    if (bestDirect && !isBadDirectVideoUrl(bestDirect)) {
+      console.log("[VOT][custom][direct-sources] resolved direct source", {
+        bestDirect,
+        unitedVideoId,
+      });
+
+      return {
+        url: bestDirect,
+        videoId: toStableVideoId(
+          unitedVideoId || bestDirect,
+          bestDirect || href,
+        ),
+        title: String(direct.title || document.title || ""),
+      };
+    }
+  }
 
   // Odysee
   if (/^odysee\.com$/i.test(hostname)) {
     const structured = getStructuredVideoData();
 
-    if (
-      structured?.contentUrl &&
-      /^https?:\/\//i.test(structured.contentUrl)
-    ) {
-      console.log("[VOT][custom][odysee] resolved contentUrl", structured.contentUrl);
+    if (structured?.contentUrl && /^https?:\/\//i.test(structured.contentUrl)) {
+      console.log(
+        "[VOT][custom][odysee] resolved contentUrl",
+        structured.contentUrl,
+      );
       return {
         url: structured.contentUrl,
         videoId: href,
@@ -227,7 +228,10 @@ if (direct && typeof direct === "object") {
     }
 
     if (structured?.embedUrl) {
-      console.log("[VOT][custom][odysee] fallback embedUrl", structured.embedUrl);
+      console.log(
+        "[VOT][custom][odysee] fallback embedUrl",
+        structured.embedUrl,
+      );
       return {
         url: structured.embedUrl,
         videoId: href,
@@ -269,7 +273,10 @@ if (direct && typeof direct === "object") {
 
     const best = pickBestResourceUrl(names);
     if (best) {
-      console.log("[VOT][custom][cdnvideohub] using performance resource", best);
+      console.log(
+        "[VOT][custom][cdnvideohub] using performance resource",
+        best,
+      );
       return {
         url: best,
         videoId: toStableVideoId(best, referrer || href),

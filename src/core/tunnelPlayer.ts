@@ -31,7 +31,10 @@ export function getTunnelPlayerContext(
       return null;
     }
 
-    const sourceUrl = normalizeAbsoluteUrl(url.searchParams.get("src"), url.toString());
+    const sourceUrl = normalizeAbsoluteUrl(
+      url.searchParams.get("src"),
+      url.toString(),
+    );
     const playlistUrl = normalizeAbsoluteUrl(
       url.searchParams.get("list"),
       url.toString(),

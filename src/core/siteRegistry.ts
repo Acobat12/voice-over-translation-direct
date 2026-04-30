@@ -1,5 +1,5 @@
-import { getService as baseGetService } from "@vot.js/ext/utils/videoData";
 import type { ServiceConf } from "@vot.js/ext/types/service";
+import { getService as baseGetService } from "@vot.js/ext/utils/videoData";
 
 type ExtraServiceConf = ServiceConf & {
   name?: string;
@@ -11,8 +11,10 @@ const customSites: ExtraServiceConf[] = [
     host: "custom",
     url: "stub",
     match: /^odysee\.com$/,
-    selector: ".video-js, video-js, [data-vjs-player], .vjs-player, .vjs-v7, video",
-    eventSelector: ".video-js, video-js, [data-vjs-player], .vjs-player, .vjs-v7, video",
+    selector:
+      ".video-js, video-js, [data-vjs-player], .vjs-player, .vjs-v7, video",
+    eventSelector:
+      ".video-js, video-js, [data-vjs-player], .vjs-player, .vjs-v7, video",
     needExtraData: true,
     rawResult: true,
     needBypassCSP: true,
@@ -44,7 +46,9 @@ export function getService(): ServiceConf[] {
   const matchedCustom = customSites
     .filter((e) => {
       return (
-        (Array.isArray(e.match) ? e.match.some(isMatches) : isMatches(e.match)) &&
+        (Array.isArray(e.match)
+          ? e.match.some(isMatches)
+          : isMatches(e.match)) &&
         e.host &&
         e.url
       );

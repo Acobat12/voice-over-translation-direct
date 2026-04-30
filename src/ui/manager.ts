@@ -31,8 +31,8 @@ export class UIManager {
   mount: OverlayMount;
   private translationActionInFlight = false;
 
-private overlayEventsBound = false;
-private settingsEventsBound = false;
+  private overlayEventsBound = false;
+  private settingsEventsBound = false;
   private initialized = false;
   private readonly videoHandler?: VideoHandler;
   private readonly intervalIdleChecker: IntervalIdleChecker;
@@ -152,22 +152,22 @@ private settingsEventsBound = false;
   }
 
   initUIEvents() {
-  if (!this.isInitialized()) {
-    throw new Error("[VOT] UIManager isn't initialized");
-  }
+    if (!this.isInitialized()) {
+      throw new Error("[VOT] UIManager isn't initialized");
+    }
 
-  this.votOverlayView.initUIEvents();
-  if (!this.overlayEventsBound) {
-    this.bindOverlayViewEvents();
-    this.overlayEventsBound = true;
-  }
+    this.votOverlayView.initUIEvents();
+    if (!this.overlayEventsBound) {
+      this.bindOverlayViewEvents();
+      this.overlayEventsBound = true;
+    }
 
-  this.votSettingsView.initUIEvents();
-  if (!this.settingsEventsBound) {
-    this.bindSettingsViewEvents();
-    this.settingsEventsBound = true;
+    this.votSettingsView.initUIEvents();
+    if (!this.settingsEventsBound) {
+      this.bindSettingsViewEvents();
+      this.settingsEventsBound = true;
+    }
   }
-}
 
   private bindOverlayViewEvents() {
     const overlayView = this.votOverlayView;
@@ -644,100 +644,100 @@ private settingsEventsBound = false;
     return this;
   }
 
- async handleTranslationBtnClick() {
-  if (!this.votOverlayView?.isInitialized()) {
-    throw new Error("[VOT] OverlayView isn't initialized");
-  }
+  async handleTranslationBtnClick() {
+    if (!this.votOverlayView?.isInitialized()) {
+      throw new Error("[VOT] OverlayView isn't initialized");
+    }
 
-  const videoHandler = this.videoHandler;
-  if (!videoHandler) {
-    return this;
-  }
+    const videoHandler = this.videoHandler;
+    if (!videoHandler) {
+      return this;
+    }
 
-  debug.log("[handleTranslationBtnClick] click translationBtn");
+    debug.log("[handleTranslationBtnClick] click translationBtn");
 
-  if (videoHandler.isAwaitingAutoplayRecovery()) {
-    debug.log("[handleTranslationBtnClick] resume pending autoplay recovery");
-    await videoHandler.resumePendingAutoplayRecovery("button");
-    return this;
-  }
+    if (videoHandler.isAwaitingAutoplayRecovery()) {
+      debug.log("[handleTranslationBtnClick] resume pending autoplay recovery");
+      await videoHandler.resumePendingAutoplayRecovery("button");
+      return this;
+    }
 
-  // Реально выключаем только если перевод уже играет
-  if (videoHandler.hasActiveSource()) {
-    debug.log("[handleTranslationBtnClick] stop active translation");
-    await videoHandler.stopTranslation();
-    return this;
-  }
+    // Реально выключаем только если перевод уже играет
+    if (videoHandler.hasActiveSource()) {
+      debug.log("[handleTranslationBtnClick] stop active translation");
+      await videoHandler.stopTranslation();
+      return this;
+    }
 
-  // Если уже идёт запуск перевода — игнорируем повторный вызов
-  if (
-    this.translationActionInFlight ||
-    this.votOverlayView.votButton.loading
-  ) {
-    debug.log("[handleTranslationBtnClick] ignore re-entry while loading");
-    return this;
-  }
-
-  this.translationActionInFlight = true;
-
-  try {
-    // Если UI застрял в error/non-none без активного источника — просто сбрасываем состояние
-    if (this.votOverlayView.votButton.status === "error") {
-      this.transformBtn("none", localizationProvider.get("translateVideo"));
-    } else if (
-      this.votOverlayView.votButton.status !== "none" &&
-      !videoHandler.hasActiveSource()
+    // Если уже идёт запуск перевода — игнорируем повторный вызов
+    if (
+      this.translationActionInFlight ||
+      this.votOverlayView.votButton.loading
     ) {
-      debug.log("[handleTranslationBtnClick] reset stale button state");
-      this.transformBtn("none", localizationProvider.get("translateVideo"));
-    }
-
-    debug.log("[handleTranslationBtnClick] trying execute translation");
-
-    await videoHandler.primePlaybackByGesture("translate-button");
-
-    const videoData = await this.getVideoDataForTranslation(videoHandler);
-    await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
-      videoData,
-    );
-
-    debug.log(
-      "[handleTranslationBtnClick] Run translateFunc",
-      videoData.videoId,
-    );
-
-    await videoHandler.translateFunc(
-      videoData.videoId,
-      videoData.isStream,
-      videoData.detectedLanguage,
-      videoData.responseLanguage,
-      videoData.translationHelp,
-    );
-  } catch (err) {
-    if (this.isAbortError(err)) {
-      this.transformBtn("none", localizationProvider.get("translateVideo"));
+      debug.log("[handleTranslationBtnClick] ignore re-entry while loading");
       return this;
     }
 
-    console.error("[VOT]", err);
+    this.translationActionInFlight = true;
 
-    if (!(err instanceof Error)) {
-      this.transformBtn("error", String(err));
-      return this;
+    try {
+      // Если UI застрял в error/non-none без активного источника — просто сбрасываем состояние
+      if (this.votOverlayView.votButton.status === "error") {
+        this.transformBtn("none", localizationProvider.get("translateVideo"));
+      } else if (
+        this.votOverlayView.votButton.status !== "none" &&
+        !videoHandler.hasActiveSource()
+      ) {
+        debug.log("[handleTranslationBtnClick] reset stale button state");
+        this.transformBtn("none", localizationProvider.get("translateVideo"));
+      }
+
+      debug.log("[handleTranslationBtnClick] trying execute translation");
+
+      await videoHandler.primePlaybackByGesture("translate-button");
+
+      const videoData = await this.getVideoDataForTranslation(videoHandler);
+      await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
+        videoData,
+      );
+
+      debug.log(
+        "[handleTranslationBtnClick] Run translateFunc",
+        videoData.videoId,
+      );
+
+      await videoHandler.translateFunc(
+        videoData.videoId,
+        videoData.isStream,
+        videoData.detectedLanguage,
+        videoData.responseLanguage,
+        videoData.translationHelp,
+      );
+    } catch (err) {
+      if (this.isAbortError(err)) {
+        this.transformBtn("none", localizationProvider.get("translateVideo"));
+        return this;
+      }
+
+      console.error("[VOT]", err);
+
+      if (!(err instanceof Error)) {
+        this.transformBtn("error", String(err));
+        return this;
+      }
+
+      const message =
+        err.name === "VOTLocalizedError"
+          ? (err as VOTLocalizedError).localizedMessage
+          : err.message;
+
+      this.transformBtn("error", message);
+    } finally {
+      this.translationActionInFlight = false;
     }
 
-    const message =
-      err.name === "VOTLocalizedError"
-        ? (err as VOTLocalizedError).localizedMessage
-        : err.message;
-
-    this.transformBtn("error", message);
-  } finally {
-    this.translationActionInFlight = false;
+    return this;
   }
-
-  return this;
-}
 
   private async getVideoDataForTranslation(videoHandler: VideoHandler) {
     if (!videoHandler.videoData?.videoId) {

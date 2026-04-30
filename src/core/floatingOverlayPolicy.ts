@@ -3,8 +3,7 @@ export function isTopPageFloatingOverlayHost(): boolean {
 
   return [...document.querySelectorAll("iframe")].some((iframe) => {
     const src = iframe.getAttribute("src") ?? "";
-    return (
-      src.includes("youtube.googleapis.com/embed"));
+    return src.includes("youtube.googleapis.com/embed");
   });
 }
 

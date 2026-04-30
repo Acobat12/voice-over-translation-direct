@@ -27,10 +27,8 @@ export function getStructuredVideoData(): StructuredVideoData | null {
             typeof item.contentUrl === "string" ? item.contentUrl : undefined,
           embedUrl:
             typeof item.embedUrl === "string" ? item.embedUrl : undefined,
-          pageUrl:
-            typeof item.url === "string" ? item.url : undefined,
-          title:
-            typeof item.name === "string" ? item.name : undefined,
+          pageUrl: typeof item.url === "string" ? item.url : undefined,
+          title: typeof item.name === "string" ? item.name : undefined,
         };
       }
     } catch {

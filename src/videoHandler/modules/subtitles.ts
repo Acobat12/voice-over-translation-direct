@@ -84,11 +84,14 @@ function getPreferredSubtitlesLanguage(
 }
 
 function getCacheDetectedLanguage(
-  handler: Pick<VideoHandler, "videoData" | "translateFromLang" | "translateToLang">,
+  handler: Pick<
+    VideoHandler,
+    "videoData" | "translateFromLang" | "translateToLang"
+  >,
 ): string | undefined {
-  const detectedLanguage = String(
-    handler.videoData?.detectedLanguage || "",
-  ).trim().toLowerCase();
+  const detectedLanguage = String(handler.videoData?.detectedLanguage || "")
+    .trim()
+    .toLowerCase();
 
   if (detectedLanguage && detectedLanguage !== "auto") {
     return detectedLanguage;
@@ -220,16 +223,6 @@ function logAvailableSubtitleDescriptors(
   }
 
   subtitlesListLogKey.set(handler, logKey);
-
-  if (!entries.length) {
-    console.log("[VOT][subtitles] available tracks: none");
-    return;
-  }
-
-  console.log(
-    `[VOT][subtitles] available tracks (${entries.length}). Inspect window.__VOT_SUBTITLE_TRACKS__ for raw data.`,
-  );
-  console.table(entries);
 }
 
 function mergeUniqueSubtitleDescriptors(
@@ -263,7 +256,6 @@ function mergeUniqueSubtitleDescriptors(
 
   return merged;
 }
-
 
 function parseSubtitlesOptionIndex(value: string): number | null {
   if (!SUBTITLES_INDEX_OPTION_PATTERN.test(value)) {
@@ -544,17 +536,18 @@ export async function changeSubtitlesLang(
     effectiveUrl: subtitlesObj.url,
   };
   setSubtitleConsoleGlobals({ selected: selectedTrack });
-  console.log(
-    "[VOT][subtitles] selected track. Inspect window.__VOT_LAST_SUBTITLE_TRACK__ for raw data.",
-    selectedTrack,
-  );
 
-  const fetchedSubtitles =
-    await SubtitlesProcessor.fetchSubtitles(subtitlesObj);
+  let fetchedSubtitles: unknown;
+
+  try {
+    fetchedSubtitles = await SubtitlesProcessor.fetchSubtitles(subtitlesObj);
+  } catch (error) {
+    console.error("[VOT][subtitles][fetch failed]", subtitlesObj, error);
+    return this;
+  }
   if (!isCurrentSubtitlesSelectionRequest(this, requestVersion)) {
     return this;
   }
-
 
   const hasVisibleSubtitles =
     Array.isArray(fetchedSubtitles.subtitles) &&
@@ -622,7 +615,6 @@ export async function updateSubtitlesLangSelect(this: VideoHandler) {
 }
 
 export async function ensureSubtitlesForCurrentLangPair(this: VideoHandler) {
-
   const cacheKey = getCurrentSubtitlesCacheKey(this);
 
   if (!cacheKey) {
@@ -643,7 +635,7 @@ export async function ensureSubtitlesForCurrentLangPair(this: VideoHandler) {
     : [];
 
   const cachedSubs = this.cacheManager.getSubtitles(cacheKey);
-  if (cachedSubs !== undefined) {
+  if (cachedSubs !== undefined && cachedSubs.length > 0) {
     this.subtitles = mergeUniqueSubtitleDescriptors(
       siteSubtitles,
       Array.isArray(cachedSubs) ? cachedSubs : [],
@@ -665,16 +657,11 @@ export async function ensureSubtitlesForCurrentLangPair(this: VideoHandler) {
  * For same-language pair (from == to), prefer site subtitles before Yandex.
  */
 export async function enableSubtitlesForCurrentLangPair(this: VideoHandler) {
-  console.warn("[VOT][auto subtitles] called");
   const overlayView = this.uiManager.votOverlayView;
   if (!overlayView?.subtitlesSelect) return this;
 
   try {
     await ensureSubtitlesForCurrentLangPair.call(this);
-console.warn("[VOT][subtitles][after ensure]", {
-  count: this.subtitles?.length || 0,
-  subtitles: this.subtitles,
-});
   } catch (err) {
     if (isVkProbeHost()) {
       console.warn("[VOT][VK probe] auto subtitles failed", err);
@@ -707,13 +694,6 @@ console.warn("[VOT][subtitles][after ensure]", {
   }
 
   await this.changeSubtitlesLang(DISABLED_SUBTITLES_VALUE);
-  console.warn("[VOT][auto subtitles] selected", {
-  bestIdx,
-  fromLang,
-  toLang,
-  subtitles: this.subtitles,
-});
-
   await this.changeSubtitlesLang(String(bestIdx));
   return this;
 }
@@ -743,7 +723,6 @@ export async function toggleSubtitlesForCurrentLangPair(this: VideoHandler) {
 }
 
 export async function loadSubtitles(this: VideoHandler) {
-  console.warn("[VOT][loadSubtitles] called");
   if (!this.videoData?.videoId) {
     console.error(
       `[VOT] ${localizationProvider.getDefault("VOTNoVideoIDFound")}`,
@@ -782,24 +761,25 @@ export async function loadSubtitles(this: VideoHandler) {
   try {
     let cachedSubs = this.cacheManager.getSubtitles(cacheKey);
 
-    if (cachedSubs === undefined) {
+    if (cachedSubs === undefined || cachedSubs.length === 0) {
       let inflight = this.subtitlesLoadPromises.get(cacheKey);
       if (inflight === undefined) {
-        inflight = SubtitlesProcessor.getSubtitles(
-            this.votClient,
-              {
-                ...this.videoData,
-                detectedLanguage,
-                responseLanguage: subtitleLanguage,
-              },
-        );
+        inflight = SubtitlesProcessor.getSubtitles(this.votClient, {
+          ...this.videoData,
+          detectedLanguage,
+          responseLanguage: subtitleLanguage,
+        });
         this.subtitlesLoadPromises.set(cacheKey, inflight);
       }
 
       try {
         cachedSubs = await inflight;
         cachedSubs = Array.isArray(cachedSubs) ? cachedSubs : [];
-        this.cacheManager.setSubtitles(cacheKey, cachedSubs);
+        if (cachedSubs.length > 0) {
+          this.cacheManager.setSubtitles(cacheKey, cachedSubs);
+        } else {
+          this.cacheManager.deleteSubtitles?.(cacheKey);
+        }
       } finally {
         if (this.subtitlesLoadPromises.get(cacheKey) === inflight) {
           this.subtitlesLoadPromises.delete(cacheKey);
@@ -808,17 +788,11 @@ export async function loadSubtitles(this: VideoHandler) {
     }
 
     const apiSubtitles = Array.isArray(cachedSubs) ? cachedSubs : [];
-    this.subtitles = mergeUniqueSubtitleDescriptors(siteSubtitles, apiSubtitles);
+    this.subtitles = mergeUniqueSubtitleDescriptors(
+      siteSubtitles,
+      apiSubtitles,
+    );
     this.subtitlesCacheKey = cacheKey;
-console.warn("[VOT][subtitles][loaded]", {
-  cacheKey,
-  detectedLanguage,
-  subtitleLanguage,
-  siteCount: siteSubtitles.length,
-  apiCount: apiSubtitles.length,
-  resultCount: this.subtitles.length,
-  apiSubtitles,
-});
   } catch (error) {
     console.error("[VOT] Failed to load subtitles:", error);
     this.subtitles = mergeUniqueSubtitleDescriptors(siteSubtitles);
