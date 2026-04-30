@@ -432,18 +432,13 @@ const VK_AROUND_NEWLINE_SPACING_RE = /[ \t]*\n[ \t]*/gu;
 const VK_MULTIPLE_SPACES_RE = /[ \t]{2,}/gu;
 const VK_EXCESS_NEWLINES_RE = /\n{3,}/gu;
 const VK_COMPARABLE_SPACING_RE = /\s+/gu;
-let htmlStripTemplate: HTMLTemplateElement | null = null;
 
 const stripHtmlToText = (value: string): string => {
   if (!value.includes("<")) return value;
 
-  if (typeof document !== "undefined") {
-    if (!htmlStripTemplate) {
-      htmlStripTemplate = document.createElement("template");
-    }
-    const template = htmlStripTemplate;
-    template.innerHTML = value;
-    return template.content.textContent ?? "";
+  if (typeof DOMParser !== "undefined") {
+    const doc = new DOMParser().parseFromString(value, "text/html");
+    return doc.body.textContent ?? "";
   }
 
   return value.replaceAll(/<\/?[^>]+>/gu, "");
