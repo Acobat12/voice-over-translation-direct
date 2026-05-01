@@ -30,10 +30,12 @@ async function handleCommonAudioDownloadRequest({
   translationId,
   videoId,
   signal,
+  preferredVideo,
 }: AudioDownloadRequestOptions) {
   const audioData = await strategies[audioDownloader.strategy]({
     videoId,
     signal,
+    preferredVideo,
   });
   if (!audioData) {
     throw new Error("Audio downloader. Can not get audio data");
@@ -104,6 +106,7 @@ export class AudioDownloader {
     videoId: string,
     translationId: string,
     signal: AbortSignal,
+    preferredVideo?: HTMLVideoElement | null,
   ) {
     try {
       await handleCommonAudioDownloadRequest({
@@ -111,6 +114,7 @@ export class AudioDownloader {
         translationId,
         videoId,
         signal,
+        preferredVideo,
       });
       debug.log("Audio downloader. Audio download finished", {
         videoId,

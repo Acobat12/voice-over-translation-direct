@@ -73,7 +73,7 @@ export class UIManager {
   }
 
   private getSubtitlesMountContainer(): HTMLElement {
-    return this.votOverlayView?.root ?? this.mount.subtitlesMountContainer;
+    return this.mount.subtitlesMountContainer;
   }
 
   isInitialized(): this is {

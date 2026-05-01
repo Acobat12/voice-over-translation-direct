@@ -63,6 +63,7 @@ export type FetchMediaWithMetaByChunkRangesResult = {
 export type GetAudioFromAPIOptions = {
   videoId: string;
   signal: AbortSignal;
+  preferredVideo?: HTMLVideoElement | null;
 };
 
 export type AudioDownloadRequestOptions = {
@@ -70,6 +71,7 @@ export type AudioDownloadRequestOptions = {
   translationId: string;
   videoId: string;
   signal: AbortSignal;
+  preferredVideo?: HTMLVideoElement | null;
 };
 
 export type DownloadedAudioData = {

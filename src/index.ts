@@ -634,13 +634,9 @@ export class VideoHandler {
   getSubtitlesWidget() {
     if (!this.subtitlesWidget) {
       const { subtitlesMountContainer } = this.getOverlayMountPoints();
-      const widgetContainer =
-        this.site.host === "googledrive"
-          ? subtitlesMountContainer
-          : (this.uiManager.votOverlayView?.root ?? subtitlesMountContainer);
       this.subtitlesWidget = new SubtitlesWidget(
         this.video,
-        widgetContainer,
+        subtitlesMountContainer,
         this.interactionChecker,
         this.tooltipLayoutRoot,
       );

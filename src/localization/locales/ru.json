@@ -17,6 +17,7 @@
   "requestTranslationFailed": "Не удалось запросить перевод видео",
   "audioNotReceived": "Не получена ссылка на аудио",
   "audioFormatNotSupported": "Формат аудио не поддерживается",
+  "VOTFailedDownloadAudio": "Не удалось скачать аудио",
   "VOTAutoTranslate": "Переводить при открытии",
   "VOTAutoSubtitles": "Субтитры при открытии",
   "VOTDontTranslateYourLang": "Не переводить с родного языка",

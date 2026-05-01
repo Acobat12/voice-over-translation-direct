@@ -1115,6 +1115,11 @@ export class VOTTranslationHandler {
       );
     } catch (error) {
       debug.error("Failed to upload downloaded audio", error);
+      console.log("[VOT] Upload full audio failed", {
+        message: getErrorMessage(error),
+        serverMessage: getServerErrorMessage(error),
+        error: asVotClientErrorShape(error),
+      });
       this.finishDownloadFailure(
         new Error("Audio downloader failed while uploading full audio"),
       );
@@ -1163,6 +1168,14 @@ export class VOTTranslationHandler {
       );
     } catch (error) {
       debug.error("Failed to upload downloaded audio chunk", error);
+      console.log("[VOT] Upload audio chunk failed", {
+        message: getErrorMessage(error),
+        serverMessage: getServerErrorMessage(error),
+        error: asVotClientErrorShape(error),
+        index,
+        amount,
+        size: audioData.byteLength,
+      });
       this.finishDownloadFailure(
         new Error("Audio downloader failed while uploading chunk"),
       );
@@ -1463,6 +1476,7 @@ export class VOTTranslationHandler {
           normalizedVideoData.videoId,
           res.translationId,
           signal,
+          this.videoHandler.video,
         );
 
         await this.waitForAudioDownloadCompletion(signal, 120000);
@@ -1697,14 +1711,28 @@ export class VOTTranslationHandler {
           translationId: res.translationId,
           strategy: this.audioDownloader.strategy,
         });
-        this.downloading = true;
+        try {
+          this.downloading = true;
 
-        void this.audioDownloader.runAudioDownload(
-          videoData.videoId,
-          String(res.translationId),
-          signal,
-        );
-        await this.waitForAudioDownloadCompletion(signal, 120000);
+          void this.audioDownloader.runAudioDownload(
+            videoData.videoId,
+            String(res.translationId),
+            signal,
+            this.videoHandler.video,
+          );
+          await this.waitForAudioDownloadCompletion(signal, 15000);
+        } catch (error) {
+          debug.log(
+            "[VOT][VK subtitles] force audio upload failed after successful translation",
+            {
+              videoId: videoData.videoId,
+              translationId: res.translationId,
+              message: getErrorMessage(error),
+              serverMessage: getServerErrorMessage(error),
+              error: asVotClientErrorShape(error),
+            },
+          );
+        }
       }
 
       throwIfAborted(signal);
@@ -1739,6 +1767,7 @@ export class VOTTranslationHandler {
           videoData.videoId,
           res.translationId,
           signal,
+          this.videoHandler.video,
         );
 
         debug.log("waiting downloading finish");

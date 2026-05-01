@@ -26,8 +26,22 @@ function normalizeUrl(input: string): string {
     return input;
   }
 }
+
+function isDirectMediaCandidate(url: string): boolean {
+  return (
+    /\.m3u8(?:$|[?#])/i.test(url) ||
+    /\.mpd(?:$|[?#])/i.test(url) ||
+    /master\.m3u8/i.test(url) ||
+    /dashplaylist/i.test(url) ||
+    /\.mp4(?:$|[?#])/i.test(url)
+  );
+}
+
 function isBadSegmentUrl(url: string): boolean {
   const lower = url.toLowerCase();
+  if (isDirectMediaCandidate(lower)) {
+    return false;
+  }
   return (
     lower.includes("okcdn.ru/?") ||
     /[?&]bytes=\d+-\d+/i.test(lower) ||

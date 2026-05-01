@@ -30,7 +30,9 @@ export function resolveOverlayMountTargets(input: {
   const subtitlesMountContainer =
     input.site.host === "googledrive"
       ? (input.fullscreenRoot ?? document.body)
-      : root;
+      : input.site.host === "vk"
+        ? (input.fullscreenRoot ?? document.documentElement)
+        : root;
 
   return {
     base,

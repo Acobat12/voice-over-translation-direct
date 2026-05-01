@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.21
+// @version         1.11.5.22
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -317,652 +317,6 @@ System.register("./__entry.js", [], (function (exports, module) {
         loggerLevel: 1,
         version: "2.4.12"
       };
-      const iso6392to6391 = {
-        afr: "af",
-        aka: "ak",
-        alb: "sq",
-        amh: "am",
-        ara: "ar",
-        arm: "hy",
-        asm: "as",
-        aym: "ay",
-        aze: "az",
-        baq: "eu",
-        bel: "be",
-        ben: "bn",
-        bos: "bs",
-        bul: "bg",
-        bur: "my",
-        cat: "ca",
-        chi: "zh",
-        cos: "co",
-        cze: "cs",
-        dan: "da",
-        div: "dv",
-        dut: "nl",
-        eng: "en",
-        epo: "eo",
-        est: "et",
-        ewe: "ee",
-        fin: "fi",
-        fre: "fr",
-        fry: "fy",
-        geo: "ka",
-        ger: "de",
-        gla: "gd",
-        gle: "ga",
-        glg: "gl",
-        gre: "el",
-        grn: "gn",
-        guj: "gu",
-        hat: "ht",
-        hau: "ha",
-        hin: "hi",
-        hrv: "hr",
-        hun: "hu",
-        ibo: "ig",
-        ice: "is",
-        ind: "id",
-        ita: "it",
-        jav: "jv",
-        jpn: "ja",
-        kan: "kn",
-        kaz: "kk",
-        khm: "km",
-        kin: "rw",
-        kir: "ky",
-        kor: "ko",
-        kur: "ku",
-        lao: "lo",
-        lat: "la",
-        lav: "lv",
-        lin: "ln",
-        lit: "lt",
-        ltz: "lb",
-        lug: "lg",
-        mac: "mk",
-        mal: "ml",
-        mao: "mi",
-        mar: "mr",
-        may: "ms",
-        mlg: "mg",
-        mlt: "mt",
-        mon: "mn",
-        nep: "ne",
-        nor: "no",
-        nya: "ny",
-        ori: "or",
-        orm: "om",
-        pan: "pa",
-        per: "fa",
-        pol: "pl",
-        por: "pt",
-        pus: "ps",
-        que: "qu",
-        rum: "ro",
-        rus: "ru",
-        san: "sa",
-        sin: "si",
-        slo: "sk",
-        slv: "sl",
-        smo: "sm",
-        sna: "sn",
-        snd: "sd",
-        som: "so",
-        sot: "st",
-        spa: "es",
-        srp: "sr",
-        sun: "su",
-        swa: "sw",
-        swe: "sv",
-        tam: "ta",
-        tat: "tt",
-        tel: "te",
-        tgk: "tg",
-        tha: "th",
-        tir: "ti",
-        tso: "ts",
-        tuk: "tk",
-        tur: "tr",
-        uig: "ug",
-        ukr: "uk",
-        urd: "ur",
-        uzb: "uz",
-        vie: "vi",
-        wel: "cy",
-        xho: "xh",
-        yid: "yi",
-        yor: "yo",
-        zul: "zu"
-      };
-      async function fetchWithTimeout(url, options = {
-        headers: {
-          "User-Agent": votConfig.userAgent
-        }
-      }) {
-        const { timeout: timeout2 = 3e3, ...fetchOptions } = options;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout2);
-        const response = await fetch(url, {
-          signal: controller.signal,
-          ...fetchOptions
-        });
-        clearTimeout(timeoutId);
-        return response;
-      }
-      function getTimestamp$1() {
-        return Math.floor(Date.now() / 1e3);
-      }
-      function normalizeLang$1(lang2) {
-        if (lang2.length === 3) {
-          return iso6392to6391[lang2];
-        }
-        return lang2.toLowerCase().split(/[_;-]/)[0].trim();
-      }
-      function proxyMedia(url, format = "mp4") {
-        const generalUrl = `https://${votConfig.mediaProxy}/v1/proxy/video.${format}?format=base64&force=true`;
-        if (!(url instanceof URL)) {
-          return `${generalUrl}&url=${btoa(url)}`;
-        }
-        return `${generalUrl}&url=${btoa(url.href)}&origin=${url.origin}&referer=${url.origin}`;
-      }
-      const VK_HOST_PATTERN = /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i;
-      const VK_REQUEST_PATTERN = /api\.vkvideo\.ru|\/al_video\.php(?:$|[?#])|\/method\/video\.|video_ext\.php|vkvideo\.ru/i;
-      const SUBTITLE_URL_PATTERN = /\.(vtt|srt|ass|json)(?:$|[?#])/i;
-      const MAX_BODY_LENGTH = 15e5;
-      const MAX_TRACKS_PER_HOST = 64;
-      const TRACK_MAX_AGE_MS = 10 * 60 * 1e3;
-      const sniffedTracksByHost = new Map();
-      const xhrUrlKey = Symbol("votSniffedSubtitleUrl");
-      let installed$1 = false;
-      function isVkHost(hostname) {
-        return VK_HOST_PATTERN.test(hostname);
-      }
-      function isVkPage() {
-        return isVkHost(String(globalThis.location.hostname || ""));
-      }
-      function normalizeUrl$1(input) {
-        try {
-          return new URL(input, globalThis.location.href).href;
-        } catch {
-          return input;
-        }
-      }
-      function inferSubtitleFormat(url) {
-        const normalized = url.split(/[?#]/u, 1)[0]?.toLowerCase() ?? "";
-        if (normalized.endsWith(".vtt")) return "vtt";
-        if (normalized.endsWith(".srt")) return "srt";
-        if (normalized.endsWith(".ass")) return "ass";
-        if (normalized.endsWith(".json")) return "json";
-        return null;
-      }
-      function normalizeLanguageCandidate(value) {
-        if (typeof value !== "string") {
-          return void 0;
-        }
-        const normalized = value.trim();
-        if (!normalized) {
-          return void 0;
-        }
-        try {
-          return normalizeLang$1(normalized);
-        } catch {
-          return normalized.toLowerCase().split(/[_;-]/u)[0]?.trim() || void 0;
-        }
-      }
-      function inferLanguageFromUrl(rawUrl) {
-        try {
-          const url = new URL(rawUrl, globalThis.location.href);
-          const queryValue = url.searchParams.get("lang") || url.searchParams.get("language") || url.searchParams.get("locale") || url.searchParams.get("srclang");
-          if (queryValue) {
-            return normalizeLanguageCandidate(queryValue);
-          }
-          const pathname = decodeURIComponent(url.pathname);
-          const match = /(?:^|[._/-])([a-z]{2,3}(?:-[a-z]{2,4})?)(?=\.(?:vtt|srt|ass|json)\b)/i.exec(
-            pathname
-          ) || /(?:^|[._/-])([a-z]{2,3})(?:[._-]captions?)(?=\b)/i.exec(pathname);
-          return normalizeLanguageCandidate(match?.[1]);
-        } catch {
-          return void 0;
-        }
-      }
-      function parseVideoId(ownerId, videoId) {
-        const normalizedOwner = String(ownerId || "").trim();
-        const normalizedVideoId = String(videoId || "").trim();
-        if (!normalizedOwner || !normalizedVideoId) {
-          return void 0;
-        }
-        const ownerNumber = Number.parseInt(normalizedOwner, 10);
-        if (Number.isNaN(ownerNumber)) {
-          return void 0;
-        }
-        return `video-${Math.abs(ownerNumber)}_${normalizedVideoId}`;
-      }
-      function extractVideoIdFromUrl(rawUrl) {
-        try {
-          const url = new URL(rawUrl, globalThis.location.href);
-          const pathnameMatch = /\/(video-?\d+_\d+)/i.exec(url.pathname) || /\/playlist\/[^/]+\/(video-?\d+_\d+)/i.exec(url.pathname);
-          if (pathnameMatch?.[1]) {
-            return pathnameMatch[1];
-          }
-          const paramZ = url.searchParams.get("z");
-          if (paramZ) {
-            const zMatch = /(video-?\d+_\d+)/i.exec(paramZ);
-            if (zMatch?.[1]) {
-              return zMatch[1];
-            }
-          }
-          const oid = url.searchParams.get("oid");
-          const id = url.searchParams.get("id");
-          if (oid && id) {
-            return parseVideoId(oid, id);
-          }
-        } catch {
-          return void 0;
-        }
-        return void 0;
-      }
-      function isRecord$2(value) {
-        return value !== null && typeof value === "object";
-      }
-      function pickString(record, keys) {
-        for (const key of keys) {
-          const value = record[key];
-          if (typeof value === "string" && value.trim()) {
-            return value.trim();
-          }
-        }
-        return void 0;
-      }
-      function pickNumberish(record, keys) {
-        for (const key of keys) {
-          const value = record[key];
-          if (typeof value === "number" && Number.isFinite(value)) {
-            return String(value);
-          }
-          if (typeof value === "string" && value.trim()) {
-            return value.trim();
-          }
-        }
-        return void 0;
-      }
-      function toOptionalBoolean(value) {
-        if (typeof value === "boolean") {
-          return value;
-        }
-        if (typeof value === "number") {
-          return value !== 0;
-        }
-        if (typeof value === "string") {
-          const normalized = value.trim().toLowerCase();
-          if (normalized === "true" || normalized === "1") return true;
-          if (normalized === "false" || normalized === "0") return false;
-        }
-        return void 0;
-      }
-      function extractVideoIdFromRecord(record) {
-        const explicitVideoId = pickString(record, [
-          "videoId",
-          "video_id",
-          "video",
-          "player_id"
-        ]);
-        if (explicitVideoId) {
-          const matched = /(video-?\d+_\d+)/i.exec(explicitVideoId);
-          if (matched?.[1]) {
-            return matched[1];
-          }
-        }
-        const ownerId = pickNumberish(record, [
-          "owner_id",
-          "ownerId",
-          "oid",
-          "video_oid"
-        ]);
-        const videoId = pickNumberish(record, ["id", "vid", "video_id", "videoId"]);
-        if (ownerId && videoId) {
-          return parseVideoId(ownerId, videoId);
-        }
-        return void 0;
-      }
-      function isSubtitleCollectionKey(key) {
-        return key === "subs" || key === "subtitles" || key === "captions" || key === "text_tracks" || key.includes("subtitle") || key.includes("caption");
-      }
-      function toSubtitleDescriptor(record, context) {
-        const rawUrl = pickString(record, [
-          "url",
-          "src",
-          "file",
-          "download_url",
-          "downloadUrl",
-          "webVttUrl",
-          "webvtturl",
-          "link"
-        ]);
-        if (!rawUrl) {
-          return null;
-        }
-        const url = normalizeUrl$1(rawUrl);
-        const format = inferSubtitleFormat(url) ?? (context.collectionHint ? "vtt" : null);
-        if (!format) {
-          return null;
-        }
-        const language = normalizeLanguageCandidate(
-          pickString(record, [
-            "lang",
-            "language",
-            "lang_code",
-            "language_code",
-            "locale",
-            "locale_id",
-            "srclang",
-            "code",
-            "subtitles_lang"
-          ]) ?? context.languageHint ?? inferLanguageFromUrl(url)
-        );
-        if (!language) {
-          return null;
-        }
-        return {
-          source: "vk",
-          format,
-          language,
-          url,
-          translatedFromLanguage: normalizeLanguageCandidate(
-            pickString(record, [
-              "translatedFromLanguage",
-              "translated_from_language",
-              "from_lang",
-              "source_lang"
-            ])
-          ),
-          isAutoGenerated: toOptionalBoolean(
-            record.is_auto ?? record.isAutoGenerated ?? record.auto_generated ?? record.autogenerated
-          )
-        };
-      }
-      function collectDescriptors(value, context, collected, visited, depth = 0) {
-        if (depth > 7 || value == null) {
-          return;
-        }
-        if (Array.isArray(value)) {
-          for (const item of value.slice(0, 400)) {
-            collectDescriptors(item, context, collected, visited, depth + 1);
-          }
-          return;
-        }
-        if (!isRecord$2(value) || visited.has(value)) {
-          return;
-        }
-        visited.add(value);
-        const record = value;
-        const nextVideoId = context.videoId ?? extractVideoIdFromRecord(record);
-        const nextLanguageHint = context.languageHint ?? normalizeLanguageCandidate(
-          pickString(record, [
-            "subtitles_lang",
-            "lang",
-            "language",
-            "locale",
-            "locale_id"
-          ])
-        );
-        const descriptor = toSubtitleDescriptor(record, {
-          ...context,
-          languageHint: nextLanguageHint
-        });
-        if (descriptor) {
-          collected.push({
-            descriptor,
-            seenAt: Date.now(),
-            videoId: nextVideoId
-          });
-        }
-        for (const [key, nestedValue] of Object.entries(record)) {
-          if (nestedValue == null) {
-            continue;
-          }
-          const nextContext = {
-            collectionHint: context.collectionHint || isSubtitleCollectionKey(key.toLowerCase()),
-            languageHint: nextLanguageHint,
-            videoId: nextVideoId
-          };
-          collectDescriptors(
-            nestedValue,
-            nextContext,
-            collected,
-            visited,
-            depth + 1
-          );
-        }
-      }
-      function unescapeResponseString(value) {
-        return value.replace(/\\u0026/giu, "&").replace(/\\u002f/giu, "/").replace(/\\\//gu, "/");
-      }
-      function extractDescriptorsFromText(text, requestUrl) {
-        const result = [];
-        const seen2 = new Set();
-        const defaultVideoId = extractVideoIdFromUrl(requestUrl);
-        const normalizedText = unescapeResponseString(text);
-        const push = (language, url, isAutoGenerated) => {
-          const normalizedLanguage = normalizeLanguageCandidate(
-            language ?? inferLanguageFromUrl(String(url || ""))
-          );
-          const normalizedUrl = typeof url === "string" ? normalizeUrl$1(url) : "";
-          const format = inferSubtitleFormat(normalizedUrl) ?? "vtt";
-          if (!normalizedLanguage || !normalizedUrl) {
-            return;
-          }
-          const key = `${defaultVideoId ?? ""}|${normalizedLanguage}|${normalizedUrl}`;
-          if (seen2.has(key)) {
-            return;
-          }
-          seen2.add(key);
-          result.push({
-            videoId: defaultVideoId,
-            seenAt: Date.now(),
-            descriptor: {
-              source: "vk",
-              format,
-              language: normalizedLanguage,
-              url: normalizedUrl,
-              isAutoGenerated
-            }
-          });
-        };
-        const langBeforeUrlPattern = /["'](?:lang|language|locale|subtitles_lang)["']\s*:\s*["']([a-zA-Z_-]{2,12})["'][\s\S]{0,400}?["']url["']\s*:\s*["']([^"'\\]+(?:\\.[^"'\\]*)*)["'][\s\S]{0,120}?(?:["']is_auto["']\s*:\s*(true|false|0|1))?/g;
-        const urlBeforeLangPattern = /["']url["']\s*:\s*["']([^"'\\]+(?:\\.[^"'\\]*)*)["'][\s\S]{0,400}?["'](?:lang|language|locale|subtitles_lang)["']\s*:\s*["']([a-zA-Z_-]{2,12})["'][\s\S]{0,120}?(?:["']is_auto["']\s*:\s*(true|false|0|1))?/g;
-        for (const match of normalizedText.matchAll(langBeforeUrlPattern)) {
-          push(match[1], match[2], toOptionalBoolean(match[3]));
-        }
-        for (const match of normalizedText.matchAll(urlBeforeLangPattern)) {
-          push(match[2], match[1], toOptionalBoolean(match[3]));
-        }
-        return result;
-      }
-      function rememberTracks(siteHost, tracks) {
-        if (!tracks.length) {
-          return;
-        }
-        const now2 = Date.now();
-        const existing = sniffedTracksByHost.get(siteHost) ?? [];
-        const deduped = new Map();
-        for (const track of existing) {
-          if (now2 - track.seenAt > TRACK_MAX_AGE_MS) {
-            continue;
-          }
-          deduped.set(
-            [
-              track.videoId ?? "",
-              track.descriptor.language,
-              track.descriptor.translatedFromLanguage ?? "",
-              track.descriptor.url
-            ].join("|"),
-            track
-          );
-        }
-        for (const track of tracks) {
-          if (now2 - track.seenAt > TRACK_MAX_AGE_MS) {
-            continue;
-          }
-          deduped.set(
-            [
-              track.videoId ?? "",
-              track.descriptor.language,
-              track.descriptor.translatedFromLanguage ?? "",
-              track.descriptor.url
-            ].join("|"),
-            track
-          );
-        }
-        const nextTracks = Array.from(deduped.values()).sort((left, right) => right.seenAt - left.seenAt).slice(0, MAX_TRACKS_PER_HOST);
-        sniffedTracksByHost.set(siteHost, nextTracks);
-      }
-      function rememberSubtitleUrl(rawUrl) {
-        const url = normalizeUrl$1(rawUrl);
-        const format = inferSubtitleFormat(url);
-        const language = inferLanguageFromUrl(url);
-        if (!format || !language) {
-          return;
-        }
-        rememberTracks("vk", [
-          {
-            videoId: extractVideoIdFromUrl(url),
-            seenAt: Date.now(),
-            descriptor: {
-              source: "vk",
-              format,
-              language,
-              url
-            }
-          }
-        ]);
-      }
-      function shouldInspectVkRequest(url) {
-        return VK_REQUEST_PATTERN.test(url);
-      }
-      function processPotentialVkPayload(requestUrl, payload) {
-        const collected = [];
-        collectDescriptors(
-          payload,
-          {
-            collectionHint: false,
-            videoId: extractVideoIdFromUrl(requestUrl)
-          },
-          collected,
-new WeakSet()
-        );
-        rememberTracks("vk", collected);
-      }
-      function processPotentialVkTextResponse(requestUrl, text) {
-        if (!text || text.length > MAX_BODY_LENGTH) {
-          return;
-        }
-        try {
-          processPotentialVkPayload(requestUrl, JSON.parse(text));
-          return;
-        } catch {
-        }
-        rememberTracks("vk", extractDescriptorsFromText(text, requestUrl));
-      }
-      function inspectFetchResponse(url, response) {
-        const contentType = String(response.headers.get("content-type") || "").trim().toLowerCase();
-        if (!shouldInspectVkRequest(url) && !(contentType.includes("json") && /vkvideo|vk\.com|okcdn\.ru/i.test(url))) {
-          return;
-        }
-        if (contentType.includes("json")) {
-          void response.clone().json().then((payload) => {
-            processPotentialVkPayload(url, payload);
-          }).catch(() => {
-            void response.clone().text().then((text) => {
-              processPotentialVkTextResponse(url, text);
-            }).catch(() => void 0);
-          });
-          return;
-        }
-        void response.clone().text().then((text) => {
-          processPotentialVkTextResponse(url, text);
-        }).catch(() => void 0);
-      }
-      function getSniffedSiteSubtitles(siteHost, videoId) {
-        const now2 = Date.now();
-        const currentTracks = (sniffedTracksByHost.get(siteHost) ?? []).filter(
-          (track) => now2 - track.seenAt <= TRACK_MAX_AGE_MS
-        );
-        sniffedTracksByHost.set(siteHost, currentTracks);
-        const filteredTracks = videoId ? currentTracks.filter((track) => !track.videoId || track.videoId === videoId) : currentTracks;
-        const deduped = new Map();
-        for (const track of filteredTracks) {
-          deduped.set(
-            [
-              track.descriptor.language,
-              track.descriptor.translatedFromLanguage ?? "",
-              track.descriptor.url
-            ].join("|"),
-            track.descriptor
-          );
-        }
-        return Array.from(deduped.values());
-      }
-      function installSiteSubtitlesSniffer() {
-        if (installed$1) {
-          return;
-        }
-        installed$1 = true;
-        const originalFetch = globalThis.fetch.bind(globalThis);
-        globalThis.fetch = async (...args) => {
-          const response = await originalFetch(...args);
-          if (!isVkPage()) {
-            return response;
-          }
-          const input = args[0];
-          const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input ?? "");
-          if (SUBTITLE_URL_PATTERN.test(url)) {
-            rememberSubtitleUrl(url);
-          }
-          inspectFetchResponse(url, response);
-          return response;
-        };
-        const originalOpen = XMLHttpRequest.prototype.open;
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-          const stringUrl = String(url);
-          this[xhrUrlKey] = stringUrl;
-          if (isVkPage() && SUBTITLE_URL_PATTERN.test(stringUrl)) {
-            rememberSubtitleUrl(stringUrl);
-          }
-          return originalOpen.call(this, method, url, ...rest);
-        };
-        const originalSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.send = function(...args) {
-          if (isVkPage()) {
-            this.addEventListener(
-              "load",
-              () => {
-                const requestUrl = this[xhrUrlKey];
-                if (!requestUrl) {
-                  return;
-                }
-                const contentType = String(
-                  this.getResponseHeader("content-type") || ""
-                ).trim().toLowerCase();
-                if (!shouldInspectVkRequest(requestUrl) && !(contentType.includes("json") && /vkvideo|vk\.com|okcdn\.ru/i.test(requestUrl))) {
-                  return;
-                }
-                if (this.responseType === "json" && this.response) {
-                  processPotentialVkPayload(requestUrl, this.response);
-                  return;
-                }
-                if (this.responseType !== "" && this.responseType !== "text" && this.responseType !== "json") {
-                  return;
-                }
-                const responseText = typeof this.responseText === "string" ? this.responseText : "";
-                processPotentialVkTextResponse(requestUrl, responseText);
-              },
-              { once: true }
-            );
-          }
-          return originalSend.apply(this, args);
-        };
-      }
       var LoggerLevel;
       (function(LoggerLevel2) {
         LoggerLevel2[LoggerLevel2["DEBUG"] = 0] = "DEBUG";
@@ -3758,6 +3112,155 @@ string() {
         "sec-ch-ua-full-version-list": `"Chromium";v="134.0.6998.543", "YaBrowser";v="${componentVersion}", "Not?A_Brand";v="24.0.0.0", "Yowser";v="2.5"`,
         "Sec-Fetch-Mode": "no-cors"
       };
+      const iso6392to6391 = {
+        afr: "af",
+        aka: "ak",
+        alb: "sq",
+        amh: "am",
+        ara: "ar",
+        arm: "hy",
+        asm: "as",
+        aym: "ay",
+        aze: "az",
+        baq: "eu",
+        bel: "be",
+        ben: "bn",
+        bos: "bs",
+        bul: "bg",
+        bur: "my",
+        cat: "ca",
+        chi: "zh",
+        cos: "co",
+        cze: "cs",
+        dan: "da",
+        div: "dv",
+        dut: "nl",
+        eng: "en",
+        epo: "eo",
+        est: "et",
+        ewe: "ee",
+        fin: "fi",
+        fre: "fr",
+        fry: "fy",
+        geo: "ka",
+        ger: "de",
+        gla: "gd",
+        gle: "ga",
+        glg: "gl",
+        gre: "el",
+        grn: "gn",
+        guj: "gu",
+        hat: "ht",
+        hau: "ha",
+        hin: "hi",
+        hrv: "hr",
+        hun: "hu",
+        ibo: "ig",
+        ice: "is",
+        ind: "id",
+        ita: "it",
+        jav: "jv",
+        jpn: "ja",
+        kan: "kn",
+        kaz: "kk",
+        khm: "km",
+        kin: "rw",
+        kir: "ky",
+        kor: "ko",
+        kur: "ku",
+        lao: "lo",
+        lat: "la",
+        lav: "lv",
+        lin: "ln",
+        lit: "lt",
+        ltz: "lb",
+        lug: "lg",
+        mac: "mk",
+        mal: "ml",
+        mao: "mi",
+        mar: "mr",
+        may: "ms",
+        mlg: "mg",
+        mlt: "mt",
+        mon: "mn",
+        nep: "ne",
+        nor: "no",
+        nya: "ny",
+        ori: "or",
+        orm: "om",
+        pan: "pa",
+        per: "fa",
+        pol: "pl",
+        por: "pt",
+        pus: "ps",
+        que: "qu",
+        rum: "ro",
+        rus: "ru",
+        san: "sa",
+        sin: "si",
+        slo: "sk",
+        slv: "sl",
+        smo: "sm",
+        sna: "sn",
+        snd: "sd",
+        som: "so",
+        sot: "st",
+        spa: "es",
+        srp: "sr",
+        sun: "su",
+        swa: "sw",
+        swe: "sv",
+        tam: "ta",
+        tat: "tt",
+        tel: "te",
+        tgk: "tg",
+        tha: "th",
+        tir: "ti",
+        tso: "ts",
+        tuk: "tk",
+        tur: "tr",
+        uig: "ug",
+        ukr: "uk",
+        urd: "ur",
+        uzb: "uz",
+        vie: "vi",
+        wel: "cy",
+        xho: "xh",
+        yid: "yi",
+        yor: "yo",
+        zul: "zu"
+      };
+      async function fetchWithTimeout(url, options = {
+        headers: {
+          "User-Agent": votConfig.userAgent
+        }
+      }) {
+        const { timeout: timeout2 = 3e3, ...fetchOptions } = options;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout2);
+        const response = await fetch(url, {
+          signal: controller.signal,
+          ...fetchOptions
+        });
+        clearTimeout(timeoutId);
+        return response;
+      }
+      function getTimestamp$1() {
+        return Math.floor(Date.now() / 1e3);
+      }
+      function normalizeLang$1(lang2) {
+        if (lang2.length === 3) {
+          return iso6392to6391[lang2];
+        }
+        return lang2.toLowerCase().split(/[_;-]/)[0].trim();
+      }
+      function proxyMedia(url, format = "mp4") {
+        const generalUrl = `https://${votConfig.mediaProxy}/v1/proxy/video.${format}?format=base64&force=true`;
+        if (!(url instanceof URL)) {
+          return `${generalUrl}&url=${btoa(url)}`;
+        }
+        return `${generalUrl}&url=${btoa(url.href)}&origin=${url.origin}&referer=${url.origin}`;
+      }
       class YandexVOTProtobuf {
         static encodeTranslationRequest(url, duration, requestLang, responseLang2, translationHelp, { forceSourceLang = false, wasStream = false, videoTitle = "", bypassCache = false, useLivelyVoice = false, firstRequest = true } = {}) {
           return VideoTranslationRequest.encode({
@@ -8135,7 +7638,10 @@ string() {
         const probeSelectors = selectors.length > 0 ? selectors : ["video"];
         const strategy = options.strategy ?? "mutation";
         const pollIntervalMs = Math.max(25, Math.trunc(options.pollIntervalMs ?? 75));
-        const pollTimeoutMs = Math.max(250, Math.trunc(options.pollTimeoutMs ?? 4e3));
+        const pollTimeoutMs = Math.max(
+          250,
+          Math.trunc(options.pollTimeoutMs ?? 4e3)
+        );
         const pollDeadlineAt = Date.now() + pollTimeoutMs;
         const cleanup = () => {
           if (!active) {
@@ -8223,7 +7729,9 @@ string() {
               if (!nextRoot) {
                 return;
               }
-              document.removeEventListener("readystatechange", readyListener);
+              if (readyListener) {
+                document.removeEventListener("readystatechange", readyListener);
+              }
               readyListener = null;
               observedRoot = nextRoot;
               if (strategy === "mutation") {
@@ -8247,232 +7755,6 @@ string() {
           ensureObserver();
         }
         return cleanup;
-      }
-      function installYandexDiskOverlayPatch() {
-        let patchedHost = null;
-        let hideTimer = null;
-        const IDLE_TIME = 3e3;
-        const clearHideTimer = () => {
-          if (hideTimer !== null) {
-            window.clearTimeout(hideTimer);
-            hideTimer = null;
-          }
-        };
-        const showButton = () => {
-          const overlay = document.querySelector(".vot-segmented-button");
-          if (!overlay) return;
-          overlay.hidden = false;
-          overlay.removeAttribute("hidden");
-          overlay.style.opacity = "1";
-          overlay.classList.remove("vot-segmented-button--hidden");
-          clearHideTimer();
-          hideTimer = window.setTimeout(() => {
-            const currentOverlay = document.querySelector(".vot-segmented-button");
-            if (!currentOverlay) return;
-            currentOverlay.style.opacity = "0";
-            currentOverlay.classList.add("vot-segmented-button--hidden");
-          }, IDLE_TIME);
-        };
-        const patchHost = () => {
-          const video = document.querySelector("video");
-          if (!video) return;
-          const host = video.closest('[class*="player"], [class*="video"], main, article') || video.parentElement || video;
-          if (!host || host === patchedHost) return;
-          patchedHost = host;
-          const activityHandler = () => showButton();
-          host.addEventListener("mouseenter", activityHandler, { passive: true });
-          host.addEventListener("mousemove", activityHandler, { passive: true });
-          host.addEventListener("pointerenter", activityHandler, { passive: true });
-          host.addEventListener("pointermove", activityHandler, { passive: true });
-          showButton();
-        };
-        patchHost();
-        const observer = new MutationObserver(() => {
-          patchHost();
-        });
-        observer.observe(document.documentElement, {
-          childList: true,
-          subtree: true
-        });
-      }
-      function isVkLikeHost() {
-        return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
-          String(globalThis.location?.hostname || "")
-        );
-      }
-      let vkOverlayPatchInstalled = false;
-      function collectQueryScopes() {
-        const scopes = [document];
-        const seen2 = new Set([document]);
-        const queue = [document];
-        while (queue.length > 0) {
-          const current = queue.shift();
-          if (!current) {
-            continue;
-          }
-          const elements = current instanceof Document || current instanceof ShadowRoot ? current.querySelectorAll("*") : [];
-          for (const element of elements) {
-            const shadowRoot = element.shadowRoot;
-            if (!shadowRoot || seen2.has(shadowRoot)) {
-              continue;
-            }
-            seen2.add(shadowRoot);
-            scopes.push(shadowRoot);
-            queue.push(shadowRoot);
-          }
-        }
-        return scopes;
-      }
-      function queryAllAcrossShadowRoots(selector) {
-        const result = [];
-        const seen2 = new Set();
-        for (const scope of collectQueryScopes()) {
-          for (const element of Array.from(scope.querySelectorAll(selector))) {
-            if (seen2.has(element)) {
-              continue;
-            }
-            seen2.add(element);
-            result.push(element);
-          }
-        }
-        return result;
-      }
-      function refreshVkOverlayProbe() {
-        const buttons = queryAllAcrossShadowRoots(
-          "vot-block.vot-segmented-button, .vot-segmented-button"
-        );
-        for (const button of buttons) {
-          button.hidden = false;
-          button.removeAttribute("hidden");
-          button.removeAttribute("inert");
-          button.classList.remove("vot-segmented-button--hidden");
-          button.style.setProperty("display", "flex", "important");
-          button.style.setProperty("opacity", "1", "important");
-          button.style.setProperty("pointer-events", "auto", "important");
-          button.style.setProperty("z-index", "2147483647", "important");
-          button.style.setProperty("visibility", "visible", "important");
-        }
-        const subtitles = queryAllAcrossShadowRoots(
-          ".vot-subtitles-widget, .vot-subtitles-layer"
-        );
-        for (const subtitle of subtitles) {
-          subtitle.hidden = false;
-          subtitle.removeAttribute("hidden");
-          subtitle.style.setProperty("display", "block", "important");
-          subtitle.style.setProperty("opacity", "1", "important");
-          subtitle.style.setProperty("pointer-events", "none", "important");
-          subtitle.style.setProperty("z-index", "2147483647", "important");
-          subtitle.style.setProperty("visibility", "visible", "important");
-        }
-        const videos = queryAllAcrossShadowRoots("video");
-        const probeState = {
-          buttons: buttons.length,
-          subtitlesWidgets: subtitles.length,
-          videos: videos.length,
-          visibleVideos: videos.filter((video) => {
-            const rect = video.getBoundingClientRect();
-            return rect.width > 64 && rect.height > 64;
-          }).length,
-          href: globalThis.location.href
-        };
-        globalThis.__VOT_VK_PROBE__ = probeState;
-        return buttons.length + subtitles.length;
-      }
-      function ensureVkOverlayStyle() {
-        for (const scope of collectQueryScopes()) {
-          const styleHost = scope instanceof Document ? scope.head || scope.documentElement : scope instanceof ShadowRoot ? scope : null;
-          if (!styleHost) {
-            continue;
-          }
-          const root = scope instanceof Document ? scope : scope instanceof ShadowRoot ? scope : null;
-          if (!root) {
-            continue;
-          }
-          if (root.querySelector("#vot-vk-overlay-fix-style")) {
-            continue;
-          }
-          try {
-            const style = document.createElement("style");
-            style.id = "vot-vk-overlay-fix-style";
-            style.textContent = `
-        .vot-segmented-button {
-          display: flex !important;
-          opacity: 1 !important;
-          pointer-events: auto !important;
-          z-index: 2147483647 !important;
-          visibility: visible !important;
-        }
-
-        .vot-segmented-button.vot-segmented-button--hidden {
-          opacity: 1 !important;
-          pointer-events: auto !important;
-        }
-
-        .vot-subtitles-layer,
-        .vot-subtitles-widget {
-          display: block !important;
-          opacity: 1 !important;
-          z-index: 2147483647 !important;
-          visibility: visible !important;
-        }
-      `;
-            styleHost.appendChild(style);
-          } catch {
-          }
-        }
-      }
-      function installVkOverlayPatch() {
-        if (!isVkLikeHost()) {
-          return;
-        }
-        ensureVkOverlayStyle();
-        if (vkOverlayPatchInstalled) {
-          return;
-        }
-        vkOverlayPatchInstalled = true;
-        try {
-          const logProbeState = (message) => {
-            console.log(
-              message,
-              globalThis.__VOT_VK_PROBE__
-            );
-          };
-          let lastProbeSignature = "";
-          const initialCount = refreshVkOverlayProbe();
-          console.log(
-            initialCount > 0 ? "[VOT][VK probe] overlay nodes detected" : "[VOT][VK probe] no VOT overlay nodes yet",
-            globalThis.__VOT_VK_PROBE__
-          );
-          const refreshAndLog = () => {
-            ensureVkOverlayStyle();
-            const count = refreshVkOverlayProbe();
-            const currentProbe = globalThis.__VOT_VK_PROBE__;
-            const signature = JSON.stringify(currentProbe);
-            if (count > 0 && signature !== lastProbeSignature) {
-              lastProbeSignature = signature;
-              logProbeState("[VOT][VK probe] standard overlay refresh");
-            }
-          };
-          let ticks = 0;
-          const intervalId = globalThis.setInterval(() => {
-            ticks += 1;
-            refreshAndLog();
-            if (ticks >= 160) {
-              globalThis.clearInterval(intervalId);
-            }
-          }, 500);
-          document.addEventListener(
-            "visibilitychange",
-            () => {
-              if (!document.hidden) {
-                refreshAndLog();
-              }
-            },
-            { passive: true }
-          );
-        } catch (error2) {
-          console.warn("[VOT][VK probe] failed", error2);
-        }
       }
       const workerHost = "api.browser.yandex.ru";
       const m3u8ProxyHost = "media-proxy.toil.cc/v1/proxy/m3u8";
@@ -9914,6 +9196,236 @@ get isSupportOnlyLS() {
           return handleProfilePage();
         }
       }
+      function isVkLikeHost() {
+        return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
+          String(globalThis.location?.hostname || "")
+        );
+      }
+      let vkOverlayPatchInstalled = false;
+      function collectQueryScopes() {
+        const scopes = [document];
+        const seen2 = new Set([document]);
+        const queue = [document];
+        while (queue.length > 0) {
+          const current = queue.shift();
+          if (!current) {
+            continue;
+          }
+          const elements = current instanceof Document || current instanceof ShadowRoot ? current.querySelectorAll("*") : [];
+          for (const element of elements) {
+            const shadowRoot = element.shadowRoot;
+            if (!shadowRoot || seen2.has(shadowRoot)) {
+              continue;
+            }
+            seen2.add(shadowRoot);
+            scopes.push(shadowRoot);
+            queue.push(shadowRoot);
+          }
+        }
+        return scopes;
+      }
+      function queryAllAcrossShadowRoots(selector) {
+        const result = [];
+        const seen2 = new Set();
+        for (const scope of collectQueryScopes()) {
+          for (const element of Array.from(scope.querySelectorAll(selector))) {
+            if (seen2.has(element)) {
+              continue;
+            }
+            seen2.add(element);
+            result.push(element);
+          }
+        }
+        return result;
+      }
+      function refreshVkOverlayProbe() {
+        const buttons = queryAllAcrossShadowRoots(
+          "vot-block.vot-segmented-button, .vot-segmented-button"
+        );
+        for (const button of buttons) {
+          button.hidden = false;
+          button.removeAttribute("hidden");
+          button.removeAttribute("inert");
+          button.classList.remove("vot-segmented-button--hidden");
+          button.style.setProperty("display", "flex", "important");
+          button.style.setProperty("opacity", "1", "important");
+          button.style.setProperty("pointer-events", "auto", "important");
+          button.style.setProperty("z-index", "2147483647", "important");
+          button.style.setProperty("visibility", "visible", "important");
+        }
+        const subtitles = queryAllAcrossShadowRoots(
+          ".vot-subtitles-widget, .vot-subtitles-layer"
+        );
+        for (const subtitle of subtitles) {
+          subtitle.hidden = false;
+          subtitle.removeAttribute("hidden");
+          subtitle.style.setProperty("display", "block", "important");
+          subtitle.style.setProperty("opacity", "1", "important");
+          subtitle.style.setProperty("pointer-events", "none", "important");
+          subtitle.style.setProperty("z-index", "2147483647", "important");
+          subtitle.style.setProperty("visibility", "visible", "important");
+        }
+        const videos = queryAllAcrossShadowRoots("video");
+        const probeState = {
+          buttons: buttons.length,
+          subtitlesWidgets: subtitles.length,
+          videos: videos.length,
+          visibleVideos: videos.filter((video) => {
+            const rect = video.getBoundingClientRect();
+            return rect.width > 64 && rect.height > 64;
+          }).length,
+          href: globalThis.location.href
+        };
+        globalThis.__VOT_VK_PROBE__ = probeState;
+        return buttons.length + subtitles.length;
+      }
+      function ensureVkOverlayStyle() {
+        for (const scope of collectQueryScopes()) {
+          const styleHost = scope instanceof Document ? scope.head || scope.documentElement : scope instanceof ShadowRoot ? scope : null;
+          if (!styleHost) {
+            continue;
+          }
+          const root = scope instanceof Document ? scope : scope instanceof ShadowRoot ? scope : null;
+          if (!root) {
+            continue;
+          }
+          if (root.querySelector("#vot-vk-overlay-fix-style")) {
+            continue;
+          }
+          try {
+            const style = document.createElement("style");
+            style.id = "vot-vk-overlay-fix-style";
+            style.textContent = `
+        .vot-segmented-button {
+          display: flex !important;
+          opacity: 1 !important;
+          pointer-events: auto !important;
+          z-index: 2147483647 !important;
+          visibility: visible !important;
+        }
+
+        .vot-segmented-button.vot-segmented-button--hidden {
+          opacity: 1 !important;
+          pointer-events: auto !important;
+        }
+
+        .vot-subtitles-layer,
+        .vot-subtitles-widget {
+          display: block !important;
+          opacity: 1 !important;
+          z-index: 2147483647 !important;
+          visibility: visible !important;
+        }
+      `;
+            styleHost.appendChild(style);
+          } catch {
+          }
+        }
+      }
+      function installVkOverlayPatch() {
+        if (!isVkLikeHost()) {
+          return;
+        }
+        ensureVkOverlayStyle();
+        if (vkOverlayPatchInstalled) {
+          return;
+        }
+        vkOverlayPatchInstalled = true;
+        try {
+          const logProbeState = (message) => {
+            console.log(
+              message,
+              globalThis.__VOT_VK_PROBE__
+            );
+          };
+          let lastProbeSignature = "";
+          const initialCount = refreshVkOverlayProbe();
+          console.log(
+            initialCount > 0 ? "[VOT][VK probe] overlay nodes detected" : "[VOT][VK probe] no VOT overlay nodes yet",
+            globalThis.__VOT_VK_PROBE__
+          );
+          const refreshAndLog = () => {
+            ensureVkOverlayStyle();
+            const count = refreshVkOverlayProbe();
+            const currentProbe = globalThis.__VOT_VK_PROBE__;
+            const signature = JSON.stringify(currentProbe);
+            if (count > 0 && signature !== lastProbeSignature) {
+              lastProbeSignature = signature;
+              logProbeState("[VOT][VK probe] standard overlay refresh");
+            }
+          };
+          let ticks = 0;
+          const intervalId = globalThis.setInterval(() => {
+            ticks += 1;
+            refreshAndLog();
+            if (ticks >= 160) {
+              globalThis.clearInterval(intervalId);
+            }
+          }, 500);
+          document.addEventListener(
+            "visibilitychange",
+            () => {
+              if (!document.hidden) {
+                refreshAndLog();
+              }
+            },
+            { passive: true }
+          );
+        } catch (error2) {
+          console.warn("[VOT][VK probe] failed", error2);
+        }
+      }
+      function installYandexDiskOverlayPatch() {
+        let patchedHost = null;
+        let hideTimer = null;
+        const IDLE_TIME = 3e3;
+        const clearHideTimer = () => {
+          if (hideTimer !== null) {
+            window.clearTimeout(hideTimer);
+            hideTimer = null;
+          }
+        };
+        const showButton = () => {
+          const overlay = document.querySelector(
+            ".vot-segmented-button"
+          );
+          if (!overlay) return;
+          overlay.hidden = false;
+          overlay.removeAttribute("hidden");
+          overlay.style.opacity = "1";
+          overlay.classList.remove("vot-segmented-button--hidden");
+          clearHideTimer();
+          hideTimer = window.setTimeout(() => {
+            const currentOverlay = document.querySelector(
+              ".vot-segmented-button"
+            );
+            if (!currentOverlay) return;
+            currentOverlay.style.opacity = "0";
+            currentOverlay.classList.add("vot-segmented-button--hidden");
+          }, IDLE_TIME);
+        };
+        const patchHost = () => {
+          const video = document.querySelector("video");
+          if (!video) return;
+          const host = video.closest('[class*="player"], [class*="video"], main, article') || video.parentElement || video;
+          if (!host || host === patchedHost) return;
+          patchedHost = host;
+          const activityHandler = () => showButton();
+          host.addEventListener("mouseenter", activityHandler, { passive: true });
+          host.addEventListener("mousemove", activityHandler, { passive: true });
+          host.addEventListener("pointerenter", activityHandler, { passive: true });
+          host.addEventListener("pointermove", activityHandler, { passive: true });
+          showButton();
+        };
+        patchHost();
+        const observer = new MutationObserver(() => {
+          patchHost();
+        });
+        observer.observe(document.documentElement, {
+          childList: true,
+          subtree: true
+        });
+      }
       const recommended = "recommended";
       const translateVideo = "Translate video";
       const disableTranslate = "Turn off";
@@ -10151,7 +9663,7 @@ get isSupportOnlyLS() {
         return buildVersion || scriptVersion || "unknown";
       }
       function getRuntimeLocaleVersion() {
-        const buildVersion = String("1.11.5.21");
+        const buildVersion = String("1.11.5.22");
         const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
         return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
       }
@@ -10448,7 +9960,9 @@ locale;
       }
       function logNativeSubtitleTracks(video) {
         const trackEntries = Array.from(video.querySelectorAll("track")).map((track, index) => {
-          const rawUrl = String(track.src || track.getAttribute("src") || "").trim();
+          const rawUrl = String(
+            track.src || track.getAttribute("src") || ""
+          ).trim();
           if (!rawUrl) {
             return null;
           }
@@ -10468,7 +9982,9 @@ locale;
           };
         }).filter((entry) => Boolean(entry));
         const signature = trackEntries.map(
-          (entry) => [entry.index, entry.kind, entry.srclang, entry.label, entry.url].join("|")
+          (entry) => [entry.index, entry.kind, entry.srclang, entry.label, entry.url].join(
+            "|"
+          )
         ).join("||");
         if (loggedNativeSubtitleSignatures.get(video) === signature) {
           return;
@@ -10476,7 +9992,9 @@ locale;
         loggedNativeSubtitleSignatures.set(video, signature);
         globalThis.__VOT_DETECTED_NATIVE_SUBTITLE_TRACKS__ = trackEntries;
         if (!trackEntries.length) {
-          console.log("[VOT][subtitles][native] no <track> subtitle URLs detected for video");
+          console.log(
+            "[VOT][subtitles][native] no <track> subtitle URLs detected for video"
+          );
           return;
         }
         console.log(
@@ -10605,12 +10123,15 @@ locale;
             if (!match) {
               if (isVkProbeHost$2()) {
                 const rect = video.getBoundingClientRect();
-                console.warn("[VOT][VK probe] video detected but no site/container match", {
-                  src: video.currentSrc || video.src || "",
-                  w: rect.width,
-                  h: rect.height,
-                  path: globalThis.location.pathname
-                });
+                console.warn(
+                  "[VOT][VK probe] video detected but no site/container match",
+                  {
+                    src: video.currentSrc || video.src || "",
+                    w: rect.width,
+                    h: rect.height,
+                    path: globalThis.location.pathname
+                  }
+                );
               }
               return;
             }
@@ -10634,7 +10155,10 @@ locale;
             if (activeVideoForContainer && activeVideoForContainer !== video) {
               if (activeVideoForContainer.isConnected) {
                 if (shouldReplaceActiveVideo(activeVideoForContainer, video)) {
-                  await releaseVideoHandler(activeVideoForContainer, "smaller duplicate");
+                  await releaseVideoHandler(
+                    activeVideoForContainer,
+                    "smaller duplicate"
+                  );
                   clearContainerOwner(activeVideoForContainer);
                 } else {
                   pendingVideoByContainer.set(container, video);
@@ -10713,7 +10237,10 @@ locale;
           if (!/\/player\.html$/i.test(url.pathname)) {
             return null;
           }
-          const sourceUrl = normalizeAbsoluteUrl(url.searchParams.get("src"), url.toString());
+          const sourceUrl = normalizeAbsoluteUrl(
+            url.searchParams.get("src"),
+            url.toString()
+          );
           const playlistUrl = normalizeAbsoluteUrl(
             url.searchParams.get("list"),
             url.toString()
@@ -10764,7 +10291,7 @@ locale;
         "video"
       ];
       const GENERIC_PLAYER_SELECTOR = GENERIC_PLAYER_SELECTORS.join(", ");
-      const VK_PLAYER_SELECTOR = ".videoplayer_media, vk-video-player";
+      const VK_PLAYER_SELECTOR$1 = ".videoplayer_media, vk-video-player";
       const VK_CLIP_SELECTOR = 'div[data-testid="clipcontainer-video"], [data-testid="clipcontainer-video"]';
       const extraSites = [
         {
@@ -10772,7 +10299,7 @@ locale;
           url: "https://vk.com/video?z=",
           additionalData: "mobile",
           match: [/^m\.vk\.(com|ru)$/i, /^m\.vkvideo\.ru$/i],
-          selector: VK_PLAYER_SELECTOR,
+          selector: VK_PLAYER_SELECTOR$1,
           shadowRoot: true,
           needExtraData: true
         },
@@ -10788,7 +10315,7 @@ locale;
           host: VideoService.vk,
           url: "https://vk.com/video?z=",
           match: [/^(www\.|m\.)?vk\.(com|ru)$/i, /^(.*\.)?vkvideo\.ru$/i],
-          selector: VK_PLAYER_SELECTOR,
+          selector: VK_PLAYER_SELECTOR$1,
           needExtraData: true
         },
         {
@@ -10846,11 +10373,7 @@ locale;
       const SCAN_ONLY_BOOTSTRAP_SITE_HOSTS = new Set(["youtube"]);
       const POLL_PROBE_SITE_HOSTS = new Set(["youtube"]);
       const SINGLE_SHOT_SITE_HOSTS = new Set(["youtube"]);
-      const EAGER_BOOTSTRAP_SITE_HOSTS = new Set([
-        "vk",
-        "googledrive",
-        "yandexdisk"
-      ]);
+      const EAGER_BOOTSTRAP_SITE_HOSTS = new Set(["vk", "googledrive", "yandexdisk"]);
       const EAGER_BOOTSTRAP_HOSTNAME_PATTERNS = [
         /(?:^|\.)vkvideo\.ru$/i,
         /(?:^|\.)vk\.(?:com|ru)$/i,
@@ -10885,7 +10408,9 @@ locale;
       function resolveProbeSelectors(hostname, services2) {
         const hosts = new Set(services2.map((site) => String(site.host || "").trim()));
         if (hosts.has("youtube") || /(?:^|\.)youtube(?:-nocookie|kids)?\.com$/i.test(hostname)) {
-          return ["video.html5-main-video, .html5-video-container video, .player-container video, video"];
+          return [
+            "video.html5-main-video, .html5-video-container video, .player-container video, video"
+          ];
         }
         return ["video"];
       }
@@ -10905,7 +10430,9 @@ locale;
         const probeSelectors = resolveProbeSelectors(hostname, services2);
         const preferProbeBootstrap = !services2.some(
           (site) => EAGER_BOOTSTRAP_SITE_HOSTS.has(String(site.host || "").trim())
-        ) && !EAGER_BOOTSTRAP_HOSTNAME_PATTERNS.some((pattern) => pattern.test(hostname));
+        ) && !EAGER_BOOTSTRAP_HOSTNAME_PATTERNS.some(
+          (pattern) => pattern.test(hostname)
+        );
         const shadowHostSelectors = startDomObservationOnEnable ? normalizeSelectorList(services2) : [];
         const observeShadowRoots = shadowHostSelectors.length > 0;
         const keepWatchingAfterVideoDetected = services2.some(
@@ -11076,7 +10603,7 @@ locale;
       function resolveOverlayMountTargets(input) {
         const base = resolveOverlayBaseContainer(input.container, input.site);
         const root = input.fullscreenRoot ?? base;
-        const subtitlesMountContainer = input.site.host === "googledrive" ? input.fullscreenRoot ?? document.body : root;
+        const subtitlesMountContainer = input.site.host === "googledrive" ? input.fullscreenRoot ?? document.body : input.site.host === "vk" ? input.fullscreenRoot ?? document.documentElement : root;
         return {
           base,
           root,
@@ -11936,49 +11463,6 @@ locale;
         };
       }
       function makeSimpleFileId$2(size, chunkSize) {
-        return `yadisk_${size}_${chunkSize}_${Date.now()}`;
-      }
-      async function getAudioFromYandexDisk({
-        videoId,
-        signal
-      }) {
-        const video = document.querySelector("video");
-        if (!(video instanceof HTMLVideoElement)) {
-          throw new Error("[VOT] Yandex Disk: video element not found");
-        }
-        const src = video.currentSrc || video.src;
-        if (!src) {
-          throw new Error("[VOT] Yandex Disk: empty video src");
-        }
-        const response = await fetch(src, { signal });
-        if (!response.ok) {
-          throw new Error(
-            `[VOT] Yandex Disk: failed to fetch media source: ${response.status}`
-          );
-        }
-        debug.log("[VOT] Yandex Disk strategy currentSrc:", video.currentSrc);
-        debug.log("[VOT] Yandex Disk strategy src:", video.src);
-        const buffer = await response.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        if (!bytes.byteLength) {
-          throw new Error("[VOT] Yandex Disk: empty audio/video bytes");
-        }
-        const chunkSize = 256 * 1024;
-        const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-        const fileId = makeSimpleFileId$2(bytes.byteLength, chunkSize);
-        debug.log("[VOT] Yandex Disk strategy bytes:", bytes.byteLength);
-        return {
-          fileId,
-          mediaPartsLength,
-          async *getMediaBuffers() {
-            for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-              const end = Math.min(start + chunkSize, bytes.byteLength);
-              yield bytes.subarray(start, end);
-            }
-          }
-        };
-      }
-      function makeSimpleFileId$1(size, chunkSize) {
         return `local_${size}_${chunkSize}_${Date.now()}`;
       }
       async function fetchLocalMedia(src, signal) {
@@ -12031,22 +11515,19 @@ locale;
         const chunkSize = 256 * 1024;
         const contentLength = getContentLength(response);
         if (response.body && contentLength) {
-          const mediaPartsLength2 = Math.max(
-            1,
-            Math.ceil(contentLength / chunkSize)
-          );
-          const fileId2 = makeSimpleFileId$1(contentLength, chunkSize);
+          const mediaPartsLength2 = Math.max(1, Math.ceil(contentLength / chunkSize));
+          const fileId2 = makeSimpleFileId$2(contentLength, chunkSize);
           return {
             fileId: fileId2,
             mediaPartsLength: mediaPartsLength2,
             async *getMediaBuffers() {
-              const reader = response.body.getReader();
+              const reader = response.body?.getReader();
               let pending = new Uint8Array(0);
               try {
                 while (true) {
                   const { done, value } = await reader.read();
                   if (done) break;
-                  if (!value || !value.byteLength) continue;
+                  if (!value?.byteLength) continue;
                   let merged;
                   if (pending.byteLength === 0) {
                     merged = value;
@@ -12077,7 +11558,7 @@ locale;
           throw new Error("[VOT] Local file: empty media bytes");
         }
         const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-        const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
+        const fileId = makeSimpleFileId$2(bytes.byteLength, chunkSize);
         return {
           fileId,
           mediaPartsLength,
@@ -12101,20 +11582,26 @@ locale;
         return manifestPatterns.some((re) => re.test(url));
       }
       let bestManifest = null;
-      let installed = false;
-      function normalizeUrl(input) {
+      let installed$1 = false;
+      function normalizeUrl$1(input) {
         try {
           return new URL(input, globalThis.location.href).href;
         } catch {
           return input;
         }
       }
+      function isDirectMediaCandidate(url) {
+        return /\.m3u8(?:$|[?#])/i.test(url) || /\.mpd(?:$|[?#])/i.test(url) || /master\.m3u8/i.test(url) || /dashplaylist/i.test(url) || /\.mp4(?:$|[?#])/i.test(url);
+      }
       function isBadSegmentUrl(url) {
         const lower = url.toLowerCase();
+        if (isDirectMediaCandidate(lower)) {
+          return false;
+        }
         return lower.includes("okcdn.ru/?") || /[?&]bytes=\d+-\d+/i.test(lower) || /[?&]type=\d+/i.test(lower);
       }
       function rememberManifest(url) {
-        const normalized = normalizeUrl(url);
+        const normalized = normalizeUrl$1(url);
         if (isBadSegmentUrl(normalized)) {
           return;
         }
@@ -12151,10 +11638,10 @@ locale;
         return bestManifest?.url ?? "";
       }
       function installManifestSniffer() {
-        if (installed) {
+        if (installed$1) {
           return;
         }
-        installed = true;
+        installed$1 = true;
         const originalFetch = globalThis.fetch.bind(globalThis);
         globalThis.fetch = async (...args) => {
           const input = args[0];
@@ -12168,7 +11655,8 @@ locale;
           return originalOpen.call(this, method, url, ...rest);
         };
       }
-      function makeSimpleFileId(size, chunkSize) {
+      const VK_PLAYER_SELECTOR = ".videoplayer_media, vk-video-player";
+      function makeSimpleFileId$1(size, chunkSize) {
         return `vk_${size}_${chunkSize}_${Date.now()}`;
       }
       function isM3u8(url) {
@@ -12176,6 +11664,98 @@ locale;
       }
       function resolveUrl(url, baseUrl) {
         return new URL(url, baseUrl).toString();
+      }
+      function getVideoSrc(video) {
+        const sourceEl = video.querySelector("source");
+        return String(
+          video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || ""
+        ).trim();
+      }
+      function isVisibleVideo(video) {
+        const rect = video.getBoundingClientRect();
+        return rect.width > 64 && rect.height > 64;
+      }
+      function collectVideoCandidates(preferredVideo) {
+        const seen2 = new Set();
+        const result = [];
+        const push = (video) => {
+          if (!(video instanceof HTMLVideoElement) || seen2.has(video)) {
+            return;
+          }
+          seen2.add(video);
+          result.push(video);
+        };
+        push(preferredVideo);
+        for (const video of Array.from(document.querySelectorAll("video"))) {
+          push(video);
+        }
+        return result;
+      }
+      function scoreVideoCandidate(video, preferredVideo) {
+        let score = 0;
+        const src = getVideoSrc(video);
+        if (video === preferredVideo) score += 100;
+        if (video.isConnected) score += 10;
+        if (isVisibleVideo(video)) score += 25;
+        if (video.closest(VK_PLAYER_SELECTOR)) score += 20;
+        if (!video.paused) score += 8;
+        if (video.readyState > 0) score += 8;
+        if (src) score += 4;
+        if (src && !src.startsWith("blob:")) score += 6;
+        return score;
+      }
+      function normalizeCandidateUrl(url) {
+        try {
+          return new URL(url, globalThis.location.href).toString();
+        } catch {
+          return String(url || "").trim();
+        }
+      }
+      function scoreVkMediaUrl(url) {
+        const normalized = normalizeCandidateUrl(url);
+        if (!normalized) {
+          return Number.NEGATIVE_INFINITY;
+        }
+        const lower = normalized.toLowerCase();
+        let score = 0;
+        if (lower.startsWith("blob:")) score -= 100;
+        if (/\.mp4(?:$|[?#])/i.test(normalized)) score += 50;
+        if (/\.m3u8(?:$|[?#])/i.test(normalized)) score += 45;
+        if (/master\.m3u8/i.test(normalized)) score += 35;
+        if (/\.mpd(?:$|[?#])/i.test(normalized)) score += 30;
+        if (/manifest/i.test(normalized)) score += 15;
+        if (/dashplaylist/i.test(normalized)) score += 15;
+        if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(normalized)) score += 10;
+        if (/[?&]bytes=\d+-\d+/i.test(normalized)) score -= 60;
+        if (/[?&]subid=/i.test(lower)) score -= 80;
+        if (/[?&]type=2(?:[&#]|$)/i.test(normalized)) score -= 80;
+        return score;
+      }
+      function pickBestVkMediaUrl(candidates) {
+        let best = "";
+        let bestScore = Number.NEGATIVE_INFINITY;
+        for (const candidate of candidates) {
+          const normalized = normalizeCandidateUrl(String(candidate || "").trim());
+          const score = scoreVkMediaUrl(normalized);
+          if (score > bestScore) {
+            best = normalized;
+            bestScore = score;
+          }
+        }
+        return best;
+      }
+      function getPerformanceMediaUrl() {
+        try {
+          const entries = performance.getEntriesByType("resource");
+          const candidates = entries.map((entry) => String(entry?.name || "").trim()).filter(
+            (candidate) => /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru|vk\.(?:com|ru)/i.test(
+              candidate
+            )
+          ).filter(Boolean);
+          return pickBestVkMediaUrl(candidates);
+        } catch {
+          return "";
+        }
       }
       async function fetchVkMedia(src, signal) {
         try {
@@ -12221,17 +11801,38 @@ locale;
       }
       async function getAudioFromVkVideo({
         videoId,
-        signal
+        signal,
+        preferredVideo
       }) {
-        const video = document.querySelector("video");
+        const videos = collectVideoCandidates(preferredVideo).sort(
+          (left, right) => scoreVideoCandidate(right, preferredVideo) - scoreVideoCandidate(left, preferredVideo)
+        );
+        const video = videos[0];
         if (!(video instanceof HTMLVideoElement)) {
           throw new Error("[VOT] VK: video element not found");
         }
-        const sourceEl = video.querySelector("source");
         const sniffedManifestUrl = getLastManifestUrl();
-        const src = sniffedManifestUrl || video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "";
+        const performanceMediaUrl = getPerformanceMediaUrl();
+        const selectedVideoSrc = getVideoSrc(video);
+        const directVideoUrls = videos.map((candidate) => getVideoSrc(candidate)).filter((candidate) => candidate && !candidate.startsWith("blob:"));
+        const src = pickBestVkMediaUrl([
+          sniffedManifestUrl,
+          performanceMediaUrl,
+          ...directVideoUrls,
+          selectedVideoSrc
+        ]);
         debug.log("[VOT] VK strategy currentSrc:", video.currentSrc);
         debug.log("[VOT] VK strategy src:", video.src);
+        debug.log(
+          "[VOT] VK strategy candidate videos:",
+          videos.map((candidate) => ({
+            src: getVideoSrc(candidate),
+            visible: isVisibleVideo(candidate),
+            paused: candidate.paused,
+            readyState: candidate.readyState,
+            score: scoreVideoCandidate(candidate, preferredVideo)
+          }))
+        );
         if (!src) {
           throw new Error("[VOT] VK: empty video src");
         }
@@ -12267,8 +11868,51 @@ locale;
           throw new Error("[VOT] VK: empty media bytes");
         }
         const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-        const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
+        const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
         debug.log("[VOT] VK strategy bytes:", bytes.byteLength);
+        return {
+          fileId,
+          mediaPartsLength,
+          async *getMediaBuffers() {
+            for (let start = 0; start < bytes.byteLength; start += chunkSize) {
+              const end = Math.min(start + chunkSize, bytes.byteLength);
+              yield bytes.subarray(start, end);
+            }
+          }
+        };
+      }
+      function makeSimpleFileId(size, chunkSize) {
+        return `yadisk_${size}_${chunkSize}_${Date.now()}`;
+      }
+      async function getAudioFromYandexDisk({
+        videoId,
+        signal
+      }) {
+        const video = document.querySelector("video");
+        if (!(video instanceof HTMLVideoElement)) {
+          throw new Error("[VOT] Yandex Disk: video element not found");
+        }
+        const src = video.currentSrc || video.src;
+        if (!src) {
+          throw new Error("[VOT] Yandex Disk: empty video src");
+        }
+        const response = await fetch(src, { signal });
+        if (!response.ok) {
+          throw new Error(
+            `[VOT] Yandex Disk: failed to fetch media source: ${response.status}`
+          );
+        }
+        debug.log("[VOT] Yandex Disk strategy currentSrc:", video.currentSrc);
+        debug.log("[VOT] Yandex Disk strategy src:", video.src);
+        const buffer = await response.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        if (!bytes.byteLength) {
+          throw new Error("[VOT] Yandex Disk: empty audio/video bytes");
+        }
+        const chunkSize = 256 * 1024;
+        const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+        const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
+        debug.log("[VOT] Yandex Disk strategy bytes:", bytes.byteLength);
         return {
           fileId,
           mediaPartsLength,
@@ -12303,11 +11947,13 @@ locale;
         audioDownloader,
         translationId,
         videoId,
-        signal
+        signal,
+        preferredVideo
       }) {
         const audioData = await strategies[audioDownloader.strategy]({
           videoId,
-          signal
+          signal,
+          preferredVideo
         });
         if (!audioData) {
           throw new Error("Audio downloader. Can not get audio data");
@@ -12358,13 +12004,14 @@ locale;
         constructor(strategy = YT_AUDIO_STRATEGY) {
           this.strategy = strategy;
         }
-        async runAudioDownload(videoId, translationId, signal) {
+        async runAudioDownload(videoId, translationId, signal, preferredVideo) {
           try {
             await handleCommonAudioDownloadRequest({
               audioDownloader: this,
               translationId,
               videoId,
-              signal
+              signal,
+              preferredVideo
             });
             debug.log("Audio downloader. Audio download finished", {
               videoId
@@ -12772,34 +12419,6 @@ localizedMessage;
           }
           return String(rawUrl || globalThis.location.href || "").split("?")[0].split("#")[0];
         }
-        makeStableShortHash(value) {
-          let hash = 2166136261;
-          for (let i2 = 0; i2 < value.length; i2 += 1) {
-            hash ^= value.charCodeAt(i2);
-            hash = Math.imul(hash, 16777619);
-          }
-          return (hash >>> 0).toString(36);
-        }
-        extractYandexDiskPublicId(url) {
-          try {
-            const parsed = new URL(url, globalThis.location.href);
-            const fileMatch = parsed.pathname.match(/^\/i\/([^/]+)$/i);
-            if (fileMatch) {
-              return fileMatch[1];
-            }
-            const publicMatch = parsed.pathname.match(/^\/d\/([^/]+)(\/.*)?$/i);
-            if (publicMatch) {
-              const suffix = publicMatch[2] || "";
-              if (!suffix || suffix === "/") {
-                return publicMatch[1];
-              }
-              return `ydisk-${publicMatch[1]}-${this.makeStableShortHash(parsed.pathname)}`;
-            }
-            return `yandexdisk-${this.makeStableShortHash(parsed.pathname)}`;
-          } catch {
-            return `yandexdisk-${this.makeStableShortHash(String(url || "yandexdisk-public"))}`;
-          }
-        }
         extractYandexDiskPublicTarget(value) {
           try {
             const parsed = new URL(value, globalThis.location.href);
@@ -12906,7 +12525,9 @@ localizedMessage;
         }
         extractBridgeDirectMediaTarget() {
           try {
-            const raw = globalThis.__VOT_DIRECT_SOURCES__ || JSON.parse(document?.documentElement?.dataset?.votDirectSources || "null");
+            const raw = globalThis.__VOT_DIRECT_SOURCES__ || JSON.parse(
+              document?.documentElement?.dataset?.votDirectSources || "null"
+            );
             if (!raw || typeof raw !== "object") {
               return null;
             }
@@ -13007,7 +12628,9 @@ localizedMessage;
             relativePath = relativePathRaw;
           }
           const publicKey = `${parsed.origin}/d/${parsed.folderId}`;
-          const apiUrl = new URL("https://cloud-api.yandex.com/v1/disk/public/resources");
+          const apiUrl = new URL(
+            "https://cloud-api.yandex.com/v1/disk/public/resources"
+          );
           apiUrl.searchParams.set("public_key", publicKey);
           apiUrl.searchParams.set("path", relativePath);
           try {
@@ -13097,17 +12720,6 @@ localizedMessage;
             });
           }
           return null;
-        }
-        isResolvedYandexDiskVideoData(videoData2) {
-          if (videoData2.host !== "yandexdisk") {
-            return false;
-          }
-          const rawUrl = String(videoData2.url || "");
-          if (!rawUrl || this.isYandexDiskDownloadUrl(rawUrl)) {
-            return false;
-          }
-          const parsed = this.parseYandexDiskUrl(rawUrl);
-          return parsed.mode === "file" || parsed.mode === "folderRoot" || parsed.mode === "folderFile";
         }
         isYandexDiskDownloadUrl(url) {
           try {
@@ -13306,7 +12918,10 @@ localizedMessage;
             return {
               ...videoData2,
               url: directTarget.url,
-              videoId: this.getYandexDiskServiceVideoId(directTarget.url, parsed.pathname),
+              videoId: this.getYandexDiskServiceVideoId(
+                directTarget.url,
+                parsed.pathname
+              ),
               host: "yandexdisk"
             };
           }
@@ -13315,7 +12930,10 @@ localizedMessage;
             return {
               ...videoData2,
               url: mediaTarget.url,
-              videoId: this.getYandexDiskServiceVideoId(mediaTarget.url, parsed.pathname),
+              videoId: this.getYandexDiskServiceVideoId(
+                mediaTarget.url,
+                parsed.pathname
+              ),
               host: "yandexdisk"
             };
           }
@@ -13353,6 +12971,11 @@ localizedMessage;
               }
             );
           } catch (error2) {
+            console.log("[VOT] Upload full audio failed", {
+              message: getErrorMessage(error2),
+              serverMessage: getServerErrorMessage(error2),
+              error: asVotClientErrorShape(error2)
+            });
             this.finishDownloadFailure(
               new Error("Audio downloader failed while uploading full audio")
             );
@@ -13390,6 +13013,14 @@ localizedMessage;
               }
             );
           } catch (error2) {
+            console.log("[VOT] Upload audio chunk failed", {
+              message: getErrorMessage(error2),
+              serverMessage: getServerErrorMessage(error2),
+              error: asVotClientErrorShape(error2),
+              index,
+              amount,
+              size: audioData.byteLength
+            });
             this.finishDownloadFailure(
               new Error("Audio downloader failed while uploading chunk")
             );
@@ -13406,7 +13037,10 @@ localizedMessage;
           const videoUrl = this.getCanonicalUrl(videoId);
           const shouldUseFallback = this.videoHandler.site.host === "youtube" && Boolean(this.videoHandler.data?.useAudioDownload);
           console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
-          console.log("[VOT] downloadAudioError strategy:", this.audioDownloader.strategy);
+          console.log(
+            "[VOT] downloadAudioError strategy:",
+            this.audioDownloader.strategy
+          );
           if (!shouldUseFallback) {
             this.finishDownloadFailure(
               new VOTLocalizedError("VOTFailedDownloadAudio")
@@ -13514,7 +13148,9 @@ localizedMessage;
             };
           }
           if (normalizedVideoData.host === "odysee" && typeof normalizedVideoData.url === "string") {
-            const rewrittenUrl = this.normalizeOdyseeDirectUrl(normalizedVideoData.url);
+            const rewrittenUrl = this.normalizeOdyseeDirectUrl(
+              normalizedVideoData.url
+            );
             normalizedVideoData = rewrittenUrl !== normalizedVideoData.url ? {
               ...normalizedVideoData,
               url: rewrittenUrl,
@@ -13573,7 +13209,8 @@ localizedMessage;
               await this.audioDownloader.runAudioDownload(
                 normalizedVideoData.videoId,
                 res.translationId,
-                signal
+                signal,
+                this.videoHandler.video
               );
               await this.waitForAudioDownloadCompletion(signal, 12e4);
               return await this.translateVideoYDImpl(
@@ -13614,7 +13251,9 @@ localizedMessage;
               signal
             );
             this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
-              aborted: Boolean(this.videoHandler.actionsAbortController?.signal?.aborted),
+              aborted: Boolean(
+                this.videoHandler.actionsAbortController?.signal?.aborted
+              ),
               translateApiErrorsEnabled: Boolean(
                 this.videoHandler.data?.translateAPIErrors
               ),
@@ -13733,13 +13372,27 @@ localizedMessage;
                 translationId: res.translationId,
                 strategy: this.audioDownloader.strategy
               });
-              this.downloading = true;
-              void this.audioDownloader.runAudioDownload(
-                videoData2.videoId,
-                String(res.translationId),
-                signal
-              );
-              await this.waitForAudioDownloadCompletion(signal, 12e4);
+              try {
+                this.downloading = true;
+                void this.audioDownloader.runAudioDownload(
+                  videoData2.videoId,
+                  String(res.translationId),
+                  signal,
+                  this.videoHandler.video
+                );
+                await this.waitForAudioDownloadCompletion(signal, 15e3);
+              } catch (error2) {
+                debug.log(
+                  "[VOT][VK subtitles] force audio upload failed after successful translation",
+                  {
+                    videoId: videoData2.videoId,
+                    translationId: res.translationId,
+                    message: getErrorMessage(error2),
+                    serverMessage: getServerErrorMessage(error2),
+                    error: asVotClientErrorShape(error2)
+                  }
+                );
+              }
             }
             throwIfAborted(signal);
             if (res.translated && res.remainingTime < 1) {
@@ -13761,7 +13414,8 @@ localizedMessage;
               await this.audioDownloader.runAudioDownload(
                 videoData2.videoId,
                 res.translationId,
-                signal
+                signal,
+                this.videoHandler.video
               );
               debug.log("waiting downloading finish");
               await this.waitForAudioDownloadCompletion(
@@ -13788,7 +13442,9 @@ localizedMessage;
               signal
             );
             this.videoHandler.hadAsyncWait = notifyTranslationFailureIfNeeded({
-              aborted: Boolean(this.videoHandler.actionsAbortController?.signal?.aborted),
+              aborted: Boolean(
+                this.videoHandler.actionsAbortController?.signal?.aborted
+              ),
               translateApiErrorsEnabled: Boolean(
                 this.videoHandler.data?.translateAPIErrors
               ),
@@ -14037,7 +13693,9 @@ localizedMessage;
           return this.host.site.host === "youtube" && !this.host.site.additionalData;
         }
         hasAutoStartupWork() {
-          return Boolean(this.host.data.autoTranslate || this.host.data.autoSubtitles);
+          return Boolean(
+            this.host.data.autoTranslate || this.host.data.autoSubtitles
+          );
         }
         async runAutoStartupSequence(sessionId, mode) {
           if (mode === "immediate") {
@@ -14249,6 +13907,499 @@ localizedMessage;
           this.lastSetCanPlaySourceKey = sourceKey;
           this.host.onPrimaryAttachReady?.();
         }
+      }
+      const VK_HOST_PATTERN = /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i;
+      const VK_REQUEST_PATTERN = /api\.vkvideo\.ru|\/al_video\.php(?:$|[?#])|\/method\/video\.|video_ext\.php|vkvideo\.ru/i;
+      const SUBTITLE_URL_PATTERN = /\.(vtt|srt|ass|json)(?:$|[?#])/i;
+      const MAX_BODY_LENGTH = 15e5;
+      const MAX_TRACKS_PER_HOST = 64;
+      const TRACK_MAX_AGE_MS = 10 * 60 * 1e3;
+      const sniffedTracksByHost = new Map();
+      const xhrUrlKey = Symbol("votSniffedSubtitleUrl");
+      let installed = false;
+      function isVkHost(hostname) {
+        return VK_HOST_PATTERN.test(hostname);
+      }
+      function isVkPage() {
+        return isVkHost(String(globalThis.location.hostname || ""));
+      }
+      function normalizeUrl(input) {
+        try {
+          return new URL(input, globalThis.location.href).href;
+        } catch {
+          return input;
+        }
+      }
+      function inferSubtitleFormat(url) {
+        const normalized = url.split(/[?#]/u, 1)[0]?.toLowerCase() ?? "";
+        if (normalized.endsWith(".vtt")) return "vtt";
+        if (normalized.endsWith(".srt")) return "srt";
+        if (normalized.endsWith(".ass")) return "ass";
+        if (normalized.endsWith(".json")) return "json";
+        return null;
+      }
+      function normalizeLanguageCandidate(value) {
+        if (typeof value !== "string") {
+          return void 0;
+        }
+        const normalized = value.trim();
+        if (!normalized) {
+          return void 0;
+        }
+        try {
+          return normalizeLang$1(normalized);
+        } catch {
+          return normalized.toLowerCase().split(/[_;-]/u)[0]?.trim() || void 0;
+        }
+      }
+      function inferLanguageFromUrl(rawUrl) {
+        try {
+          const url = new URL(rawUrl, globalThis.location.href);
+          const queryValue = url.searchParams.get("lang") || url.searchParams.get("language") || url.searchParams.get("locale") || url.searchParams.get("srclang");
+          if (queryValue) {
+            return normalizeLanguageCandidate(queryValue);
+          }
+          const pathname = decodeURIComponent(url.pathname);
+          const match = /(?:^|[._/-])([a-z]{2,3}(?:-[a-z]{2,4})?)(?=\.(?:vtt|srt|ass|json)\b)/i.exec(
+            pathname
+          ) || /(?:^|[._/-])([a-z]{2,3})(?:[._-]captions?)(?=\b)/i.exec(pathname);
+          return normalizeLanguageCandidate(match?.[1]);
+        } catch {
+          return void 0;
+        }
+      }
+      function parseVideoId(ownerId, videoId) {
+        const normalizedOwner = String(ownerId || "").trim();
+        const normalizedVideoId = String(videoId || "").trim();
+        if (!normalizedOwner || !normalizedVideoId) {
+          return void 0;
+        }
+        const ownerNumber = Number.parseInt(normalizedOwner, 10);
+        if (Number.isNaN(ownerNumber)) {
+          return void 0;
+        }
+        return `video-${Math.abs(ownerNumber)}_${normalizedVideoId}`;
+      }
+      function extractVideoIdFromUrl(rawUrl) {
+        try {
+          const url = new URL(rawUrl, globalThis.location.href);
+          const pathnameMatch = /\/(video-?\d+_\d+)/i.exec(url.pathname) || /\/playlist\/[^/]+\/(video-?\d+_\d+)/i.exec(url.pathname);
+          if (pathnameMatch?.[1]) {
+            return pathnameMatch[1];
+          }
+          const paramZ = url.searchParams.get("z");
+          if (paramZ) {
+            const zMatch = /(video-?\d+_\d+)/i.exec(paramZ);
+            if (zMatch?.[1]) {
+              return zMatch[1];
+            }
+          }
+          const oid = url.searchParams.get("oid");
+          const id = url.searchParams.get("id");
+          if (oid && id) {
+            return parseVideoId(oid, id);
+          }
+        } catch {
+          return void 0;
+        }
+        return void 0;
+      }
+      function isRecord$2(value) {
+        return value !== null && typeof value === "object";
+      }
+      function pickString(record, keys) {
+        for (const key of keys) {
+          const value = record[key];
+          if (typeof value === "string" && value.trim()) {
+            return value.trim();
+          }
+        }
+        return void 0;
+      }
+      function pickNumberish(record, keys) {
+        for (const key of keys) {
+          const value = record[key];
+          if (typeof value === "number" && Number.isFinite(value)) {
+            return String(value);
+          }
+          if (typeof value === "string" && value.trim()) {
+            return value.trim();
+          }
+        }
+        return void 0;
+      }
+      function toOptionalBoolean(value) {
+        if (typeof value === "boolean") {
+          return value;
+        }
+        if (typeof value === "number") {
+          return value !== 0;
+        }
+        if (typeof value === "string") {
+          const normalized = value.trim().toLowerCase();
+          if (normalized === "true" || normalized === "1") return true;
+          if (normalized === "false" || normalized === "0") return false;
+        }
+        return void 0;
+      }
+      function extractVideoIdFromRecord(record) {
+        const explicitVideoId = pickString(record, [
+          "videoId",
+          "video_id",
+          "video",
+          "player_id"
+        ]);
+        if (explicitVideoId) {
+          const matched = /(video-?\d+_\d+)/i.exec(explicitVideoId);
+          if (matched?.[1]) {
+            return matched[1];
+          }
+        }
+        const ownerId = pickNumberish(record, [
+          "owner_id",
+          "ownerId",
+          "oid",
+          "video_oid"
+        ]);
+        const videoId = pickNumberish(record, ["id", "vid", "video_id", "videoId"]);
+        if (ownerId && videoId) {
+          return parseVideoId(ownerId, videoId);
+        }
+        return void 0;
+      }
+      function isSubtitleCollectionKey(key) {
+        return key === "subs" || key === "subtitles" || key === "captions" || key === "text_tracks" || key.includes("subtitle") || key.includes("caption");
+      }
+      function toSubtitleDescriptor(record, context) {
+        const rawUrl = pickString(record, [
+          "url",
+          "src",
+          "file",
+          "download_url",
+          "downloadUrl",
+          "webVttUrl",
+          "webvtturl",
+          "link"
+        ]);
+        if (!rawUrl) {
+          return null;
+        }
+        const url = normalizeUrl(rawUrl);
+        const format = inferSubtitleFormat(url) ?? (context.collectionHint ? "vtt" : null);
+        if (!format) {
+          return null;
+        }
+        const language = normalizeLanguageCandidate(
+          pickString(record, [
+            "lang",
+            "language",
+            "lang_code",
+            "language_code",
+            "locale",
+            "locale_id",
+            "srclang",
+            "code",
+            "subtitles_lang"
+          ]) ?? context.languageHint ?? inferLanguageFromUrl(url)
+        );
+        if (!language) {
+          return null;
+        }
+        return {
+          source: "vk",
+          format,
+          language,
+          url,
+          translatedFromLanguage: normalizeLanguageCandidate(
+            pickString(record, [
+              "translatedFromLanguage",
+              "translated_from_language",
+              "from_lang",
+              "source_lang"
+            ])
+          ),
+          isAutoGenerated: toOptionalBoolean(
+            record.is_auto ?? record.isAutoGenerated ?? record.auto_generated ?? record.autogenerated
+          )
+        };
+      }
+      function collectDescriptors(value, context, collected, visited, depth = 0) {
+        if (depth > 7 || value == null) {
+          return;
+        }
+        if (Array.isArray(value)) {
+          for (const item of value.slice(0, 400)) {
+            collectDescriptors(item, context, collected, visited, depth + 1);
+          }
+          return;
+        }
+        if (!isRecord$2(value) || visited.has(value)) {
+          return;
+        }
+        visited.add(value);
+        const record = value;
+        const nextVideoId = context.videoId ?? extractVideoIdFromRecord(record);
+        const nextLanguageHint = context.languageHint ?? normalizeLanguageCandidate(
+          pickString(record, [
+            "subtitles_lang",
+            "lang",
+            "language",
+            "locale",
+            "locale_id"
+          ])
+        );
+        const descriptor = toSubtitleDescriptor(record, {
+          ...context,
+          languageHint: nextLanguageHint
+        });
+        if (descriptor) {
+          collected.push({
+            descriptor,
+            seenAt: Date.now(),
+            videoId: nextVideoId
+          });
+        }
+        for (const [key, nestedValue] of Object.entries(record)) {
+          if (nestedValue == null) {
+            continue;
+          }
+          const nextContext = {
+            collectionHint: context.collectionHint || isSubtitleCollectionKey(key.toLowerCase()),
+            languageHint: nextLanguageHint,
+            videoId: nextVideoId
+          };
+          collectDescriptors(nestedValue, nextContext, collected, visited, depth + 1);
+        }
+      }
+      function unescapeResponseString(value) {
+        return value.replace(/\\u0026/giu, "&").replace(/\\u002f/giu, "/").replace(/\\\//gu, "/");
+      }
+      function extractDescriptorsFromText(text, requestUrl) {
+        const result = [];
+        const seen2 = new Set();
+        const defaultVideoId = extractVideoIdFromUrl(requestUrl);
+        const normalizedText = unescapeResponseString(text);
+        const push = (language, url, isAutoGenerated) => {
+          const normalizedLanguage = normalizeLanguageCandidate(
+            language ?? inferLanguageFromUrl(String(url || ""))
+          );
+          const normalizedUrl = typeof url === "string" ? normalizeUrl(url) : "";
+          const format = inferSubtitleFormat(normalizedUrl) ?? "vtt";
+          if (!normalizedLanguage || !normalizedUrl) {
+            return;
+          }
+          const key = `${defaultVideoId ?? ""}|${normalizedLanguage}|${normalizedUrl}`;
+          if (seen2.has(key)) {
+            return;
+          }
+          seen2.add(key);
+          result.push({
+            videoId: defaultVideoId,
+            seenAt: Date.now(),
+            descriptor: {
+              source: "vk",
+              format,
+              language: normalizedLanguage,
+              url: normalizedUrl,
+              isAutoGenerated
+            }
+          });
+        };
+        const langBeforeUrlPattern = /["'](?:lang|language|locale|subtitles_lang)["']\s*:\s*["']([a-zA-Z_-]{2,12})["'][\s\S]{0,400}?["']url["']\s*:\s*["']([^"'\\]+(?:\\.[^"'\\]*)*)["'][\s\S]{0,120}?(?:["']is_auto["']\s*:\s*(true|false|0|1))?/g;
+        const urlBeforeLangPattern = /["']url["']\s*:\s*["']([^"'\\]+(?:\\.[^"'\\]*)*)["'][\s\S]{0,400}?["'](?:lang|language|locale|subtitles_lang)["']\s*:\s*["']([a-zA-Z_-]{2,12})["'][\s\S]{0,120}?(?:["']is_auto["']\s*:\s*(true|false|0|1))?/g;
+        for (const match of normalizedText.matchAll(langBeforeUrlPattern)) {
+          push(match[1], match[2], toOptionalBoolean(match[3]));
+        }
+        for (const match of normalizedText.matchAll(urlBeforeLangPattern)) {
+          push(match[2], match[1], toOptionalBoolean(match[3]));
+        }
+        return result;
+      }
+      function rememberTracks(siteHost, tracks) {
+        if (!tracks.length) {
+          return;
+        }
+        const now2 = Date.now();
+        const existing = sniffedTracksByHost.get(siteHost) ?? [];
+        const deduped = new Map();
+        for (const track of existing) {
+          if (now2 - track.seenAt > TRACK_MAX_AGE_MS) {
+            continue;
+          }
+          deduped.set(
+            [
+              track.videoId ?? "",
+              track.descriptor.language,
+              track.descriptor.translatedFromLanguage ?? "",
+              track.descriptor.url
+            ].join("|"),
+            track
+          );
+        }
+        for (const track of tracks) {
+          if (now2 - track.seenAt > TRACK_MAX_AGE_MS) {
+            continue;
+          }
+          deduped.set(
+            [
+              track.videoId ?? "",
+              track.descriptor.language,
+              track.descriptor.translatedFromLanguage ?? "",
+              track.descriptor.url
+            ].join("|"),
+            track
+          );
+        }
+        const nextTracks = Array.from(deduped.values()).sort((left, right) => right.seenAt - left.seenAt).slice(0, MAX_TRACKS_PER_HOST);
+        sniffedTracksByHost.set(siteHost, nextTracks);
+      }
+      function rememberSubtitleUrl(rawUrl) {
+        const url = normalizeUrl(rawUrl);
+        const format = inferSubtitleFormat(url);
+        const language = inferLanguageFromUrl(url);
+        if (!format || !language) {
+          return;
+        }
+        rememberTracks("vk", [
+          {
+            videoId: extractVideoIdFromUrl(url),
+            seenAt: Date.now(),
+            descriptor: {
+              source: "vk",
+              format,
+              language,
+              url
+            }
+          }
+        ]);
+      }
+      function shouldInspectVkRequest(url) {
+        return VK_REQUEST_PATTERN.test(url);
+      }
+      function processPotentialVkPayload(requestUrl, payload) {
+        const collected = [];
+        collectDescriptors(
+          payload,
+          {
+            collectionHint: false,
+            videoId: extractVideoIdFromUrl(requestUrl)
+          },
+          collected,
+new WeakSet()
+        );
+        rememberTracks("vk", collected);
+      }
+      function processPotentialVkTextResponse(requestUrl, text) {
+        if (!text || text.length > MAX_BODY_LENGTH) {
+          return;
+        }
+        try {
+          processPotentialVkPayload(requestUrl, JSON.parse(text));
+          return;
+        } catch {
+        }
+        rememberTracks("vk", extractDescriptorsFromText(text, requestUrl));
+      }
+      function inspectFetchResponse(url, response) {
+        const contentType = String(response.headers.get("content-type") || "").trim().toLowerCase();
+        if (!shouldInspectVkRequest(url) && !(contentType.includes("json") && /vkvideo|vk\.com|okcdn\.ru/i.test(url))) {
+          return;
+        }
+        if (contentType.includes("json")) {
+          void response.clone().json().then((payload) => {
+            processPotentialVkPayload(url, payload);
+          }).catch(() => {
+            void response.clone().text().then((text) => {
+              processPotentialVkTextResponse(url, text);
+            }).catch(() => void 0);
+          });
+          return;
+        }
+        void response.clone().text().then((text) => {
+          processPotentialVkTextResponse(url, text);
+        }).catch(() => void 0);
+      }
+      function getSniffedSiteSubtitles(siteHost, videoId) {
+        const now2 = Date.now();
+        const currentTracks = (sniffedTracksByHost.get(siteHost) ?? []).filter(
+          (track) => now2 - track.seenAt <= TRACK_MAX_AGE_MS
+        );
+        sniffedTracksByHost.set(siteHost, currentTracks);
+        const filteredTracks = videoId ? currentTracks.filter(
+          (track) => !track.videoId || track.videoId === videoId
+        ) : currentTracks;
+        const deduped = new Map();
+        for (const track of filteredTracks) {
+          deduped.set(
+            [
+              track.descriptor.language,
+              track.descriptor.translatedFromLanguage ?? "",
+              track.descriptor.url
+            ].join("|"),
+            track.descriptor
+          );
+        }
+        return Array.from(deduped.values());
+      }
+      function installSiteSubtitlesSniffer() {
+        if (installed) {
+          return;
+        }
+        installed = true;
+        const originalFetch = globalThis.fetch.bind(globalThis);
+        globalThis.fetch = async (...args) => {
+          const response = await originalFetch(...args);
+          if (!isVkPage()) {
+            return response;
+          }
+          const input = args[0];
+          const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input ?? "");
+          if (SUBTITLE_URL_PATTERN.test(url)) {
+            rememberSubtitleUrl(url);
+          }
+          inspectFetchResponse(url, response);
+          return response;
+        };
+        const originalOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+          const stringUrl = String(url);
+          this[xhrUrlKey] = stringUrl;
+          if (isVkPage() && SUBTITLE_URL_PATTERN.test(stringUrl)) {
+            rememberSubtitleUrl(stringUrl);
+          }
+          return originalOpen.call(this, method, url, ...rest);
+        };
+        const originalSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function(...args) {
+          if (isVkPage()) {
+            this.addEventListener(
+              "load",
+              () => {
+                const requestUrl = this[xhrUrlKey];
+                if (!requestUrl) {
+                  return;
+                }
+                const contentType = String(
+                  this.getResponseHeader("content-type") || ""
+                ).trim().toLowerCase();
+                if (!shouldInspectVkRequest(requestUrl) && !(contentType.includes("json") && /vkvideo|vk\.com|okcdn\.ru/i.test(requestUrl))) {
+                  return;
+                }
+                if (this.responseType === "json" && this.response) {
+                  processPotentialVkPayload(requestUrl, this.response);
+                  return;
+                }
+                if (this.responseType !== "" && this.responseType !== "text" && this.responseType !== "json") {
+                  return;
+                }
+                const responseText = typeof this.responseText === "string" ? this.responseText : "";
+                processPotentialVkTextResponse(requestUrl, responseText);
+              },
+              { once: true }
+            );
+          }
+          return originalSend.apply(this, args);
+        };
       }
       const MAX_TEXT_LENGTH = 450;
       const REMOVABLE_TOKEN_FILTER = new RegExp(
@@ -14483,29 +14634,6 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         }
         return snapVolume01(next, "nearest", step);
       }
-      const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive"]);
-      const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
-      const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok"]);
-      const TRANSLATION_DOWNLOAD_HOSTS = new Set([
-        "youtube",
-        "invidious",
-        "piped"
-      ]);
-      function isExternalVolumeHost(host) {
-        return EXTERNAL_VOLUME_HOSTS.has(host);
-      }
-      function isYouTubeLikeHost(host) {
-        return YOUTUBE_LIKE_HOSTS.has(host);
-      }
-      function isMuteSyncDisabledHost(host) {
-        return MUTE_SYNC_DISABLED_HOSTS.has(host);
-      }
-      function isDesktopYouTubeLikeSite(site) {
-        return isYouTubeLikeHost(site.host) && site.additionalData !== "mobile";
-      }
-      function isTranslationDownloadHost(host) {
-        return TRANSLATION_DOWNLOAD_HOSTS.has(host);
-      }
       function getStructuredVideoData() {
         const scripts = Array.from(
           document.querySelectorAll('script[type="application/ld+json"]')
@@ -14612,7 +14740,10 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
             });
             return {
               url: bestDirect,
-              videoId: toStableVideoId(unitedVideoId || bestDirect, bestDirect || href),
+              videoId: toStableVideoId(
+                unitedVideoId || bestDirect,
+                bestDirect || href
+              ),
               title: String(direct.title || document.title || "")
             };
           }
@@ -14620,7 +14751,10 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         if (/^odysee\.com$/i.test(hostname)) {
           const structured = getStructuredVideoData();
           if (structured?.contentUrl && /^https?:\/\//i.test(structured.contentUrl)) {
-            console.log("[VOT][custom][odysee] resolved contentUrl", structured.contentUrl);
+            console.log(
+              "[VOT][custom][odysee] resolved contentUrl",
+              structured.contentUrl
+            );
             return {
               url: structured.contentUrl,
               videoId: href,
@@ -14654,7 +14788,10 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
             };
           }
           if (structured?.embedUrl) {
-            console.log("[VOT][custom][odysee] fallback embedUrl", structured.embedUrl);
+            console.log(
+              "[VOT][custom][odysee] fallback embedUrl",
+              structured.embedUrl
+            );
             return {
               url: structured.embedUrl,
               videoId: href,
@@ -14684,7 +14821,10 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
           const names = entries.map((e2) => typeof e2.name === "string" ? e2.name : "").filter(Boolean);
           const best = pickBestResourceUrl(names);
           if (best) {
-            console.log("[VOT][custom][cdnvideohub] using performance resource", best);
+            console.log(
+              "[VOT][custom][cdnvideohub] using performance resource",
+              best
+            );
             return {
               url: best,
               videoId: toStableVideoId(best, referrer || href),
@@ -14739,6 +14879,29 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         }
         return null;
       }
+      const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive"]);
+      const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
+      const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok"]);
+      const TRANSLATION_DOWNLOAD_HOSTS = new Set([
+        "youtube",
+        "invidious",
+        "piped"
+      ]);
+      function isExternalVolumeHost(host) {
+        return EXTERNAL_VOLUME_HOSTS.has(host);
+      }
+      function isYouTubeLikeHost(host) {
+        return YOUTUBE_LIKE_HOSTS.has(host);
+      }
+      function isMuteSyncDisabledHost(host) {
+        return MUTE_SYNC_DISABLED_HOSTS.has(host);
+      }
+      function isDesktopYouTubeLikeSite(site) {
+        return isYouTubeLikeHost(site.host) && site.additionalData !== "mobile";
+      }
+      function isTranslationDownloadHost(host) {
+        return TRANSLATION_DOWNLOAD_HOSTS.has(host);
+      }
       const FORCED_DETECTED_LANGUAGE_BY_HOST = {
         rutube: "ru",
         "ok.ru": "ru",
@@ -14761,7 +14924,9 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         if (typeof value !== "string") return void 0;
         try {
           const parsed = new URL(value, globalThis.location.href);
-          const lastSegment = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+          const lastSegment = decodeURIComponent(
+            parsed.pathname.split("/").pop() || ""
+          );
           return lastSegment.replace(/\.[^.]+$/u, "").trim() || void 0;
         } catch {
           return void 0;
@@ -14772,7 +14937,9 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
           document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span')
         ).map((el) => el.textContent?.trim() ?? "").find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text)) || "";
         const metaTitle = document.querySelector('meta[property="og:title"], meta[name="title"]')?.getAttribute("content")?.trim() || "";
-        const headerTitle = document.querySelector('h1, [role="heading"], div[role="heading"], [data-tooltip]')?.textContent?.trim() || "";
+        const headerTitle = document.querySelector(
+          'h1, [role="heading"], div[role="heading"], [data-tooltip]'
+        )?.textContent?.trim() || "";
         const docTitle = String(document.title || "").trim();
         const raw = exactDriveTitle || metaTitle || headerTitle || docTitle;
         if (!raw) return void 0;
@@ -24681,7 +24848,10 @@ set key(newKey) {
             if (!data || typeof data !== "object") return;
             if (data.source !== "vot-auth") return;
             if (event.origin !== authCallbackOrigin) {
-              debug.log("[VOT] Ignoring OAuth message from unexpected origin:", event.origin);
+              debug.log(
+                "[VOT] Ignoring OAuth message from unexpected origin:",
+                event.origin
+              );
               return;
             }
             if (data.type === "error") {
@@ -25906,7 +26076,7 @@ votSettingsView;
           return this.mount.tooltipLayoutRoot;
         }
         getSubtitlesMountContainer() {
-          return this.votOverlayView?.root ?? this.mount.subtitlesMountContainer;
+          return this.mount.subtitlesMountContainer;
         }
         isInitialized() {
           return this.initialized;
@@ -27058,10 +27228,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             shadowHostSelectors: Array.isArray(policy.shadowHostSelectors) ? [...policy.shadowHostSelectors] : [...DEFAULT_VIDEO_OBSERVER_POLICY.shadowHostSelectors]
           };
         }
-        isYouTube() {
-          const host = String(globalThis.location?.hostname || "").toLowerCase();
-          return host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be" || host.endsWith(".youtube-nocookie.com") || host === "youtube.googleapis.com";
-        }
         static containsAdKeyword(value) {
           return value.length > 0 && AD_KEYWORD_PATTERN.test(value);
         }
@@ -27218,30 +27384,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
                 continue;
               }
               this.scanTargeted(shadowRoot, effectiveSelectors);
-            }
-          }
-        }
-        scanYouTube(root) {
-          if (root instanceof HTMLVideoElement) {
-            this.trackVideo(root);
-            return;
-          }
-          if (!(root instanceof Document) && !(root instanceof DocumentFragment) && !(root instanceof Element)) {
-            return;
-          }
-          const selectors = [
-            "video.html5-main-video",
-            ".html5-video-container video",
-            "#movie_player video",
-            "ytd-player video",
-            "#player video",
-            "video"
-          ];
-          for (const selector of selectors) {
-            const video = root.querySelector(selector);
-            if (video instanceof HTMLVideoElement) {
-              this.trackVideo(video);
-              return;
             }
           }
         }
@@ -27489,25 +27631,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             this.pendingRemoved.add(node);
           }
         }
-        onYouTubeMutations(mutations) {
-          for (const mutation of mutations) {
-            if (mutation.type !== "childList") continue;
-            for (const node of mutation.addedNodes) {
-              if (node instanceof HTMLVideoElement) {
-                this.trackVideo(node);
-                return;
-              }
-              if (!(node instanceof Element)) continue;
-              const video = node.querySelector(
-                "video.html5-main-video, .html5-video-container video, #movie_player video, ytd-player video, #player video, video"
-              );
-              if (video instanceof HTMLVideoElement) {
-                this.trackVideo(video);
-                return;
-              }
-            }
-          }
-        }
         onMutations(mutations) {
           for (const mutation of mutations) {
             if (mutation.type !== "childList") continue;
@@ -27518,15 +27641,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           }
         }
         onPageShow = () => {
-          const root = document.documentElement;
-          if (!root) return;
-          if (this.canObserveRoots()) {
-            this.observeRoot(root);
-          }
-          this.scan(root);
-        };
-        checkUrlChange = () => {
-          this.stopObservingDom();
           const root = document.documentElement;
           if (!root) return;
           if (this.canObserveRoots()) {
@@ -28165,10 +28279,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           this.syncVolumeObserver?.disconnect();
         }
       }
-      let countryCode;
-      function setCountryCode(next) {
-        countryCode = next;
-      }
       class PopupOverlayBridge {
         static GEOMETRY_STORAGE_KEY = "vot-popup-overlay-geometry";
         popup = null;
@@ -28488,14 +28598,20 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           translationVolumeValue.id = "vot-translation-volume-value";
           translationVolumeValue.className = "vot-slider-value";
           translationVolumeValue.textContent = "100%";
-          translationVolumeHead.append(translationVolumeLabel, translationVolumeValue);
+          translationVolumeHead.append(
+            translationVolumeLabel,
+            translationVolumeValue
+          );
           const translationVolumeInput = doc.createElement("input");
           translationVolumeInput.id = "vot-translation-volume";
           translationVolumeInput.type = "range";
           translationVolumeInput.min = "0";
           translationVolumeInput.max = "300";
           translationVolumeInput.value = "100";
-          translationVolumeField.append(translationVolumeHead, translationVolumeInput);
+          translationVolumeField.append(
+            translationVolumeHead,
+            translationVolumeInput
+          );
           const statusEl = doc.createElement("div");
           statusEl.id = "vot-status";
           statusEl.textContent = "Status: none";
@@ -28528,7 +28644,10 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             }
           });
           downloadBtn.addEventListener("click", () => this.onDownload?.());
-          downloadSubtitlesBtn.addEventListener("click", () => this.onDownloadSubtitles?.());
+          downloadSubtitlesBtn.addEventListener(
+            "click",
+            () => this.onDownloadSubtitles?.()
+          );
           subtitlesBtn.addEventListener("click", () => this.onToggleSubtitles?.());
           videoVolumeInput.addEventListener("input", () => {
             videoVolumeValue.textContent = `${videoVolumeInput.value}%`;
@@ -28538,15 +28657,42 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             translationVolumeValue.textContent = `${translationVolumeInput.value}%`;
             this.onTranslationVolumeChange?.(Number(translationVolumeInput.value));
           });
-          fromSelect.addEventListener("change", () => this.onFromLanguageChange?.(fromSelect.value));
-          toSelect.addEventListener("change", () => this.onToLanguageChange?.(toSelect.value));
-          autoTranslateInput.addEventListener("change", () => this.onAutoTranslateChange?.(autoTranslateInput.checked));
-          autoSubtitlesInput.addEventListener("change", () => this.onAutoSubtitlesChange?.(autoSubtitlesInput.checked));
-          syncVolumeInput.addEventListener("change", () => this.onSyncVolumeChange?.(syncVolumeInput.checked));
-          showVideoSliderInput.addEventListener("change", () => this.onShowVideoSliderChange?.(showVideoSliderInput.checked));
-          audioBoosterInput.addEventListener("change", () => this.onAudioBoosterChange?.(audioBoosterInput.checked));
-          autoVolumeInput.addEventListener("change", () => this.onAutoVolumeChange?.(autoVolumeInput.checked));
-          smartDuckingInput.addEventListener("change", () => this.onSmartDuckingChange?.(smartDuckingInput.checked));
+          fromSelect.addEventListener(
+            "change",
+            () => this.onFromLanguageChange?.(fromSelect.value)
+          );
+          toSelect.addEventListener(
+            "change",
+            () => this.onToLanguageChange?.(toSelect.value)
+          );
+          autoTranslateInput.addEventListener(
+            "change",
+            () => this.onAutoTranslateChange?.(autoTranslateInput.checked)
+          );
+          autoSubtitlesInput.addEventListener(
+            "change",
+            () => this.onAutoSubtitlesChange?.(autoSubtitlesInput.checked)
+          );
+          syncVolumeInput.addEventListener(
+            "change",
+            () => this.onSyncVolumeChange?.(syncVolumeInput.checked)
+          );
+          showVideoSliderInput.addEventListener(
+            "change",
+            () => this.onShowVideoSliderChange?.(showVideoSliderInput.checked)
+          );
+          audioBoosterInput.addEventListener(
+            "change",
+            () => this.onAudioBoosterChange?.(audioBoosterInput.checked)
+          );
+          autoVolumeInput.addEventListener(
+            "change",
+            () => this.onAutoVolumeChange?.(autoVolumeInput.checked)
+          );
+          smartDuckingInput.addEventListener(
+            "change",
+            () => this.onSmartDuckingChange?.(smartDuckingInput.checked)
+          );
           doc.addEventListener("keydown", (event) => {
             const isInputTarget = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement;
             if (event.key === "Escape") {
@@ -28610,20 +28756,30 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           const mainBtn = this.getEl("vot-main-btn");
           const subtitlesBtn = this.getEl("vot-subtitles-btn");
           const downloadBtn = this.getEl("vot-download-btn");
-          const downloadSubtitlesBtn = this.getEl("vot-download-subtitles-btn");
+          const downloadSubtitlesBtn = this.getEl(
+            "vot-download-subtitles-btn"
+          );
           const statusEl = this.getEl("vot-status");
           const hintEl = this.getEl("vot-hint");
           const fromSelect = this.getEl("vot-from-lang");
           const toSelect = this.getEl("vot-to-lang");
           const badge = this.getEl("vot-badge");
           const videoVolumeInput = this.getEl("vot-video-volume");
-          const videoVolumeValue = this.getEl("vot-video-volume-value");
-          const translationVolumeInput = this.getEl("vot-translation-volume");
-          const translationVolumeValue = this.getEl("vot-translation-volume-value");
+          const videoVolumeValue = this.getEl(
+            "vot-video-volume-value"
+          );
+          const translationVolumeInput = this.getEl(
+            "vot-translation-volume"
+          );
+          const translationVolumeValue = this.getEl(
+            "vot-translation-volume-value"
+          );
           const autoTranslateInput = this.getEl("vot-auto-translate");
           const autoSubtitlesInput = this.getEl("vot-auto-subtitles");
           const syncVolumeInput = this.getEl("vot-sync-volume");
-          const showVideoSliderInput = this.getEl("vot-show-video-slider");
+          const showVideoSliderInput = this.getEl(
+            "vot-show-video-slider"
+          );
           const audioBoosterInput = this.getEl("vot-audio-booster");
           const autoVolumeInput = this.getEl("vot-auto-volume");
           const smartDuckingInput = this.getEl("vot-smart-ducking");
@@ -28651,12 +28807,23 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             downloadSubtitlesBtn.title = payload.canDownloadSubtitles ? "Download subtitles" : "Subtitles are not available yet";
           }
           if (statusEl) statusEl.textContent = `Status: ${payload.status}`;
-          if (hintEl) hintEl.textContent = payload.hint ?? "Popup mode for Google-hosted players.";
+          if (hintEl)
+            hintEl.textContent = payload.hint ?? "Popup mode for Google-hosted players.";
           if (fromSelect) {
-            this.renderSelectOptions(fromSelect, payload.fromLangOptions ?? [], payload.fromLangValue, payload.fromLangLabel);
+            this.renderSelectOptions(
+              fromSelect,
+              payload.fromLangOptions ?? [],
+              payload.fromLangValue,
+              payload.fromLangLabel
+            );
           }
           if (toSelect) {
-            this.renderSelectOptions(toSelect, payload.toLangOptions ?? [], payload.toLangValue, payload.toLangLabel);
+            this.renderSelectOptions(
+              toSelect,
+              payload.toLangOptions ?? [],
+              payload.toLangValue,
+              payload.toLangLabel
+            );
           }
           if (fromSelect) fromSelect.disabled = isLoading;
           if (toSelect) toSelect.disabled = isLoading;
@@ -28690,14 +28857,26 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             smartDuckingInput.disabled = isLoading || !payload.autoVolumeEnabled;
           }
           if (videoVolumeInput && typeof payload.videoVolume === "number") {
-            videoVolumeInput.value = String(Math.max(0, Math.min(100, Math.round(payload.videoVolume))));
+            videoVolumeInput.value = String(
+              Math.max(0, Math.min(100, Math.round(payload.videoVolume)))
+            );
             videoVolumeInput.disabled = isLoading || payload.showVideoSliderEnabled === false;
-            if (videoVolumeValue) videoVolumeValue.textContent = `${videoVolumeInput.value}%`;
+            if (videoVolumeValue)
+              videoVolumeValue.textContent = `${videoVolumeInput.value}%`;
           }
           if (translationVolumeInput && typeof payload.translationVolume === "number") {
-            translationVolumeInput.value = String(Math.max(0, Math.min(Number(translationVolumeInput.max), Math.round(payload.translationVolume))));
+            translationVolumeInput.value = String(
+              Math.max(
+                0,
+                Math.min(
+                  Number(translationVolumeInput.max),
+                  Math.round(payload.translationVolume)
+                )
+              )
+            );
             translationVolumeInput.disabled = payload.canAdjustTranslationVolume === false || isLoading;
-            if (translationVolumeValue) translationVolumeValue.textContent = `${translationVolumeInput.value}%`;
+            if (translationVolumeValue)
+              translationVolumeValue.textContent = `${translationVolumeInput.value}%`;
           }
         }
         close() {
@@ -28760,7 +28939,12 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           }
         }
         buildPopupFeatures(geometry) {
-          const defaults = geometry ?? { width: 500, height: 520, left: 120, top: 120 };
+          const defaults = geometry ?? {
+            width: 500,
+            height: 520,
+            left: 120,
+            top: 120
+          };
           return [
             `width=${defaults.width}`,
             `height=${defaults.height}`,
@@ -28772,17 +28956,25 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         }
         readGeometry() {
           try {
-            const raw = window.localStorage.getItem(PopupOverlayBridge.GEOMETRY_STORAGE_KEY);
+            const raw = window.localStorage.getItem(
+              PopupOverlayBridge.GEOMETRY_STORAGE_KEY
+            );
             if (!raw) return null;
             const parsed = JSON.parse(raw);
-            if ([parsed.width, parsed.height, parsed.left, parsed.top].some((v2) => typeof v2 !== "number")) {
+            if ([parsed.width, parsed.height, parsed.left, parsed.top].some(
+              (v2) => typeof v2 !== "number"
+            )) {
+              return null;
+            }
+            const { width, height, left, top } = parsed;
+            if (width === void 0 || height === void 0 || left === void 0 || top === void 0) {
               return null;
             }
             return {
-              width: Math.max(420, Math.round(parsed.width)),
-              height: Math.max(420, Math.round(parsed.height)),
-              left: Math.round(parsed.left),
-              top: Math.round(parsed.top)
+              width: Math.max(420, Math.round(width)),
+              height: Math.max(420, Math.round(height)),
+              left: Math.round(left),
+              top: Math.round(top)
             };
           } catch {
             return null;
@@ -28814,10 +29006,17 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
               left: this.popup.screenX,
               top: this.popup.screenY
             };
-            window.localStorage.setItem(PopupOverlayBridge.GEOMETRY_STORAGE_KEY, JSON.stringify(geometry));
+            window.localStorage.setItem(
+              PopupOverlayBridge.GEOMETRY_STORAGE_KEY,
+              JSON.stringify(geometry)
+            );
           } catch {
           }
         }
+      }
+      let countryCode;
+      function setCountryCode(next) {
+        countryCode = next;
       }
       let countryCodeRequestInFlight = null;
       async function ensureCountryCode() {
@@ -28965,9 +29164,15 @@ useAudioDownload: isSupportGMXhr,
             onFromLanguageChange: (value) => {
               if (this.videoData) {
                 this.videoData.detectedLanguage = value;
-                this.videoManager.rememberUserLanguageSelection(this.videoData.videoId, value);
+                this.videoManager.rememberUserLanguageSelection(
+                  this.videoData.videoId,
+                  value
+                );
               }
-              this.setSelectMenuValues(value, this.videoData?.responseLanguage ?? this.translateToLang);
+              this.setSelectMenuValues(
+                value,
+                this.videoData?.responseLanguage ?? this.translateToLang
+              );
               this.syncPopupOverlayState({ fromLangValue: value });
             },
             onToLanguageChange: (value) => {
@@ -28977,7 +29182,10 @@ useAudioDownload: isSupportGMXhr,
               }
               this.data.responseLanguage = value;
               void votStorage.set("responseLanguage", value);
-              this.setSelectMenuValues(this.videoData?.detectedLanguage ?? this.translateFromLang, value);
+              this.setSelectMenuValues(
+                this.videoData?.detectedLanguage ?? this.translateFromLang,
+                value
+              );
               this.syncPopupOverlayState({ toLangValue: value });
             },
             onAutoTranslateChange: (value) => {
@@ -29017,7 +29225,9 @@ useAudioDownload: isSupportGMXhr,
               }
               this.syncPopupOverlayState({
                 audioBoosterEnabled: value,
-                translationVolume: Number(this.uiManager.votOverlayView?.translationVolumeSlider?.value ?? this.data.defaultVolume ?? 100)
+                translationVolume: Number(
+                  this.uiManager.votOverlayView?.translationVolumeSlider?.value ?? this.data.defaultVolume ?? 100
+                )
               });
             },
             onAutoVolumeChange: (value) => {
@@ -29475,16 +29685,11 @@ useAudioDownload: isSupportGMXhr,
       const VK_MULTIPLE_SPACES_RE = /[ \t]{2,}/gu;
       const VK_EXCESS_NEWLINES_RE = /\n{3,}/gu;
       const VK_COMPARABLE_SPACING_RE = /\s+/gu;
-      let htmlStripTemplate = null;
       const stripHtmlToText = (value) => {
         if (!value.includes("<")) return value;
-        if (typeof document !== "undefined") {
-          if (!htmlStripTemplate) {
-            htmlStripTemplate = document.createElement("template");
-          }
-          const template = htmlStripTemplate;
-          template.innerHTML = value;
-          return template.content.textContent ?? "";
+        if (typeof DOMParser !== "undefined") {
+          const doc = new DOMParser().parseFromString(value, "text/html");
+          return doc.body.textContent ?? "";
         }
         return value.replaceAll(/<\/?[^>]+>/gu, "");
       };
@@ -30049,9 +30254,7 @@ useAudioDownload: isSupportGMXhr,
         ) ?? videoData2?.responseLanguage ?? handler.translateToLang;
       }
       function getCacheDetectedLanguage(handler) {
-        const detectedLanguage = String(
-          handler.videoData?.detectedLanguage || ""
-        ).trim().toLowerCase();
+        const detectedLanguage = String(handler.videoData?.detectedLanguage || "").trim().toLowerCase();
         if (detectedLanguage && detectedLanguage !== "auto") {
           return detectedLanguage;
         }
@@ -30518,14 +30721,11 @@ useAudioDownload: isSupportGMXhr,
           if (cachedSubs === void 0 || cachedSubs.length === 0) {
             let inflight = this.subtitlesLoadPromises.get(cacheKey2);
             if (inflight === void 0) {
-              inflight = SubtitlesProcessor.getSubtitles(
-                this.votClient,
-                {
-                  ...this.videoData,
-                  detectedLanguage,
-                  responseLanguage: subtitleLanguage
-                }
-              );
+              inflight = SubtitlesProcessor.getSubtitles(this.votClient, {
+                ...this.videoData,
+                detectedLanguage,
+                responseLanguage: subtitleLanguage
+              });
               this.subtitlesLoadPromises.set(cacheKey2, inflight);
             }
             try {
@@ -30543,7 +30743,10 @@ useAudioDownload: isSupportGMXhr,
             }
           }
           const apiSubtitles = Array.isArray(cachedSubs) ? cachedSubs : [];
-          this.subtitles = mergeUniqueSubtitleDescriptors(siteSubtitles, apiSubtitles);
+          this.subtitles = mergeUniqueSubtitleDescriptors(
+            siteSubtitles,
+            apiSubtitles
+          );
           this.subtitlesCacheKey = cacheKey2;
         } catch (error2) {
           console.error("[VOT] Failed to load subtitles:", error2);
@@ -32448,10 +32651,9 @@ constructor(video, container, site) {
 getSubtitlesWidget() {
           if (!this.subtitlesWidget) {
             const { subtitlesMountContainer } = this.getOverlayMountPoints();
-            const widgetContainer = this.site.host === "googledrive" ? subtitlesMountContainer : this.uiManager.votOverlayView?.root ?? subtitlesMountContainer;
             this.subtitlesWidget = new SubtitlesWidget(
               this.video,
-              widgetContainer,
+              subtitlesMountContainer,
               this.interactionChecker,
               this.tooltipLayoutRoot
             );
@@ -32879,7 +33081,7 @@ getVideoData() {
           return this.videoManager.getVideoData();
         }
         sanitizeDownloadName(value) {
-          return value.replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "").replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").replace(/\s+/g, " ").trim();
+          return value.replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "").replace(/[<>:"/\\|?*]/g, "_").replace(/\s+/g, " ").trim();
         }
         getDownloadBaseName() {
           const fromDownloadTitle = typeof this.videoData?.downloadTitle === "string" && this.videoData.downloadTitle.trim() ? this.videoData.downloadTitle : void 0;
@@ -33149,10 +33351,10 @@ setupAudioSettings() {
           return this.callModule(setupAudioSettings);
         }
         syncTranslationPlaybackVolume() {
-          return this.callModule(syncTranslationPlaybackVolume);
+          this.callModule(syncTranslationPlaybackVolume);
         }
         applyManualVideoVolumeOverride(volume) {
-          return this.callModule(applyManualVideoVolumeOverride, volume);
+          this.callModule(applyManualVideoVolumeOverride, volume);
         }
 stopTranslation = async () => {
           this.translationOrchestrator?.reset();
