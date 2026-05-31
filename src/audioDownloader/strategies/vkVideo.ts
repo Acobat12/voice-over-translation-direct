@@ -126,13 +126,26 @@ function pickBestVkMediaUrl(
   return best;
 }
 
+function stripBytesParam(url: string): string {
+  try {
+    const u = new URL(url);
+    u.searchParams.delete("bytes");
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 function getPerformanceMediaUrl(): string {
   try {
     const entries = performance.getEntriesByType("resource");
     const candidates = entries
-      .map((entry) =>
-        String((entry as PerformanceResourceTiming)?.name || "").trim(),
-      )
+      .map((entry) => {
+        const raw = String(
+          (entry as PerformanceResourceTiming)?.name || "",
+        ).trim();
+        return /[?&]bytes=\d+-\d+/i.test(raw) ? stripBytesParam(raw) : raw;
+      })
       .filter((candidate) =>
         /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru|vk\.(?:com|ru)/i.test(
           candidate,

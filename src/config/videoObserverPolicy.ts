@@ -17,19 +17,43 @@ const SCAN_ONLY_BOOTSTRAP_SITE_HOSTS = new Set(["youtube"]);
 const POLL_PROBE_SITE_HOSTS = new Set(["youtube"]);
 const SINGLE_SHOT_SITE_HOSTS = new Set(["youtube"]);
 
-const EAGER_BOOTSTRAP_SITE_HOSTS = new Set(["vk", "googledrive", "yandexdisk"]);
+const EAGER_BOOTSTRAP_SITE_HOSTS = new Set([
+  "vk",
+  "googledrive",
+  "yandexdisk",
+  "rutube",
+  "okru",
+  "bilibili",
+  "dzen",
+]);
 
 const EAGER_BOOTSTRAP_HOSTNAME_PATTERNS = [
   /(?:^|\.)vkvideo\.ru$/i,
   /(?:^|\.)vk\.(?:com|ru)$/i,
   /^youtube\.googleapis\.com$/i,
   /^disk\.yandex\./i,
+  /(?:^|\.)rutube\.ru$/i,
+  /(?:^|\.)ok\.ru$/i,
+  /(?:^|\.)bilibili\.(com|tv)$/i,
+  /(?:^|\.)dzen\.ru$/i,
+  /^player\.cdnvideohub\.com$/i,
+  /(?:^|\.)wikianimex\.ru$/i,
+  /(?:^|\.)kodikplayer\.com$/i,
+  /(?:^|\.)kodik\.(info|biz|cc|fun|pw|io|online|me)$/i,
 ];
 
 const PERSISTENT_OBSERVER_SITE_HOSTS = new Set([
   "vk",
   "googledrive",
   "yandexdisk",
+  "rutube",
+  "okru",
+  "bilibili",
+  "twitter",
+  "tiktok",
+  "dzen",
+  "kick",
+  "twitch",
 ]);
 
 const PERSISTENT_OBSERVER_HOSTNAME_PATTERNS = [
@@ -37,7 +61,28 @@ const PERSISTENT_OBSERVER_HOSTNAME_PATTERNS = [
   /(?:^|\.)vk\.(?:com|ru)$/i,
   /^youtube\.googleapis\.com$/i,
   /^disk\.yandex\./i,
+  /(?:^|\.)rutube\.ru$/i,
+  /(?:^|\.)ok\.ru$/i,
+  /(?:^|\.)bilibili\.(com|tv)$/i,
+  /(?:^|\.)twitter\.com$/i,
+  /(?:^|\.)x\.com$/i,
+  /(?:^|\.)tiktok\.com$/i,
+  /(?:^|\.)dzen\.ru$/i,
+  /(?:^|\.)kick\.com$/i,
+  /(?:^|\.)twitch\.tv$/i,
+  /(?:^|\.)wikianimex\.ru$/i,
 ];
+
+function isMobileYouTubeLikeService(site: ServiceConf): boolean {
+  return (
+    String(site.host || "").trim() === "youtube" &&
+    (site.additionalData === "mobile" || site.additionalData === "music")
+  );
+}
+
+function isMobileYouTubeLikeHostname(hostname: string): boolean {
+  return hostname === "m.youtube.com" || hostname === "music.youtube.com";
+}
 
 function normalizeSelectorList(services: readonly ServiceConf[]): string[] {
   const deduped = new Set<string>();
@@ -70,7 +115,7 @@ function resolveProbeSelectors(
     /(?:^|\.)youtube(?:-nocookie|kids)?\.com$/i.test(hostname)
   ) {
     return [
-      "video.html5-main-video, .html5-video-container video, .player-container video, video",
+      "video.html5-main-video, .html5-video-container video, ytmusic-player video, ytm-player video, #player video, .player-container video, video",
     ];
   }
 
@@ -85,8 +130,13 @@ export function resolveVideoObserverPolicy(input: {
     .trim()
     .toLowerCase();
   const services = input.services;
-  const isScanOnlyBootstrap = services.some((site) =>
-    SCAN_ONLY_BOOTSTRAP_SITE_HOSTS.has(String(site.host || "").trim()),
+  const isMobileYouTubeLike =
+    isMobileYouTubeLikeHostname(hostname) ||
+    services.some((site) => isMobileYouTubeLikeService(site));
+  const isScanOnlyBootstrap = services.some(
+    (site) =>
+      !isMobileYouTubeLike &&
+      SCAN_ONLY_BOOTSTRAP_SITE_HOSTS.has(String(site.host || "").trim()),
   );
   const startDomObservationOnEnable = !isScanOnlyBootstrap;
   const probeStrategy = services.some((site) =>
@@ -94,8 +144,10 @@ export function resolveVideoObserverPolicy(input: {
   )
     ? "poll"
     : "mutation";
-  const stopAfterFirstVideoDetected = services.some((site) =>
-    SINGLE_SHOT_SITE_HOSTS.has(String(site.host || "").trim()),
+  const stopAfterFirstVideoDetected = services.some(
+    (site) =>
+      !isMobileYouTubeLike &&
+      SINGLE_SHOT_SITE_HOSTS.has(String(site.host || "").trim()),
   );
   const probeSelectors = resolveProbeSelectors(hostname, services);
   const preferProbeBootstrap =
@@ -111,6 +163,7 @@ export function resolveVideoObserverPolicy(input: {
   const observeShadowRoots = shadowHostSelectors.length > 0;
 
   const keepWatchingAfterVideoDetected =
+    isMobileYouTubeLike ||
     services.some((site) =>
       PERSISTENT_OBSERVER_SITE_HOSTS.has(String(site.host || "").trim()),
     ) ||

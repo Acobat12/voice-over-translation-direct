@@ -25,7 +25,17 @@ export function isDesktopYouTubeLikeSite(site: {
   host: string;
   additionalData?: string | null;
 }): boolean {
-  return isYouTubeLikeHost(site.host) && site.additionalData !== "mobile";
+  return isYouTubeLikeHost(site.host) && !site.additionalData;
+}
+
+export function isMobileYouTubeLikeSite(site: {
+  host: string;
+  additionalData?: string | null;
+}): boolean {
+  return (
+    isYouTubeLikeHost(site.host) &&
+    (site.additionalData === "mobile" || site.additionalData === "music")
+  );
 }
 
 export function isTranslationDownloadHost(host: string): boolean {

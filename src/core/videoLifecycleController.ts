@@ -7,7 +7,11 @@ import debug from "../utils/debug";
 import { containsCrossShadow } from "../utils/dom";
 import type { VideoData } from "../videoHandler/shared";
 import { findConnectedContainerBySelector } from "./containerResolution";
-import { hideLifecycleOverlay, resetAndHideLifecycle } from "./lifecycleShared";
+import {
+  hideLifecycleOverlay,
+  resetAndHideLifecycle,
+  resetLifecycleTranslation,
+} from "./lifecycleShared";
 
 function isVkProbeHost(): boolean {
   return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
@@ -72,6 +76,45 @@ export class VideoLifecycleController {
     this.host = host;
   }
 
+  private isMobileYouTubeDebugHost(): boolean {
+    return /^(m|music)\.youtube\.com$/i.test(
+      String(globalThis.location.hostname || ""),
+    );
+  }
+
+  private logMobileOverlay(message: string, details?: unknown): void {
+    if (!this.isMobileYouTubeDebugHost()) {
+      return;
+    }
+
+    console.log(
+      `[VOT][mobile-overlay][lifecycle-controller] ${message}`,
+      details ?? {},
+    );
+  }
+
+  private isGracefulMobileYouTubeSite(): boolean {
+    return (
+      this.host.site.host === "youtube" &&
+      (this.host.site.additionalData === "mobile" ||
+        this.host.site.additionalData === "music")
+    );
+  }
+
+  private getCurrentPageKey(): string {
+    return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`;
+  }
+
+  private shouldKeepOverlayAlive(expectedPageKey?: string): boolean {
+    if (!this.isGracefulMobileYouTubeSite()) {
+      return false;
+    }
+
+    return (
+      this.getCurrentPageKey() === (expectedPageKey ?? this.getCurrentPageKey())
+    );
+  }
+
   private isStale(generation: number) {
     return generation !== this.lifecycleGeneration;
   }
@@ -131,6 +174,10 @@ export class VideoLifecycleController {
   }
 
   teardown() {
+    this.logMobileOverlay("teardown controller", {
+      pageKey: this.getCurrentPageKey(),
+      videoId: this.host.videoData?.videoId,
+    });
     this.clearDeferredAutoStartup();
     this.setCanPlayRequested = false;
     this.invalidateActiveSession("teardown");
@@ -300,6 +347,7 @@ export class VideoLifecycleController {
 
   private async runSetCanPlayOnce() {
     const sourceKey = this.getCurrentSourceKey();
+    const pageKey = this.getCurrentPageKey();
     if (
       this.host.videoData?.videoId &&
       sourceKey === this.lastSetCanPlaySourceKey
@@ -323,11 +371,19 @@ export class VideoLifecycleController {
         err,
       );
       this.host.videoData = undefined;
-      if (this.hasResolvableMediaSource()) {
+      if (
+        this.hasResolvableMediaSource() ||
+        this.shouldKeepOverlayAlive(pageKey)
+      ) {
         debug.log(
           `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
           { sourceKey },
         );
+        this.logMobileOverlay("keep overlay after getVideoData failure", {
+          sourceKey,
+          pageKey,
+          hasResolvableMediaSource: this.hasResolvableMediaSource(),
+        });
         this.showOverlayButton(this.host.uiManager.votOverlayView);
       } else {
         hideLifecycleOverlay(this.host.uiManager.votOverlayView, {
@@ -415,6 +471,7 @@ export class VideoLifecycleController {
       typeof expectedSourceKey === "string" && expectedSourceKey.length > 0
         ? expectedSourceKey
         : this.getCurrentSourceKey();
+    const pageKey = this.getCurrentPageKey();
 
     if (this.shouldAbortHandleSrcChanged(sessionId, "before start")) {
       return;
@@ -427,14 +484,32 @@ export class VideoLifecycleController {
     this.host.firstPlay = true;
 
     const overlayView = this.host.uiManager.votOverlayView;
-    resetAndHideLifecycle(this.host, overlayView, { requireVideoData: true });
+    if (this.shouldKeepOverlayAlive(pageKey)) {
+      this.logMobileOverlay("reset lifecycle without hiding overlay", {
+        sourceKey,
+        pageKey,
+        videoId: this.host.videoData?.videoId,
+      });
+      resetLifecycleTranslation(this.host, { requireVideoData: true });
+      overlayView.votMenu.hidden = true;
+    } else {
+      resetAndHideLifecycle(this.host, overlayView, { requireVideoData: true });
+    }
 
     const noSrc =
       !this.host.video.src &&
       !this.host.video.currentSrc &&
       !this.host.video.srcObject;
-    if (noSrc) {
+    if (noSrc && !this.shouldKeepOverlayAlive(pageKey)) {
       hideLifecycleOverlay(overlayView, { hideMenu: true });
+    } else if (noSrc) {
+      this.logMobileOverlay(
+        "keep overlay with empty currentSrc during src change",
+        {
+          sourceKey,
+          pageKey,
+        },
+      );
     }
 
     const nextContainer = this.resolveContainer();
@@ -454,11 +529,19 @@ export class VideoLifecycleController {
 
     if (!this.host.videoData?.videoId) {
       debug.log(`[VideoLifecycle][session:${sessionId}] No videoId resolved`);
-      if (this.hasResolvableMediaSource()) {
+      if (
+        this.hasResolvableMediaSource() ||
+        this.shouldKeepOverlayAlive(pageKey)
+      ) {
         debug.log(
           `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
           { sourceKey },
         );
+        this.logMobileOverlay("keep overlay without resolved videoId", {
+          sourceKey,
+          pageKey,
+          hasResolvableMediaSource: this.hasResolvableMediaSource(),
+        });
         this.showOverlayButton(overlayView);
       } else {
         hideLifecycleOverlay(overlayView, { hideMenu: true });

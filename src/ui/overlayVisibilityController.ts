@@ -7,6 +7,7 @@ export interface OverlayVisibilityDependencies {
   getOverlayView(): OverlayView | null | undefined;
   getAutoHideDelay(): number;
   isInteractiveNode(node: unknown): boolean;
+  shouldAutoHide?(): boolean;
   nowMs?: () => number;
 }
 
@@ -58,6 +59,11 @@ export class OverlayVisibilityController {
    */
   queueAutoHide() {
     if (!this.show()) {
+      return;
+    }
+
+    if (!this.shouldAutoHide()) {
+      this.cancel();
       return;
     }
 
@@ -150,6 +156,12 @@ export class OverlayVisibilityController {
   }
 
   private onCheckerTick() {
+    if (!this.shouldAutoHide()) {
+      this.cancel();
+      this.show();
+      return;
+    }
+
     if (!this.hideArmed || this.hideDeadlineMs <= 0) return;
 
     const now = this.nowMs();
@@ -194,5 +206,9 @@ export class OverlayVisibilityController {
       typeof performance.now === "function"
       ? performance.now()
       : Date.now();
+  }
+
+  private shouldAutoHide(): boolean {
+    return this.deps.shouldAutoHide ? this.deps.shouldAutoHide() : true;
   }
 }

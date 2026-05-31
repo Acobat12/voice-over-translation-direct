@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep \"\\\\.d\\\\.ts$\")",
+      "Bash(sed 's/\\\\.d\\\\.ts//')",
+      "Bash(node -e \"const sites = require\\('./node_modules/@vot.js/ext/dist/data/sites.js'\\); const s = sites.default || sites; s.forEach\\(x => console.log\\(x.host, '|', JSON.stringify\\(x.selector\\).slice\\(0,80\\), '|', x.rawResult||false\\)\\)\")",
+      "Bash(node *)",
+      "Bash(npm run *)",
+      "Bash(grep -o \"okru.\\\\{0,300\\\\}\" node_modules/@vot.js/ext/dist/index.js)",
+      "Bash(npx tsc *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('scripts:', json.dumps\\(d.get\\('scripts',{}\\), indent=2\\)\\); print\\('packageManager:', d.get\\('packageManager',''\\)\\)\")",
+      "Bash(bun patch *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d['version']\\)\")"
+    ]
+  }
+}

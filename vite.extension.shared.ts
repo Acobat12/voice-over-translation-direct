@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { build as viteBuild } from "vite";
 import { COMPRESSION_LEVEL, zip } from "zip-a-folder";
+import { getBrowserSafeAliases } from "./vite.browser.alias";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -232,6 +233,9 @@ async function buildEntry({
     define,
     css: {
       transformer: "lightningcss",
+    },
+    resolve: {
+      alias: getBrowserSafeAliases(rootDir),
     },
     build: {
       target: "es2020",
@@ -827,6 +831,37 @@ async function writeExtensionLoaders(targetDir: string): Promise<void> {
   );
 }
 
+async function findReservedOutputNames(
+  dir: string,
+  relativeDir = "",
+): Promise<string[]> {
+  const reservedEntries: string[] = [];
+  const entries = await fs.readdir(path.join(dir, relativeDir), {
+    withFileTypes: true,
+  });
+
+  for (const entry of entries) {
+    const relativePath = relativeDir
+      ? path.join(relativeDir, entry.name)
+      : entry.name;
+
+    if (
+      /^__/.test(entry.name) ||
+      (/^_/.test(entry.name) && entry.name !== "_locales")
+    ) {
+      reservedEntries.push(relativePath.replaceAll("\\", "/"));
+    }
+
+    if (entry.isDirectory()) {
+      reservedEntries.push(
+        ...(await findReservedOutputNames(dir, relativePath)),
+      );
+    }
+  }
+
+  return reservedEntries;
+}
+
 function assertOriginFallbackPathIsWildcard(
   browserName: string,
   patterns: string[] = [],
@@ -952,6 +987,13 @@ async function verifyOne(browserName: "chrome" | "firefox"): Promise<void> {
     }
   }
 
+  const reservedNameViolations = await findReservedOutputNames(dir);
+  if (reservedNameViolations.length) {
+    throw new Error(
+      `${browserName}: found reserved output names in extension bundle: ${reservedNameViolations.join(", ")}`,
+    );
+  }
+
   const bridge = await fs.readFile(path.join(dir, "bridge.js"), "utf8");
   const prelude = await fs.readFile(path.join(dir, "prelude.js"), "utf8");
   const preludeModule = await fs.readFile(
@@ -969,6 +1011,8 @@ async function verifyOne(browserName: "chrome" | "firefox"): Promise<void> {
   const forbiddenSnippets = [
     "cdnjs.cloudflare.com/ajax/libs/hls.js",
     "@require",
+    "__vite-browser-external-",
+    "node:crypto",
   ];
   for (const snippet of forbiddenSnippets) {
     if (combined.includes(snippet)) {

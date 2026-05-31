@@ -98,10 +98,21 @@ export function startLightweightVideoProbe(
     Math.trunc(options.pollTimeoutMs ?? 4000),
   );
   const pollDeadlineAt = Date.now() + pollTimeoutMs;
+  const shouldLogMobileOverlay = /^(m|music)\.youtube\.com$/i.test(
+    String(globalThis.location.hostname || ""),
+  );
 
   const cleanup = () => {
     if (!active) {
       return;
+    }
+    if (shouldLogMobileOverlay) {
+      console.log(
+        "[VOT][mobile-overlay][probe] cleanup lightweight video probe",
+        {
+          strategy,
+        },
+      );
     }
     active = false;
     observer?.disconnect();
@@ -120,6 +131,16 @@ export function startLightweightVideoProbe(
   const activate = (reason: string, video?: HTMLVideoElement) => {
     if (!active) {
       return;
+    }
+    if (shouldLogMobileOverlay) {
+      console.log(
+        "[VOT][mobile-overlay][probe] activate lightweight video probe",
+        {
+          reason,
+          hasVideo: Boolean(video),
+          src: video?.currentSrc || video?.src || "",
+        },
+      );
     }
     cleanup();
     options.onVideoDetected(reason, video);

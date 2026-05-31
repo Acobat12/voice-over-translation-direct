@@ -12,7 +12,12 @@ export function isCustomPlaybackTarget(
   siteHost?: string,
   videoHost?: string,
 ): boolean {
-  return siteHost === "custom" || videoHost === "custom";
+  return (
+    siteHost === "custom" ||
+    videoHost === "custom" ||
+    siteHost === "okru" ||
+    videoHost === "okru"
+  );
 }
 
 export function shouldUsePlainAudioPlayback(

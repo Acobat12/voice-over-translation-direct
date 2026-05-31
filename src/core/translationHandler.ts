@@ -203,6 +203,124 @@ export class VOTTranslationHandler {
     return /\.m3u8(?:[?#]|$)/i.test(String(url || ""));
   }
 
+  private isCustomLinkUrl(url: string): boolean {
+    if (!url) {
+      return false;
+    }
+
+    try {
+      return this.videoHandler.votClient.isCustomLink(url);
+    } catch {
+      return (
+        /\.(m3u8|m4(?:a|v)|mpd)(?:[?#]|$)/i.test(url) ||
+        /^https:\/\/cdn\.qstv\.on\.epicgames\.com/i.test(url)
+      );
+    }
+  }
+
+  private shouldUseCustomLinkWorkflow(videoData?: VideoData): boolean {
+    if (!videoData) {
+      return false;
+    }
+
+    if (
+      this.videoHandler.site.host !== "custom" &&
+      videoData.host !== "custom"
+    ) {
+      return false;
+    }
+
+    return this.isCustomLinkUrl(this.getCurrentMediaRequestUrl(videoData));
+  }
+
+  private getM3u8ProxyEndpointUrl(): URL | null {
+    const rawHost = String(this.videoHandler.data?.m3u8ProxyHost || "").trim();
+
+    if (!rawHost) {
+      return null;
+    }
+
+    const withScheme = /^[a-z][a-z\d+.-]*:/i.test(rawHost)
+      ? rawHost
+      : `https://${rawHost}`;
+
+    try {
+      const parsed = new URL(withScheme);
+      const normalizedPath =
+        parsed.pathname && parsed.pathname !== "/"
+          ? parsed.pathname.replace(/\/+$/g, "")
+          : "/v1/proxy/m3u8";
+
+      return new URL(`${parsed.origin}${normalizedPath}`);
+    } catch (error) {
+      console.log("[VOT][upload] invalid m3u8 proxy host", {
+        rawHost,
+        error,
+      });
+      return null;
+    }
+  }
+
+  private buildProxiedHlsUrl(rawUrl: string): string {
+    const normalizedTargetUrl = this.normalizeUrlForRequest(rawUrl);
+    const proxyEndpoint = this.getM3u8ProxyEndpointUrl();
+
+    if (!proxyEndpoint) {
+      return normalizedTargetUrl;
+    }
+
+    try {
+      const target = new URL(normalizedTargetUrl, globalThis.location.href);
+      const proxyUrl = new URL(proxyEndpoint.toString());
+      proxyUrl.searchParams.set("format", "base64");
+      proxyUrl.searchParams.set("force", "true");
+      proxyUrl.searchParams.set("all", "1");
+      proxyUrl.searchParams.set("url", btoa(target.toString()));
+
+      if (target.origin && target.origin !== "null") {
+        proxyUrl.searchParams.set("origin", target.origin);
+        proxyUrl.searchParams.set("referer", target.origin);
+      }
+
+      // Keep the `.m3u8` marker in the URL so `@vot.js/core` routes it through
+      // the VOT custom-link flow instead of the regular Yandex site flow.
+      proxyUrl.hash = "playlist.m3u8";
+      return proxyUrl.toString();
+    } catch (error) {
+      console.log("[VOT][upload] failed to build proxied hls url", {
+        rawUrl,
+        error,
+      });
+      return normalizedTargetUrl;
+    }
+  }
+
+  private buildCustomLinkWorkflowVideoData(videoData: VideoData): VideoData {
+    const currentUrl = this.getCurrentMediaRequestUrl(videoData);
+    const requestUrl = this.isHlsManifestUrl(currentUrl)
+      ? this.buildProxiedHlsUrl(currentUrl)
+      : currentUrl;
+    const videoId =
+      typeof videoData.videoId === "string" &&
+      videoData.videoId.trim().length > 0
+        ? videoData.videoId
+        : currentUrl;
+
+    console.log("[VOT][upload] custom-link workflow input", {
+      originalUrl: currentUrl,
+      requestUrl,
+      host: videoData.host,
+      proxied: requestUrl !== currentUrl,
+      proxyHost: this.videoHandler.data?.m3u8ProxyHost,
+    });
+
+    return {
+      ...videoData,
+      url: requestUrl,
+      videoId,
+    };
+  }
+
   private isDirectMediaUrlCandidate(url: string): boolean {
     if (!url) {
       return false;
@@ -284,9 +402,16 @@ export class VOTTranslationHandler {
     const useLocalFileWorkflow =
       isLocalFileCompatibleCustom || this.shouldUseLocalFileWorkflow(videoData);
 
+    const isVkCdnContext =
+      this.videoHandler.site.host === "vk" ||
+      this.videoHandler.site.host === "okru" ||
+      /^player\.cdnvideohub\.com$/i.test(globalThis.location.hostname) ||
+      /(?:^|\.)okcdn\.ru$/i.test(globalThis.location.hostname) ||
+      /(?:^|\.)okcdn\.ru/i.test(url);
+
     const nextStrategy = useLocalFileWorkflow
       ? "localFile"
-      : this.videoHandler.site.host === "vk"
+      : isVkCdnContext
         ? VK_AUDIO_STRATEGY
         : this.videoHandler.site.host === "yandexdisk"
           ? "yandexDisk"
@@ -1340,15 +1465,32 @@ export class VOTTranslationHandler {
     let normalizedVideoData: VideoData;
     this.updateAudioDownloaderStrategy(videoData);
 
+    // ok.ru / m.ok.ru: Yandex can't access okcdn.ru videos from its servers
+    // (IP-signed URLs). Force the upload workflow by treating it as a custom
+    // host so Yandex returns AUDIO_REQUESTED and we upload via vkAudio strategy.
+    if (
+      (this.videoHandler.site.host === "okru" || videoData.host === "okru") &&
+      videoData.host !== "custom"
+    ) {
+      videoData = {
+        ...videoData,
+        host: "custom" as VideoData["host"],
+      };
+    }
+
     const currentUrl = this.getCurrentMediaRequestUrl(videoData);
     const canUseLocalFileWorkflow =
       !this.isHlsManifestUrl(currentUrl) &&
       (this.videoHandler.site.host === "custom" ||
         videoData.host === "custom" ||
         this.shouldUseLocalFileWorkflow(videoData));
+    const canUseCustomLinkWorkflow =
+      !canUseLocalFileWorkflow && this.shouldUseCustomLinkWorkflow(videoData);
 
     if (canUseLocalFileWorkflow) {
       normalizedVideoData = this.buildLocalFileWorkflowVideoData(videoData);
+    } else if (canUseCustomLinkWorkflow) {
+      normalizedVideoData = this.buildCustomLinkWorkflowVideoData(videoData);
     } else {
       const cachedVideoData =
         this.activeYandexDiskResolvedVideoData &&
@@ -1613,6 +1755,14 @@ export class VOTTranslationHandler {
               ...videoData,
               url: normalizedUrl,
             };
+    }
+
+    // Keep the custom-link rewrite scoped to actual custom-host workflows.
+    // Some normal sites (for example bilibili) expose direct media URLs, and
+    // forcing them through the custom-link path breaks otherwise valid requests.
+    if (this.shouldUseCustomLinkWorkflow(requestVideoData)) {
+      requestVideoData =
+        this.buildCustomLinkWorkflowVideoData(requestVideoData);
     }
 
     this.activeTranslationUrl =

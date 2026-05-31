@@ -15,6 +15,20 @@ export type LifecycleOverlayViewLike = {
   };
 };
 
+function isMobileYouTubeDebugHost(): boolean {
+  return /^(m|music)\.youtube\.com$/i.test(
+    String(globalThis.location.hostname || ""),
+  );
+}
+
+function logMobileOverlayLifecycle(message: string, details?: unknown): void {
+  if (!isMobileYouTubeDebugHost()) {
+    return;
+  }
+
+  console.log(`[VOT][mobile-overlay][lifecycle] ${message}`, details ?? {});
+}
+
 export function resetLifecycleTranslation(
   host: LifecycleTranslationResetHost,
   options: {
@@ -25,8 +39,18 @@ export function resetLifecycleTranslation(
   const { requireVideoData = false, clearVideoData = false } = options;
 
   if (requireVideoData && !host.videoData) {
+    logMobileOverlayLifecycle("skip translation reset: no videoData", {
+      requireVideoData,
+      clearVideoData,
+    });
     return;
   }
+
+  logMobileOverlayLifecycle("reset translation state", {
+    requireVideoData,
+    clearVideoData,
+    hadVideoData: Boolean(host.videoData),
+  });
 
   if (clearVideoData) {
     host.videoData = undefined;
@@ -43,6 +67,10 @@ export function hideLifecycleOverlay(
   } = {},
 ): void {
   const { hideMenu = false } = options;
+
+  logMobileOverlayLifecycle("hide overlay", {
+    hideMenu,
+  });
 
   if (overlayView?.votButton?.container) {
     overlayView.votButton.container.hidden = true;
@@ -63,6 +91,11 @@ export function resetAndHideLifecycle(
   } = {},
 ): void {
   const { requireVideoData, clearVideoData, hideMenu } = options;
+  logMobileOverlayLifecycle("reset and hide lifecycle", {
+    requireVideoData,
+    clearVideoData,
+    hideMenu,
+  });
   resetLifecycleTranslation(host, {
     requireVideoData,
     clearVideoData,

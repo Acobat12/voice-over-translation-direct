@@ -8,6 +8,7 @@ import {
   proxyOnlyCountries,
   proxyWorkerHost,
 } from "../../config/config";
+import { isMobileYouTubeLikeSite } from "../../core/hostPolicies";
 import { shouldUsePopupOverlayWindow } from "../../core/popupOverlayPolicy";
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
@@ -155,6 +156,17 @@ export async function init(this: VideoHandler) {
   // Initialize UI elements and events.
   this.uiManager.initUI();
   this.uiManager.initUIEvents();
+
+  if (isMobileYouTubeLikeSite(this.site)) {
+    // Mobile/music YouTube does not have a reliable hover lifecycle, so keep
+    // the widget discoverable immediately after UI bootstrap, then arm the
+    // normal idle auto-hide timer.
+    this.uiManager.votOverlayView?.updateButtonOpacity(1);
+    if (this.uiManager.votOverlayView?.votButton?.container) {
+      this.uiManager.votOverlayView.votButton.container.hidden = false;
+    }
+    this.overlayVisibility?.queueAutoHide();
+  }
 
   if (shouldUsePopupOverlayWindow()) {
     const popupBridge =

@@ -9,6 +9,7 @@
 
   overflow: hidden;
   position: absolute;
+  pointer-events: auto;
   left: 50%;
   top: calc(5rem + 48px);
   user-select: none;

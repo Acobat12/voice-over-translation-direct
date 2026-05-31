@@ -53,5 +53,10 @@
     "bowser": "^2.14.1",
     "chaimu": "^1.0.6",
     "lit-html": "^3.3.2"
+  },
+  "bun": {
+    "patchedDependencies": {
+      "chaimu@1.0.6": "patches/chaimu@1.0.6.patch"
+    }
   }
 }

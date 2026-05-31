@@ -30,6 +30,8 @@ function pickBestResourceUrl(names: string[]): string | null {
 
   const reject = (url: string) => {
     const lower = url.toLowerCase();
+    const isManifest =
+      /\.m3u8([?#]|$)/i.test(lower) || /\.mpd([?#]|$)/i.test(lower);
     return (
       lower.includes("thumbnails.") ||
       lower.includes("/speech/") ||
@@ -39,7 +41,7 @@ function pickBestResourceUrl(names: string[]): string | null {
       lower.endsWith(".webp") ||
       lower.includes("okcdn.ru/?") ||
       /[?&]bytes=\d+-\d+/i.test(lower) ||
-      /[?&]type=\d+/i.test(lower)
+      (!isManifest && /[?&]type=\d+/i.test(lower))
     );
   };
 
@@ -57,7 +59,9 @@ function pickBestResourceUrl(names: string[]): string | null {
 function pickBestDirectSource(direct: any): string {
   const candidates = [
     String(direct?.hlsUrl || "").trim(),
+    String(direct?.sources?.hlsUrl || "").trim(),
     String(direct?.dashUrl || "").trim(),
+    String(direct?.sources?.dashUrl || "").trim(),
     String(direct?.mpegLowUrl || "").trim(),
     String(direct?.url || "").trim(),
   ].filter(Boolean);
@@ -73,6 +77,8 @@ function pickBestDirectSource(direct: any): string {
 
 function isBadDirectVideoUrl(url: string): boolean {
   const lower = String(url || "").toLowerCase();
+  const isManifest =
+    /\.m3u8([?#]|$)/i.test(lower) || /\.mpd([?#]|$)/i.test(lower);
 
   return (
     !lower ||
@@ -85,7 +91,7 @@ function isBadDirectVideoUrl(url: string): boolean {
     lower.endsWith(".webp") ||
     lower.includes("okcdn.ru/?") ||
     /[?&]bytes=\d+-\d+/i.test(lower) ||
-    /[?&]type=\d+/i.test(lower)
+    (!isManifest && /[?&]type=\d+/i.test(lower))
   );
 }
 
@@ -284,7 +290,12 @@ export async function resolveCustomSiteVideo(
       };
     }
 
-    if (/^https?:\/\/([^/]+\.)?kodikplayer\.com\//i.test(referrer)) {
+    // Only use referrer if it's a known video platform that the API can process
+    if (
+      /^https?:\/\/([^/]+\.)?kodik(player\.com|\.info|\.biz|\.cc|\.fun|\.pw|\.io|\.online|\.me)\//i.test(
+        referrer,
+      )
+    ) {
       console.log("[VOT][custom][cdnvideohub] using kodik referrer", referrer);
       return {
         url: referrer,
@@ -293,21 +304,65 @@ export async function resolveCustomSiteVideo(
       };
     }
 
-    if (referrer) {
-      console.log("[VOT][custom][cdnvideohub] fallback referrer", referrer);
+    // Return null so sniffedManifestUrl from videoManager can be used instead
+    console.log(
+      "[VOT][custom][cdnvideohub] no usable url found, returning null for sniffed fallback",
+    );
+    return null;
+  }
+
+  // wikianimex.ru embeds player.cdnvideohub.com — resolve from the main page context
+  if (/(^|\.)wikianimex\.ru$/i.test(hostname)) {
+    const video = document.querySelector("video") as HTMLVideoElement | null;
+    const currentSrc = String(video?.currentSrc || video?.src || "").trim();
+
+    if (!isBadDirectVideoUrl(currentSrc)) {
+      console.log("[VOT][custom][wikianimex] using direct src", currentSrc);
       return {
-        url: referrer,
-        videoId: referrer,
+        url: currentSrc,
+        videoId: toStableVideoId(currentSrc, href),
         title: document.title,
       };
     }
 
-    console.log("[VOT][custom][cdnvideohub] fallback page url", href);
-    return {
-      url: href,
-      videoId: href,
-      title: document.title,
-    };
+    const entries = performance.getEntriesByType("resource");
+    const names = entries
+      .map((e) => (typeof e.name === "string" ? e.name : ""))
+      .filter(Boolean);
+
+    const best = pickBestResourceUrl(names);
+    if (best) {
+      console.log("[VOT][custom][wikianimex] using performance resource", best);
+      return {
+        url: best,
+        videoId: toStableVideoId(best, href),
+        title: document.title,
+      };
+    }
+
+    // Look for a known player iframe src to use as the video source
+    const iframes = Array.from(document.querySelectorAll("iframe"));
+    for (const iframe of iframes) {
+      const src = String(iframe.src || iframe.getAttribute("src") || "").trim();
+      if (!src || src === "about:blank" || src.startsWith("javascript:")) {
+        continue;
+      }
+      // Prefer kodik iframes — supported natively by the API
+      if (
+        /kodik(player\.com|\.info|\.biz|\.cc|\.fun|\.pw|\.io|\.online|\.me)/i.test(
+          src,
+        )
+      ) {
+        console.log("[VOT][custom][wikianimex] using kodik iframe src", src);
+        return { url: src, videoId: src, title: document.title };
+      }
+    }
+
+    // Return null — let sniffedManifestUrl from videoManager take over
+    console.log(
+      "[VOT][custom][wikianimex] no usable url, deferring to sniffedManifestUrl",
+    );
+    return null;
   }
 
   // Generic fallback for any custom site

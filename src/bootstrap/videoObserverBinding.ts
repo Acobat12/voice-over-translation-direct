@@ -33,11 +33,44 @@ type SiteContainerMatch = {
 
 const boundObservers = new WeakSet<VideoObserver>();
 const loggedNativeSubtitleSignatures = new WeakMap<HTMLVideoElement, string>();
+const MOBILE_YOUTUBE_RELEASE_GRACE_MS = 2200;
+
+type PendingGraceRelease = {
+  pageKey: string;
+  reason: string;
+  site: ServiceConf;
+  timer: ReturnType<typeof setTimeout>;
+};
 
 function isVkProbeHost(): boolean {
   return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
     String(globalThis.location.hostname || ""),
   );
+}
+
+function isMobileYouTubeDebugHost(): boolean {
+  return /^(m|music)\.youtube\.com$/i.test(
+    String(globalThis.location.hostname || ""),
+  );
+}
+
+function logMobileOverlay(message: string, details?: unknown): void {
+  if (!isMobileYouTubeDebugHost()) {
+    return;
+  }
+
+  console.log(`[VOT][mobile-overlay][observer] ${message}`, details ?? {});
+}
+
+function isGracefulMobileYouTubeSite(site: ServiceConf): boolean {
+  return (
+    String(site.host || "") === "youtube" &&
+    (site.additionalData === "mobile" || site.additionalData === "music")
+  );
+}
+
+function getMobileYouTubePageKey(): string {
+  return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`;
 }
 
 function isRenderableVideo(video: HTMLVideoElement): boolean {
@@ -186,7 +219,9 @@ export function bindObserverListeners(
   const initializingVideos = new WeakSet<HTMLVideoElement>();
   const containerOwners = new WeakMap<HTMLElement, HTMLVideoElement>();
   const videoContainers = new WeakMap<HTMLVideoElement, HTMLElement>();
+  const videoSites = new WeakMap<HTMLVideoElement, ServiceConf>();
   const pendingVideoByContainer = new WeakMap<HTMLElement, HTMLVideoElement>();
+  const pendingGraceReleases = new Map<HTMLVideoElement, PendingGraceRelease>();
   let youtubeObserverStoppedAfterPrimaryAttach = false;
 
   const clearContainerOwner = (
@@ -197,6 +232,7 @@ export function bindObserverListeners(
       containerOwners.delete(container);
     }
     videoContainers.delete(video);
+    videoSites.delete(video);
     return container ?? undefined;
   };
 
@@ -207,15 +243,72 @@ export function bindObserverListeners(
     pendingVideoByContainer.delete(container);
   };
 
+  const findBestMatchingVideo = (
+    site: ServiceConf,
+  ): HTMLVideoElement | null => {
+    let bestVideo: HTMLVideoElement | null = null;
+    let bestScore = -1;
+
+    for (const candidate of document.querySelectorAll("video")) {
+      if (!(candidate instanceof HTMLVideoElement) || !candidate.isConnected) {
+        continue;
+      }
+
+      if (!findContainer(site, candidate)) {
+        continue;
+      }
+
+      let score = getVideoArea(candidate);
+      if (hasResolvableMediaSource(candidate)) {
+        score += 10_000_000;
+      }
+      if (isRenderableVideo(candidate)) {
+        score += 1_000_000;
+      }
+
+      if (score > bestScore) {
+        bestVideo = candidate;
+        bestScore = score;
+      }
+    }
+
+    return bestVideo;
+  };
+
+  const cancelPendingGraceRelease = (
+    video: HTMLVideoElement,
+    reason: string,
+  ): PendingGraceRelease | undefined => {
+    const state = pendingGraceReleases.get(video);
+    if (!state) {
+      return undefined;
+    }
+
+    clearTimeout(state.timer);
+    pendingGraceReleases.delete(video);
+    logMobileOverlay("cancel delayed cleanup", {
+      reason,
+      scheduledReason: state.reason,
+      pageKey: state.pageKey,
+    });
+    return state;
+  };
+
   const releaseVideoHandler = async (
     video: HTMLVideoElement,
     reason: string,
   ): Promise<void> => {
+    cancelPendingGraceRelease(video, `release:${reason}`);
     const videoHandler = videosWrappers.get(video);
     if (!videoHandler) {
       return;
     }
 
+    logMobileOverlay("release video handler", {
+      reason,
+      videoConnected: video.isConnected,
+      src: video.currentSrc || video.src || "",
+    });
     try {
       await videoHandler.release();
     } catch (error) {
@@ -268,6 +361,102 @@ export function bindObserverListeners(
     videoObserver.disable();
   };
 
+  const scheduleGracefulRelease = async (
+    video: HTMLVideoElement,
+    site: ServiceConf,
+    reason: string,
+    container?: HTMLElement,
+  ): Promise<void> => {
+    cancelPendingGraceRelease(video, `reschedule:${reason}`);
+
+    const pageKey = getMobileYouTubePageKey();
+    logMobileOverlay("schedule delayed cleanup", {
+      reason,
+      pageKey,
+      delayMs: MOBILE_YOUTUBE_RELEASE_GRACE_MS,
+      videoConnected: video.isConnected,
+      hasSource: hasResolvableMediaSource(video),
+    });
+
+    const timer = globalThis.setTimeout(async () => {
+      const currentState = pendingGraceReleases.get(video);
+      if (!currentState || currentState.timer !== timer) {
+        return;
+      }
+
+      pendingGraceReleases.delete(video);
+
+      if (video.isConnected) {
+        logMobileOverlay("skip delayed cleanup: video reconnected", {
+          reason,
+          pageKey,
+        });
+        const match = getMatchedSiteAndContainer(video);
+        if (match) {
+          videoContainers.set(video, match.container);
+          containerOwners.set(match.container, video);
+        }
+        try {
+          await videosWrappers.get(video)?.setCanPlay();
+        } catch (error) {
+          console.error(
+            "[VOT] Failed to restore reconnected mobile YouTube video",
+            error,
+          );
+        }
+        return;
+      }
+
+      const replacementVideo = findBestMatchingVideo(site);
+      if (replacementVideo && replacementVideo !== video) {
+        logMobileOverlay(
+          "cleanup stale handler after replacement video found",
+          {
+            reason,
+            pageKey,
+            replacementSrc:
+              replacementVideo.currentSrc || replacementVideo.src || "",
+          },
+        );
+        await releaseVideoHandler(video, `${reason}:replacement-video-found`);
+        await promotePendingVideo(container);
+        return;
+      }
+
+      const currentPageKey = getMobileYouTubePageKey();
+      if (currentPageKey === pageKey) {
+        logMobileOverlay("keep overlay alive on same page during repaint", {
+          reason,
+          pageKey,
+          currentPageKey,
+          mode: site.additionalData,
+        });
+        await scheduleGracefulRelease(
+          video,
+          site,
+          `${reason}:same-page-retry`,
+          container,
+        );
+        return;
+      }
+
+      logMobileOverlay("delayed cleanup expired after page change", {
+        reason,
+        pageKey,
+        currentPageKey,
+      });
+      await releaseVideoHandler(video, `${reason}:page-changed`);
+      await promotePendingVideo(container);
+    }, MOBILE_YOUTUBE_RELEASE_GRACE_MS);
+
+    pendingGraceReleases.set(video, {
+      pageKey,
+      reason,
+      site,
+      timer,
+    });
+  };
+
   const promotePendingVideo = async (
     container?: HTMLElement,
   ): Promise<void> => {
@@ -291,7 +480,30 @@ export function bindObserverListeners(
   };
 
   const handleVideoAdded = async (video: HTMLVideoElement) => {
-    if (videosWrappers.has(video) || initializingVideos.has(video)) return;
+    const canceledRelease = cancelPendingGraceRelease(
+      video,
+      "video-added-again",
+    );
+    if (videosWrappers.has(video)) {
+      const match = getMatchedSiteAndContainer(video);
+      if (match) {
+        videoContainers.set(video, match.container);
+        videoSites.set(video, match.site);
+        containerOwners.set(match.container, video);
+      }
+      if (canceledRelease) {
+        try {
+          await videosWrappers.get(video)?.setCanPlay();
+        } catch (error) {
+          console.error(
+            "[VOT] Failed to refresh reattached mobile YouTube handler",
+            error,
+          );
+        }
+      }
+      return;
+    }
+    if (initializingVideos.has(video)) return;
     initializingVideos.add(video);
 
     try {
@@ -367,6 +579,7 @@ export function bindObserverListeners(
       // Register before async init to prevent duplicate in-flight handlers.
       videosWrappers.set(video, videoHandler);
       videoContainers.set(video, container);
+      videoSites.set(video, site);
       containerOwners.set(container, video);
       videoHandler.onPrimaryAttachReady = () => {
         if (videosWrappers.get(video) !== videoHandler) {
@@ -406,12 +619,37 @@ export function bindObserverListeners(
   videoObserver.onVideoAdded.addListener(handleVideoAdded);
 
   videoObserver.onVideoRemoved.addListener(async (video) => {
+    const site = videoSites.get(video);
     const container = clearContainerOwner(video);
-    await releaseVideoHandler(video, "video removed");
+    const pendingReplacement = container
+      ? pendingVideoByContainer.get(container)
+      : undefined;
+    const shouldDelayCleanup =
+      site &&
+      isGracefulMobileYouTubeSite(site) &&
+      (!pendingReplacement || pendingReplacement === video);
+
+    logMobileOverlay("video removed", {
+      shouldDelayCleanup,
+      hasContainer: Boolean(container),
+      pendingReplacement: Boolean(
+        pendingReplacement && pendingReplacement !== video,
+      ),
+      videoConnected: video.isConnected,
+      src: video.currentSrc || video.src || "",
+    });
+
+    if (shouldDelayCleanup && site) {
+      await scheduleGracefulRelease(video, site, "video-removed", container);
+    } else {
+      await releaseVideoHandler(video, "video removed");
+    }
     initializingVideos.delete(video);
     if (container && pendingVideoByContainer.get(container) === video) {
       clearPendingVideo(container);
     }
-    await promotePendingVideo(container);
+    if (!shouldDelayCleanup) {
+      await promotePendingVideo(container);
+    }
   });
 }

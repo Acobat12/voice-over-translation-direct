@@ -47,6 +47,12 @@ type AttachShadowHookState = {
 
 const ATTACH_SHADOW_HOOK_KEY = Symbol.for("vot.attachShadowHook");
 
+function shouldLogMobileOverlay(): boolean {
+  return /^(m|music)\.youtube\.com$/i.test(
+    String(globalThis.location?.hostname || ""),
+  );
+}
+
 const DEFAULT_VIDEO_OBSERVER_POLICY: VideoObserverPolicy = {
   preferProbeBootstrap: false,
   startDomObservationOnEnable: true,
@@ -326,6 +332,11 @@ export class VideoObserver {
   }
 
   private stopObservingDom(): void {
+    if (shouldLogMobileOverlay()) {
+      console.log(
+        "[VOT][mobile-overlay][video-observer] disconnect DOM observer",
+      );
+    }
     this.observer.disconnect();
     this.observedRoots = new WeakSet();
 
@@ -892,6 +903,9 @@ export class VideoObserver {
   disable(): void {
     if (!this.enabled) return;
 
+    if (shouldLogMobileOverlay()) {
+      console.log("[VOT][mobile-overlay][video-observer] disable observer");
+    }
     this.enabled = false;
 
     globalThis.removeEventListener("pageshow", this.onPageShow);

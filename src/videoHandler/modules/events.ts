@@ -1,17 +1,24 @@
-import YoutubeHelper from "@vot.js/ext/helpers/youtube";
 import { getVideoID } from "@vot.js/ext/utils/videoData";
 import { availableLangs } from "@vot.js/shared/consts";
 import type { RequestLang } from "@vot.js/shared/types/data";
 import { defaultAutoHideDelay } from "../../config/config";
 import {
   isDesktopYouTubeLikeSite,
+  isMobileYouTubeLikeSite,
   isMuteSyncDisabledHost,
   isYouTubeLikeHost,
 } from "../../core/hostPolicies";
-import { resetAndHideLifecycle } from "../../core/lifecycleShared";
+import {
+  resetAndHideLifecycle,
+  resetLifecycleTranslation,
+} from "../../core/lifecycleShared";
 import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
+import YoutubeHelper, {
+  isMobileYouTubeAdditionalData,
+} from "../../core/youtubeHelper";
 import type { VideoHandler } from "../../index";
 import debug from "../../utils/debug";
+import { containsCrossShadow } from "../../utils/dom";
 import { GM_fetch } from "../../utils/gm";
 import { getPlatformEventConfig } from "../../utils/platformEvents";
 import { clampPercentInt } from "../../utils/volume";
@@ -35,6 +42,9 @@ type ExtraEventsContext = {
   add: ScopedAddListener;
   addMany: ScopedAddListeners;
 };
+
+const MOBILE_YOUTUBE_LIFECYCLE_GRACE_MS = 2200;
+const MOBILE_YOUTUBE_MIN_AUTO_HIDE_DELAY_MS = 2500;
 
 function mergeListenerSignals(
   primary: AbortSignal,
@@ -86,6 +96,120 @@ function isVkLikeSiteHost(host: string): boolean {
       String(globalThis.location?.hostname || ""),
     )
   );
+}
+
+function isMobileYouTubeDebugHost(): boolean {
+  return /^(m|music)\.youtube\.com$/i.test(
+    String(globalThis.location?.hostname || ""),
+  );
+}
+
+function logMobileOverlay(message: string, details?: unknown): void {
+  if (!isMobileYouTubeDebugHost()) {
+    return;
+  }
+
+  console.log(`[VOT][mobile-overlay][events] ${message}`, details ?? {});
+}
+
+function getMobileYouTubePageKey(): string {
+  return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`;
+}
+
+function clearMobileYouTubeLifecycleDebounce(self: VideoHandler): void {
+  if (self.mobileYouTubeLifecycleDebounceTimer === undefined) {
+    return;
+  }
+
+  clearTimeout(self.mobileYouTubeLifecycleDebounceTimer);
+  self.mobileYouTubeLifecycleDebounceTimer = undefined;
+}
+
+function closeOverlayMenu(
+  overlayView: NonNullable<VideoHandler["uiManager"]["votOverlayView"]>,
+): void {
+  if (overlayView.votMenu) {
+    overlayView.votMenu.hidden = true;
+  }
+}
+
+function scheduleMobileYouTubeLifecycleRetry(
+  self: VideoHandler,
+  overlayView: NonNullable<VideoHandler["uiManager"]["votOverlayView"]>,
+  reason: string,
+  cleanup: () => void,
+): void {
+  clearMobileYouTubeLifecycleDebounce(self);
+
+  const pageKey = getMobileYouTubePageKey();
+  logMobileOverlay("schedule lifecycle retry", {
+    reason,
+    pageKey,
+    delayMs: MOBILE_YOUTUBE_LIFECYCLE_GRACE_MS,
+  });
+
+  self.mobileYouTubeLifecycleDebounceTimer = globalThis.setTimeout(() => {
+    self.mobileYouTubeLifecycleDebounceTimer = undefined;
+
+    if (self.abortController.signal.aborted) {
+      logMobileOverlay("skip lifecycle retry: handler aborted", { reason });
+      return;
+    }
+
+    const currentPageKey = getMobileYouTubePageKey();
+    if (currentPageKey !== pageKey) {
+      logMobileOverlay("run lifecycle cleanup after page change", {
+        reason,
+        pageKey,
+        currentPageKey,
+      });
+      cleanup();
+      return;
+    }
+
+    const recoveredVideoId = YoutubeHelper.getCurrentVideoId();
+    const currentVideoId = self.videoData?.videoId;
+    const hasLiveVideoId =
+      typeof recoveredVideoId === "string" && recoveredVideoId.length > 0;
+    const hasSameVideoId =
+      hasLiveVideoId &&
+      Boolean(currentVideoId) &&
+      recoveredVideoId === currentVideoId;
+    const hasSource = Boolean(
+      self.video.currentSrc || self.video.src || self.video.srcObject,
+    );
+    const hasConnectedShell = Boolean(self.container?.isConnected);
+
+    if (hasSameVideoId || hasLiveVideoId || hasSource || hasConnectedShell) {
+      logMobileOverlay("keep overlay after lifecycle retry", {
+        reason,
+        currentVideoId,
+        recoveredVideoId,
+        hasSource,
+        hasConnectedShell,
+      });
+      closeOverlayMenu(overlayView);
+      self.refreshOverlayMount();
+      return;
+    }
+
+    if (self.site.additionalData === "music") {
+      logMobileOverlay("keep overlay for music shell without stable video", {
+        reason,
+        pageKey,
+      });
+      closeOverlayMenu(overlayView);
+      self.refreshOverlayMount();
+      scheduleMobileYouTubeLifecycleRetry(self, overlayView, reason, cleanup);
+      return;
+    }
+
+    logMobileOverlay("lifecycle retry expired; cleaning up", {
+      reason,
+      pageKey,
+    });
+    cleanup();
+  }, MOBILE_YOUTUBE_LIFECYCLE_GRACE_MS);
 }
 
 function createScopedListeners(signal: AbortSignal): {
@@ -227,6 +351,51 @@ function bindOverlayLayoutEvents(ctx: ExtraEventsContext): void {
   addMany(self.video, ["webkitbeginfullscreen", "webkitendfullscreen"], () =>
     syncMountAndLayout(),
   );
+
+  if (isMobileYouTubeLikeSite(self.site)) {
+    let syncQueued = false;
+    const queueSyncMountAndLayout = () => {
+      if (syncQueued) {
+        return;
+      }
+
+      syncQueued = true;
+      queueMicrotask(() => {
+        syncQueued = false;
+
+        if (self.abortController.signal.aborted) {
+          return;
+        }
+
+        const containerStale =
+          !self.container.isConnected ||
+          !self.video.isConnected ||
+          (self.video.isConnected &&
+            !containsCrossShadow(self.container, self.video));
+        if (!containerStale) {
+          return;
+        }
+
+        logMobileOverlay("sync mount after DOM repaint", {
+          containerConnected: self.container.isConnected,
+          videoConnected: self.video.isConnected,
+        });
+        syncMountAndLayout();
+      });
+    };
+
+    self.overlayMountObserver = new MutationObserver(() => {
+      queueSyncMountAndLayout();
+    });
+    self.overlayMountObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+
+    addMany(document, ["yt-page-data-updated", "yt-navigate-finish"], () =>
+      queueSyncMountAndLayout(),
+    );
+  }
 }
 function bindYouTubeVolumeSync(ctx: ExtraEventsContext): void {
   const { self } = ctx;
@@ -274,8 +443,7 @@ function bindYouTubeVolumeSync(ctx: ExtraEventsContext): void {
 }
 function bindAudioTrackLanguageSync(ctx: ExtraEventsContext): void {
   const { self } = ctx;
-  if (self.site.host !== "youtube" || self.site.additionalData === "mobile")
-    return;
+  if (!isDesktopYouTubeLikeSite(self.site)) return;
   const syncAudioTrackLanguage = async () => {
     try {
       if (!self.videoData) return;
@@ -366,7 +534,11 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
       `[document click] ${isButton} ${isMenu} ${isVideo} ${isSettings} ${isTempDialog}`,
     );
     if (isButton || isMenu || isSettings || isTempDialog) return;
-    if (!isVideo && !isVkLikeSiteHost(self.site.host)) {
+    if (
+      !isVideo &&
+      !isVkLikeSiteHost(self.site.host) &&
+      !isMobileYouTubeLikeSite(self.site)
+    ) {
       overlayView.updateButtonOpacity(0);
     }
     if (menu && !menu.hidden) {
@@ -441,6 +613,14 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
     addMany(target, ["pointerenter", "pointerdown"], (event) =>
       self.overlayVisibility.handleHostInteraction(event),
     );
+    if (isMobileYouTubeLikeSite(self.site)) {
+      addMany(
+        target,
+        ["touchstart"],
+        (event) => self.overlayVisibility.handleHostInteraction(event),
+        { passive: true },
+      );
+    }
     add(
       target,
       "pointermove",
@@ -458,6 +638,17 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
       "touchmove",
       (event) => self.overlayVisibility.handleHostInteraction(event),
       { passive: true },
+    );
+  }
+  if (isMobileYouTubeLikeSite(self.site)) {
+    // Mobile/music YouTube can dispatch taps through transient SPA/player shells
+    // that fall outside the tracked video container. Listen at document level so
+    // a tap can reliably re-show the page-scoped overlay after idle auto-hide.
+    add(
+      document,
+      "touchstart",
+      (event) => self.overlayVisibility.handleHostInteraction(event),
+      { passive: true, capture: true },
     );
   }
   if (platformConfig.disableContainerDrag) {
@@ -489,10 +680,14 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
   const handleVideoEmptied = async () => {
     let videoId: string | undefined;
     try {
-      videoId = await getVideoID(self.site, {
-        fetchFn: GM_fetch,
-        video: self.video,
-      });
+      videoId =
+        self.site.host === "youtube" &&
+        isMobileYouTubeAdditionalData(self.site.additionalData)
+          ? YoutubeHelper.getCurrentVideoId()
+          : await getVideoID(self.site, {
+              fetchFn: GM_fetch,
+              video: self.video,
+            });
     } catch (error) {
       debug.log("[VOT] Failed to resolve video id on emptied", error);
     }
@@ -506,6 +701,29 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
       return;
     }
     debug.log("lipsync mode is emptied");
+    if (isMobileYouTubeLikeSite(self.site)) {
+      logMobileOverlay("video emptied; start grace period", {
+        currentVideoId: self.videoData?.videoId,
+        resolvedVideoId: videoId,
+        pageKey: getMobileYouTubePageKey(),
+      });
+      resetLifecycleTranslation(self, {
+        clearVideoData: true,
+      });
+      closeOverlayMenu(overlayView);
+      scheduleMobileYouTubeLifecycleRetry(
+        self,
+        overlayView,
+        "video-emptied",
+        () => {
+          resetAndHideLifecycle(self, overlayView, {
+            clearVideoData: true,
+            hideMenu: true,
+          });
+        },
+      );
+      return;
+    }
     resetAndHideLifecycle(self, overlayView, {
       clearVideoData: true,
       hideMenu: true,
@@ -585,14 +803,32 @@ export function getAutoHideDelay(this: VideoHandler): number {
   }
 
   const delay = this.data?.autoHideButtonDelay;
-  return typeof delay === "number" && Number.isFinite(delay)
-    ? delay
-    : defaultAutoHideDelay;
+  const resolvedDelay =
+    typeof delay === "number" && Number.isFinite(delay)
+      ? delay
+      : defaultAutoHideDelay;
+
+  if (isMobileYouTubeLikeSite(this.site)) {
+    // Mobile/music YouTube has no hover affordance, so a 1s hide deadline feels
+    // too abrupt after a tap. Keep the global setting, but enforce a gentler
+    // minimum so the page-scoped button remains usable on touch screens.
+    return Math.max(resolvedDelay, MOBILE_YOUTUBE_MIN_AUTO_HIDE_DELAY_MS);
+  }
+
+  return resolvedDelay;
 }
 export function releaseExtraEvents(this: VideoHandler) {
+  clearMobileYouTubeLifecycleDebounce(this);
+  logMobileOverlay("release extra events / disconnect observers", {
+    hasResizeObserver: Boolean(this.resizeObserver),
+    hasOverlayMountObserver: Boolean(this.overlayMountObserver),
+    hasSyncVolumeObserver: Boolean(this.syncVolumeObserver),
+  });
   this.resizeObserver?.disconnect();
   this.overlayVisibilityTargetsAbortController?.abort();
   this.overlayVisibilityTargetsAbortController = undefined;
+  this.overlayMountObserver?.disconnect();
+  this.overlayMountObserver = undefined;
   if (isDesktopYouTubeLikeSite(this.site)) {
     this.syncVolumeObserver?.disconnect();
   }

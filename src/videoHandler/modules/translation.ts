@@ -1934,11 +1934,9 @@ export async function updateTranslation(
         );
 
         this.setupAudioSettings();
-        this.transformBtn(
-          "success",
-          localizationProvider.get("disableTranslate"),
-        );
         this.afterUpdateTranslation(nextAudioUrl);
+        markAutoplayRecoveryPending(this, nextAudioUrl, actionContext);
+        this.transformBtn("success", getAutoplayRecoveryButtonText());
 
         if (this.data?.autoSubtitles) {
           setTimeout(() => {

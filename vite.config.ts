@@ -13,6 +13,7 @@ import { defineConfig } from "vite";
 import type { MonkeyUserScript } from "vite-plugin-monkey";
 import monkey from "vite-plugin-monkey";
 import { contentUrl, repositoryUrl } from "./src/config/config";
+import { getBrowserSafeAliases } from "./vite.browser.alias";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -189,6 +190,7 @@ export default defineConfig(async ({ command, mode }) => {
       VOT_AUTHORS: JSON.stringify(String((mainHeaders as any).author || "")),
     },
     resolve: {
+      alias: getBrowserSafeAliases(__dirname),
       extensions: [".js", ".ts"],
     },
     css: {

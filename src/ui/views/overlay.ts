@@ -123,6 +123,12 @@ export class OverlayView {
     return this.mount.tooltipLayoutRoot;
   }
 
+  private shouldLogMobileOverlay(): boolean {
+    return /^(m|music)\.youtube\.com$/i.test(
+      String(globalThis.location.hostname || ""),
+    );
+  }
+
   /**
    * Update mount points (root/tooltipLayoutRoot) when the player container changes.
    * Moves already-mounted UI nodes and rebinds root-bound listeners (dragging).
@@ -981,6 +987,12 @@ export class OverlayView {
   }
 
   private doReleaseUI(): void {
+    if (this.shouldLogMobileOverlay()) {
+      console.log("[VOT][mobile-overlay][ui] remove overlay UI nodes", {
+        hasButton: Boolean(this.votButton?.container?.isConnected),
+        hasMenu: Boolean(this.votMenu?.container?.isConnected),
+      });
+    }
     this.votButton?.remove();
     this.votMenu?.remove();
     this.votButtonTooltip?.release();
@@ -1005,6 +1017,9 @@ export class OverlayView {
       return this;
     }
 
+    if (this.shouldLogMobileOverlay()) {
+      console.log("[VOT][mobile-overlay][ui] overlay view release");
+    }
     // Release events first to prevent late handlers from touching removed DOM.
     this.doReleaseUIEvents();
     this.doReleaseUI();

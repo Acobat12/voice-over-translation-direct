@@ -795,6 +795,14 @@ export class UIManager {
       return this;
     }
 
+    if (
+      /^(m|music)\.youtube\.com$/i.test(
+        String(globalThis.location.hostname || ""),
+      )
+    ) {
+      console.log("[VOT][mobile-overlay][ui] UIManager release");
+    }
+
     // Release child views before removing the shared portal.
     // Each view is now idempotent and releases events before DOM.
     this.votOverlayView.release();
@@ -865,7 +873,10 @@ export class UIManager {
   }
 
   private isLikelyMobileDownloadContext(): boolean {
-    if (this.videoHandler?.site.additionalData === "mobile") {
+    if (
+      this.videoHandler?.site.additionalData === "mobile" ||
+      this.videoHandler?.site.additionalData === "music"
+    ) {
       return true;
     }
 

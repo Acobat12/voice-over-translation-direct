@@ -13,6 +13,13 @@ export const GENERIC_PLAYER_SELECTORS = [
   ".artplayer",
   ".vjs-player",
   ".video-js",
+  // Bilibili players
+  ".bpx-player-video-wrap",
+  ".squirtle-video-wrap",
+  // ReactPlayer and other wrapper patterns
+  ".react-player",
+  ".flowplayer",
+  ".fp-player",
   "[data-player]",
   "[data-player-container]",
   "[data-video-player]",
@@ -22,6 +29,7 @@ export const GENERIC_PLAYER_SELECTORS = [
   "[class*='video-player']",
   "[class*='VideoPlayer']",
   "[class*='video-container']",
+  "[class*='videoContainer']",
   "[id*='player']",
   "video-player",
   "video",

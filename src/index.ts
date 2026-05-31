@@ -23,6 +23,7 @@ import { resolveBootstrapMode } from "./core/bootstrapPolicy";
 import { CacheManager, VOTSessionStorageCache } from "./core/cacheManager";
 import Chaimu from "./core/chaimuClient";
 import { findConnectedContainerBySelector } from "./core/containerResolution";
+import { isMobileYouTubeLikeSite } from "./core/hostPolicies";
 import { resolveOverlayMountTargets } from "./core/overlayMountTargets";
 import {
   isCustomPlaybackTarget,
@@ -44,7 +45,10 @@ import { UIManager } from "./ui/manager";
 import { isSameOverlayMount } from "./ui/mount";
 import { OverlayVisibilityController } from "./ui/overlayVisibilityController";
 import debug from "./utils/debug";
-import { resolveScopedFullscreenElement } from "./utils/dom";
+import {
+  containsCrossShadow,
+  resolveScopedFullscreenElement,
+} from "./utils/dom";
 import { getEnvironmentInfo as getEnvironmentInfoImpl } from "./utils/environment";
 import { GM_fetch } from "./utils/gm";
 import { isIframe } from "./utils/iframeConnector";
@@ -273,6 +277,8 @@ export class VideoHandler {
   // Observers / listeners
   resizeObserver?: ResizeObserver;
   syncVolumeObserver?: MutationObserver;
+  overlayMountObserver?: MutationObserver;
+  mobileYouTubeLifecycleDebounceTimer?: ReturnType<typeof setTimeout>;
 
   // Init guard
   initialized = false;
@@ -306,6 +312,78 @@ export class VideoHandler {
     const doc = document as DocumentWithFullscreen;
     const fullscreenEl = doc.fullscreenElement ?? doc.webkitFullscreenElement;
     return resolveScopedFullscreenElement(fullscreenEl, [this.container]);
+  }
+
+  private findPageScopedContainer(): HTMLElement | null {
+    const selector = String(this.site.selector || "").trim();
+    if (!selector) {
+      return null;
+    }
+
+    const selectors = selector
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    let fallback: HTMLElement | null = null;
+
+    for (const currentSelector of selectors) {
+      let matches: NodeListOf<Element>;
+      try {
+        matches = document.querySelectorAll(currentSelector);
+      } catch {
+        continue;
+      }
+
+      for (const match of matches) {
+        if (
+          !(match instanceof HTMLElement) ||
+          !match.isConnected ||
+          match === document.body ||
+          match === document.documentElement
+        ) {
+          continue;
+        }
+
+        const rect = match.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return match;
+        }
+
+        fallback ??= match;
+      }
+    }
+
+    return fallback;
+  }
+
+  private resolveCurrentContainer(): HTMLElement {
+    if (!this.site.selector) {
+      return this.video.parentElement ?? this.container;
+    }
+
+    const matched = findConnectedContainerBySelector(
+      this.video,
+      this.site.selector,
+    );
+    if (matched) {
+      return matched;
+    }
+
+    if (
+      this.container.isConnected &&
+      containsCrossShadow(this.container, this.video)
+    ) {
+      return this.container;
+    }
+
+    if (isMobileYouTubeLikeSite(this.site)) {
+      const pageScopedContainer = this.findPageScopedContainer();
+      if (pageScopedContainer) {
+        return pageScopedContainer;
+      }
+    }
+
+    return this.video.parentElement ?? this.container;
   }
 
   private getOverlayMountPoints(container: HTMLElement = this.container): {
@@ -1079,6 +1157,12 @@ export class VideoHandler {
    * (common for players inside Shadow DOM).
    */
   refreshOverlayMount(): void {
+    if (isMobileYouTubeLikeSite(this.site)) {
+      const nextContainer = this.resolveCurrentContainer();
+      if (nextContainer !== this.container) {
+        this.container = nextContainer;
+      }
+    }
     this.mountCache = undefined;
     const nextMount = this.getOverlayMount(this.container);
     const mountChanged = !isSameOverlayMount(this.uiManager.mount, nextMount);
@@ -1847,6 +1931,16 @@ export class VideoHandler {
    */
   async release() {
     debug.log("[VideoHandler] release");
+    if (
+      /^(m|music)\.youtube\.com$/i.test(
+        String(globalThis.location.hostname || ""),
+      )
+    ) {
+      console.log("[VOT][mobile-overlay][handler] VideoHandler.release()", {
+        videoId: this.videoData?.videoId,
+        page: `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`,
+      });
+    }
     this.initialized = false;
     try {
       await this.stopTranslation();
@@ -2116,8 +2210,17 @@ function isYouTubePage(): boolean {
   );
 }
 
+function isYouTubeMusicPage(): boolean {
+  return (
+    String(globalThis.location.hostname || "").toLowerCase() ===
+    "music.youtube.com"
+  );
+}
+
 function shouldInstallManifestSniffer(): boolean {
-  return !isYouTubePage();
+  // Keep manifest sniffing enabled for YouTube Music until it has the same
+  // stable helper coverage as desktop/mobile watch pages.
+  return isYouTubeMusicPage() || !isYouTubePage();
 }
 
 /**

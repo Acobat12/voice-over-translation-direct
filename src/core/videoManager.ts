@@ -1,4 +1,3 @@
-import YoutubeHelper from "@vot.js/ext/helpers/youtube";
 import { getVideoData } from "@vot.js/ext/utils/videoData";
 import votConfig from "@vot.js/shared/config";
 import { availableLangs } from "@vot.js/shared/consts";
@@ -22,6 +21,7 @@ import {
 import type { VideoData as RuntimeVideoData } from "../videoHandler/shared";
 import { resolveCustomSiteVideo } from "./customSiteResolvers";
 import { isExternalVolumeHost } from "./hostPolicies";
+import YoutubeHelper, { isMobileYouTubeAdditionalData } from "./youtubeHelper";
 
 const FORCED_DETECTED_LANGUAGE_BY_HOST: Record<string, RequestLang> = {
   rutube: "ru",
@@ -362,6 +362,8 @@ function isBadGenericMediaUrl(value: unknown): boolean {
   if (typeof value !== "string") return true;
   const normalized = value.trim().toLowerCase();
   if (!normalized) return true;
+  const isManifest =
+    /\.m3u8([?#]|$)/i.test(normalized) || /\.mpd([?#]|$)/i.test(normalized);
 
   return (
     normalized.startsWith("blob:") ||
@@ -370,7 +372,7 @@ function isBadGenericMediaUrl(value: unknown): boolean {
     /\/s\d+\/v[\d.]+\/frame\/?$/i.test(normalized) ||
     normalized.includes("okcdn.ru/?") ||
     /[?&]bytes=\d+-\d+/i.test(normalized) ||
-    /[?&]type=\d+/i.test(normalized)
+    (!isManifest && /[?&]type=\d+/i.test(normalized))
   );
 }
 
@@ -406,6 +408,10 @@ function isUsefulResolvedFallback(
     (/^https?:\/\//i.test(resolved.url) &&
       !/^https?:\/\//i.test(String(currentUrl || "").trim()))
   );
+}
+
+function isBilibiliSupportedPageHost(hostname: string): boolean {
+  return /^(www|m)\.bilibili\.com$/i.test(String(hostname || "").trim());
 }
 
 function getSharedLanguageState(videoId: string): SharedLanguageState {
@@ -685,6 +691,53 @@ export class VOTVideoManager {
     }
   }
 
+  private shouldUseRuntimeYouTubeHelper(): boolean {
+    return (
+      this.videoHandler.site.host === "youtube" &&
+      isMobileYouTubeAdditionalData(this.videoHandler.site.additionalData)
+    );
+  }
+
+  private buildRuntimeYouTubeVideoData() {
+    const videoId = YoutubeHelper.getCurrentVideoId();
+    if (!videoId) {
+      throw new Error("Failed to resolve mobile YouTube video id");
+    }
+
+    const response = YoutubeHelper.getPlayerResponse();
+    const playerData = YoutubeHelper.getPlayerData();
+    const subtitles = YoutubeHelper.getSubtitles(localizationProvider.lang);
+    let detectedLanguage = YoutubeHelper.getLanguage();
+    if (detectedLanguage && !availableLangs.includes(detectedLanguage)) {
+      detectedLanguage = undefined;
+    }
+
+    const title =
+      response?.videoDetails?.title || playerData?.title || document.title;
+    const canonicalUrl =
+      YoutubeHelper.getCanonicalVideoUrl(videoId) ||
+      `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+
+    return {
+      url: canonicalUrl,
+      videoId,
+      host: "youtube",
+      title,
+      localizedTitle: playerData?.title || title,
+      description: response?.videoDetails?.shortDescription,
+      detectedLanguage: (detectedLanguage ?? "auto") as "auto" | RequestLang,
+      subtitles,
+      duration:
+        YoutubeHelper.getVideoDuration(this.videoHandler.video) ??
+        this.videoHandler.video?.duration ??
+        votConfig.defaultDuration,
+      translationHelp: null,
+      isStream: Boolean(
+        response?.videoDetails?.isLive || response?.videoDetails?.isLiveContent,
+      ),
+    };
+  }
+
   async getVideoData() {
     const pageUrl = String(globalThis.location.href || "").trim();
     const hostname = String(globalThis.location.hostname || "").trim();
@@ -715,11 +768,13 @@ export class VOTVideoManager {
         };
 
     try {
-      rawVideoData = await getVideoData(this.videoHandler.site, {
-        fetchFn: GM_fetch,
-        video: this.videoHandler.video,
-        language: localizationProvider.lang,
-      });
+      rawVideoData = this.shouldUseRuntimeYouTubeHelper()
+        ? this.buildRuntimeYouTubeVideoData()
+        : await getVideoData(this.videoHandler.site, {
+            fetchFn: GM_fetch,
+            video: this.videoHandler.video,
+            language: localizationProvider.lang,
+          });
     } catch (error) {
       rawVideoDataError = error;
       console.warn(
@@ -769,21 +824,33 @@ export class VOTVideoManager {
     }
 
     const resolvedFallback = await resolveCustomSiteVideo(hostname, pageUrl);
+    const youtubeFallbackVideoId =
+      this.videoHandler.site.host === "youtube"
+        ? YoutubeHelper.getCurrentVideoId()
+        : undefined;
+    const youtubeFallbackUrl =
+      this.videoHandler.site.host === "youtube" && youtubeFallbackVideoId
+        ? YoutubeHelper.getCanonicalVideoUrl(youtubeFallbackVideoId)
+        : undefined;
     const shouldUseDomFallback =
       this.videoHandler.site.host === "custom" ||
       Boolean(rawVideoDataError) ||
       isUsefulResolvedFallback(url, videoId, resolvedFallback);
 
     if (shouldUseDomFallback) {
+      const shouldPreserveBilibiliSiteRoute =
+        this.videoHandler.site.host === "bilibili" &&
+        isBilibiliSupportedPageHost(hostname);
       const fallbackUrl = pickPreferredVideoUrl(
         resolvedFallback?.url,
         sniffedManifestUrl,
         mediaUrl,
         url,
+        youtubeFallbackUrl,
         pageUrl,
       );
 
-      if (fallbackUrl) {
+      if (fallbackUrl && !shouldPreserveBilibiliSiteRoute) {
         url = fallbackUrl;
       }
 
@@ -797,16 +864,36 @@ export class VOTVideoManager {
             ? fallbackUrl
             : "";
         const resolvedVideoIdCandidate =
+          !isBadGenericVideoId(youtubeFallbackVideoId) &&
+          !isPageScopedVideoId(String(youtubeFallbackVideoId || ""), pageUrl)
+            ? String(youtubeFallbackVideoId).trim()
+            : "";
+        const resolvedFallbackVideoIdCandidate =
           !isBadGenericVideoId(resolvedFallback?.videoId) &&
           !isPageScopedVideoId(String(resolvedFallback?.videoId || ""), pageUrl)
             ? String(resolvedFallback?.videoId).trim()
             : "";
 
         videoId =
-          fallbackVideoIdCandidate || resolvedVideoIdCandidate || pageUrl;
+          fallbackVideoIdCandidate ||
+          resolvedVideoIdCandidate ||
+          resolvedFallbackVideoIdCandidate ||
+          pageUrl;
       }
 
-      host = "custom";
+      if (shouldPreserveBilibiliSiteRoute) {
+        // Bilibili is a first-class supported site. When helper extraction
+        // falls back to DOM/media state, keep the request on the stable page
+        // URL instead of switching to the generic custom/upload workflow.
+        url = pageUrl;
+        host = "bilibili";
+        videoId = !isBadGenericVideoId(videoId) ? videoId : pageUrl;
+      } else {
+        host =
+          this.videoHandler.site.host === "youtube" && youtubeFallbackVideoId
+            ? "youtube"
+            : "custom";
+      }
 
       const fallbackTitle =
         resolvedFallback?.title ||
@@ -831,6 +918,7 @@ export class VOTVideoManager {
         finalUrl: url,
         finalVideoId: videoId,
         finalHost: host,
+        preservedSiteRoute: shouldPreserveBilibiliSiteRoute,
       });
     }
 

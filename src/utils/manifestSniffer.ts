@@ -102,6 +102,25 @@ export function clearLastManifestUrl(): void {
   bestManifest = null;
 }
 
+const DIRECT_SOURCES_KEY = "__VOT_DIRECT_SOURCES__";
+
+function tryInjectDirectSources(text: string): void {
+  try {
+    const data = JSON.parse(text);
+    if (!data || typeof data !== "object") return;
+    const hasId =
+      "unitedVideoId" in data ||
+      ("video" in data && typeof data.video === "object");
+    if (!hasId) return;
+    const existing = (globalThis as any)[DIRECT_SOURCES_KEY];
+    if (existing && typeof existing === "object") return;
+    (globalThis as any)[DIRECT_SOURCES_KEY] = data;
+    console.log("[VOT][manifestSniffer] injected __VOT_DIRECT_SOURCES__", data);
+  } catch {
+    // Not JSON or not relevant
+  }
+}
+
 export function installManifestSniffer(): void {
   if (installed) {
     return;
@@ -120,7 +139,17 @@ export function installManifestSniffer(): void {
 
     rememberManifest(url);
 
-    return originalFetch(...args);
+    const response = await originalFetch(...args);
+
+    if (response.headers.get("content-type")?.includes("application/json")) {
+      response
+        .clone()
+        .text()
+        .then(tryInjectDirectSources)
+        .catch(() => {});
+    }
+
+    return response;
   };
 
   const originalOpen = XMLHttpRequest.prototype.open;
@@ -130,6 +159,14 @@ export function installManifestSniffer(): void {
     ...rest: unknown[]
   ) {
     rememberManifest(String(url));
+
+    this.addEventListener("load", function () {
+      const ct = this.getResponseHeader("content-type") ?? "";
+      if (ct.includes("application/json") || ct.includes("text/javascript")) {
+        tryInjectDirectSources(this.responseText ?? "");
+      }
+    });
+
     return originalOpen.call(this, method, url, ...(rest as []));
   };
 }
