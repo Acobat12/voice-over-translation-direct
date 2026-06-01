@@ -2392,6 +2392,21 @@ async function main(): Promise<void> {
         logBootstrap("Probe detected candidate video", { reason });
         videoObserver.enable(video);
       },
+      onProbeExhausted: (reason) => {
+        logBootstrap(
+          "Lightweight video probe exhausted; enabling DOM observer fallback",
+          {
+            reason,
+            strategy: videoObserverPolicy.probeStrategy,
+            timeoutMs: videoObserverPolicy.probePollTimeoutMs,
+          },
+        );
+        videoObserver.setPolicy({
+          ...videoObserverPolicy,
+          startDomObservationOnEnable: true,
+        });
+        videoObserver.enable();
+      },
     });
     return;
   }

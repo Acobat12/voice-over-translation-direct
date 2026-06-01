@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.24
+// @version         1.11.5.25
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -7665,6 +7665,8 @@ string() {
         return;
       }
       if (Date.now() >= pollDeadlineAt) {
+        cleanup();
+        options.onProbeExhausted?.("probe-timeout");
         return;
       }
       pollTimer = globalThis.setTimeout(schedulePoll, pollIntervalMs);
@@ -9647,7 +9649,7 @@ get isSupportOnlyLS() {
     return buildVersion || scriptVersion || "unknown";
   }
   function getRuntimeLocaleVersion() {
-    const buildVersion = String("1.11.5.24");
+    const buildVersion = String("1.11.5.25");
     const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
     return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
   }
@@ -16694,7 +16696,9 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
       if (this.videoHandler.videoData.duration > 14400) {
         throw new VOTLocalizedError("VOTVideoIsTooLong");
       }
-      const sourceAudioState = getSourceAudioAvailability(this.videoHandler.video);
+      const sourceAudioState = getSourceAudioAvailability(
+        this.videoHandler.video
+      );
       if (!sourceAudioState.ready) {
         throw new VOTLocalizedError(sourceAudioState.localizationKey);
       }
@@ -29583,12 +29587,15 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
             forceVisible: true
           });
           if (sourceAudioState.ready && self.data?.autoTranslate && self.firstPlay && !self.hasActiveSource()) {
-            console.log("[VOT][source-audio] retry auto-translate after playback", {
-              eventName,
-              kind: sourceAudioState.kind,
-              audioDetected: sourceAudioState.audioDetected,
-              detectionSource: sourceAudioState.detectionSource
-            });
+            console.log(
+              "[VOT][source-audio] retry auto-translate after playback",
+              {
+                eventName,
+                kind: sourceAudioState.kind,
+                audioDetected: sourceAudioState.audioDetected,
+                detectionSource: sourceAudioState.detectionSource
+              }
+            );
             void self.translationOrchestrator.runAutoTranslationIfEligible().catch((error2) => {
             });
           }
@@ -34241,12 +34248,15 @@ async runAutoTranslate() {
         forceVisible: true
       });
       if (!sourceAudioState.ready) {
-        console.log("[VOT][source-audio] auto-translate blocked after validation", {
-          kind: sourceAudioState.kind,
-          ready: sourceAudioState.ready,
-          audioDetected: sourceAudioState.audioDetected,
-          detectionSource: sourceAudioState.detectionSource
-        });
+        console.log(
+          "[VOT][source-audio] auto-translate blocked after validation",
+          {
+            kind: sourceAudioState.kind,
+            ready: sourceAudioState.ready,
+            audioDetected: sourceAudioState.audioDetected,
+            detectionSource: sourceAudioState.detectionSource
+          }
+        );
         return false;
       }
       await this.uiManager.handleTranslationBtnClick();
@@ -35190,6 +35200,18 @@ releaseExtraEvents = releaseExtraEvents;
         onVideoDetected: (reason, video) => {
           logBootstrap("Probe detected candidate video", { reason });
           videoObserver.enable(video);
+        },
+        onProbeExhausted: (reason) => {
+          logBootstrap("Lightweight video probe exhausted; enabling DOM observer fallback", {
+            reason,
+            strategy: videoObserverPolicy.probeStrategy,
+            timeoutMs: videoObserverPolicy.probePollTimeoutMs
+          });
+          videoObserver.setPolicy({
+            ...videoObserverPolicy,
+            startDomObservationOnEnable: true
+          });
+          videoObserver.enable();
         }
       });
       return;

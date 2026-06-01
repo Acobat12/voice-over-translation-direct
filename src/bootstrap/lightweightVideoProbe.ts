@@ -1,5 +1,6 @@
 type StartLightweightVideoProbeOptions = {
   onVideoDetected: (reason: string, video?: HTMLVideoElement) => void;
+  onProbeExhausted?: (reason: string) => void;
   selectors?: string[];
   strategy?: "mutation" | "poll";
   pollIntervalMs?: number;
@@ -170,6 +171,8 @@ export function startLightweightVideoProbe(
     }
 
     if (Date.now() >= pollDeadlineAt) {
+      cleanup();
+      options.onProbeExhausted?.("probe-timeout");
       return;
     }
 
