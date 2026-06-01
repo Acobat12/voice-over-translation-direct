@@ -65,6 +65,20 @@
 
 Voice-over translation is now available beyond [Yandex Browser][yabrowser-link]. Thanks to the **[Yandex.Translate][yatranslate-link]** team and all [contributors][contributors-link] helping improve this project.
 
+## Known extension conflicts
+
+> [!WARNING]
+> If the VOT button sometimes does not appear, videos freeze for 1-3 seconds, the page becomes sluggish, or the same issue shows up across several video sites, first check the other browser extensions you have installed.
+>
+> In practice, the conflict may come from another add-on that also hooks into `HTMLVideoElement`, subtitles, audio, overlay buttons, or XHR/fetch requests. We observed such a conflict with the **YouTube Dubbing / YouTube中文配音** Firefox add-on: after removing it, VOT started working normally again on YouTube, VK Video, and other sites.
+>
+> Before opening an issue, try this first:
+>
+> - temporarily disable other dubbing, translation, subtitle, and player-modifying extensions
+> - leave only VOT enabled
+> - reload the page and test again
+> - if possible, test VOT in a separate browser profile
+
 ## Publishing local videos
 
 This fork provides two ways to expose local videos through a temporary public link:
