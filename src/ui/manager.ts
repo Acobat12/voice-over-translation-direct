@@ -681,10 +681,21 @@ export class UIManager {
     this.translationActionInFlight = true;
 
     try {
+      const sourceAudioState = videoHandler.syncSourceAudioAvailabilityUi({
+        forceVisible: true,
+      });
+      if (!sourceAudioState.ready) {
+        return this;
+      }
+      if (this.votOverlayView.votButton.status === "disabled") {
+        this.transformBtn("none", localizationProvider.get("translateVideo"));
+      }
+
       // Если UI застрял в error/non-none без активного источника — просто сбрасываем состояние
       if (this.votOverlayView.votButton.status === "error") {
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       } else if (
+        this.votOverlayView.votButton.status !== "disabled" &&
         this.votOverlayView.votButton.status !== "none" &&
         !videoHandler.hasActiveSource()
       ) {

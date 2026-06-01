@@ -11,7 +11,7 @@ export interface TranslationOrchestratorDeps {
   setFirstPlay(next: boolean): void;
   isAutoTranslateEnabled(): boolean;
   getVideoId(): string | undefined;
-  scheduleAutoTranslate(): Promise<void>;
+  scheduleAutoTranslate(): Promise<boolean>;
   /** Returns true if on mobile YouTube and video is currently muted */
   isMobileYouTubeMuted?(): boolean;
   /** Sets up a one-time watcher to trigger callback when video is unmuted */
@@ -73,7 +73,14 @@ export class TranslationOrchestrator {
     this.setState({ status: "pending", reason: "auto" });
 
     try {
-      await this.deps.scheduleAutoTranslate();
+      const started = await this.deps.scheduleAutoTranslate();
+      if (!started) {
+        debug.log(
+          "[TranslationOrchestrator] Auto-translate prerequisites not ready yet; keeping firstPlay for retry",
+        );
+        this.reset();
+        return;
+      }
       this.deps.setFirstPlay(false);
       this.reset();
     } catch (err) {

@@ -533,6 +533,14 @@ export function bindObserverListeners(
         return;
       }
       const { site, container } = match;
+      console.log("[VOT][source-audio] video detected", {
+        host: site.host,
+        path: globalThis.location.pathname,
+        currentTime: Number(video.currentTime.toFixed(3)),
+        paused: video.paused,
+        readyState: video.readyState,
+        src: video.currentSrc || video.src || "",
+      });
       if (isVkProbeHost()) {
         const rect = video.getBoundingClientRect();
         console.log("[VOT][VK probe] matched video", {

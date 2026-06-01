@@ -30,6 +30,10 @@ import {
   shouldUsePlainAudioPlayback,
 } from "./core/playbackPolicy";
 import { shouldUsePopupOverlayWindow } from "./core/popupOverlayPolicy";
+import {
+  getSourceAudioAvailability,
+  type SourceAudioAvailabilityState,
+} from "./core/sourceAudioAvailability";
 import { VOTTranslationHandler } from "./core/translationHandler";
 import { TranslationOrchestrator } from "./core/translationOrchestrator";
 import { VideoLifecycleController } from "./core/videoLifecycleController";
@@ -39,6 +43,7 @@ import type { PopupOverlayBridge } from "./popup/popupOverlayBridge";
 import type { ProcessedSubtitles } from "./subtitles/processor";
 import type { SubtitleFontFamily } from "./subtitles/types";
 import { SubtitlesWidget } from "./subtitles/widget";
+import type { Status } from "./types/components/votButton";
 import type { StorageData } from "./types/storage";
 import type { OverlayMount } from "./types/uiManager";
 import { UIManager } from "./ui/manager";
@@ -573,6 +578,8 @@ export class VideoHandler {
       getOverlayView: () => this.uiManager.votOverlayView ?? null,
       getAutoHideDelay: () => this.getAutoHideDelay(),
       isInteractiveNode: (node: Node) => this.isOverlayInteractiveNode(node),
+      shouldAutoHide: () =>
+        this.uiManager.votOverlayView?.votButton?.status !== "disabled",
     });
     this.translationOrchestrator = new TranslationOrchestrator({
       isFirstPlay: () => this.firstPlay,
@@ -699,6 +706,8 @@ export class VideoHandler {
       resetSubtitlesWidget: () => this.resetSubtitlesWidget(),
       queueOverlayAutoHide: () => this.overlayVisibility?.queueAutoHide(),
       onPrimaryAttachReady: () => this.onPrimaryAttachReady?.(),
+      syncSourceAudioAvailabilityUi: (options?: { forceVisible?: boolean }) =>
+        this.syncSourceAudioAvailabilityUi(options),
     };
     this.lifecycleController = new VideoLifecycleController(lifecycleHost);
     this.translationHandler = new VOTTranslationHandler(this);
@@ -815,8 +824,39 @@ export class VideoHandler {
    * Run auto translate using orchestrator dependencies.
    */
   async runAutoTranslate() {
+    let sourceAudioState = this.syncSourceAudioAvailabilityUi({
+      forceVisible: true,
+    });
+    if (!sourceAudioState.ready) {
+      console.log("[VOT][source-audio] auto-translate blocked before start", {
+        kind: sourceAudioState.kind,
+        ready: sourceAudioState.ready,
+        audioDetected: sourceAudioState.audioDetected,
+        detectionSource: sourceAudioState.detectionSource,
+      });
+      return false;
+    }
+
     await this.videoManager.videoValidator();
+
+    sourceAudioState = this.syncSourceAudioAvailabilityUi({
+      forceVisible: true,
+    });
+    if (!sourceAudioState.ready) {
+      console.log(
+        "[VOT][source-audio] auto-translate blocked after validation",
+        {
+          kind: sourceAudioState.kind,
+          ready: sourceAudioState.ready,
+          audioDetected: sourceAudioState.audioDetected,
+          detectionSource: sourceAudioState.detectionSource,
+        },
+      );
+      return false;
+    }
+
     await this.uiManager.handleTranslationBtnClick();
+    return true;
   }
 
   /**
@@ -1010,13 +1050,10 @@ export class VideoHandler {
    * @param {string} text The text to display.
    * @returns {VideoHandler} This instance.
    */
-  transformBtn(
-    status: "none" | "loading" | "success" | "error",
-    text: string,
-  ): this {
+  transformBtn(status: Status, text: string): this {
     this.uiManager.transformBtn(status, text);
     this.syncPopupOverlayState({
-      status,
+      status: status === "disabled" ? "none" : status,
       label: text,
       hint:
         this.site.host === "youtube" ||
@@ -1090,7 +1127,10 @@ export class VideoHandler {
 
     this.popupOverlayBridge?.updateState({
       visible: true,
-      status: overlayView?.votButton?.status ?? "none",
+      status:
+        overlayView?.votButton?.status === "disabled"
+          ? "none"
+          : (overlayView?.votButton?.status ?? "none"),
       label:
         overlayView?.votButton?.label?.textContent ??
         localizationProvider.get("translateVideo"),
@@ -1125,6 +1165,44 @@ export class VideoHandler {
     return Boolean(
       this.audioPlayer?.player?.src || this.externalTranslationSourceUrl,
     );
+  }
+
+  getSourceAudioAvailabilityState(): SourceAudioAvailabilityState {
+    return getSourceAudioAvailability(this.video);
+  }
+
+  syncSourceAudioAvailabilityUi(
+    options: { forceVisible?: boolean } = {},
+  ): SourceAudioAvailabilityState {
+    const state = this.getSourceAudioAvailabilityState();
+    const overlayView = this.uiManager.votOverlayView;
+    if (!overlayView?.votButton) {
+      return state;
+    }
+    const previousStatus = overlayView.votButton.status;
+
+    if (options.forceVisible) {
+      overlayView.votButton.container.hidden = false;
+      overlayView.updateButtonOpacity(1);
+    }
+
+    if (this.hasActiveSource() || overlayView.votButton.loading) {
+      return state;
+    }
+
+    if (!state.ready) {
+      this.overlayVisibility?.cancel();
+      const label = localizationProvider.get(state.localizationKey as any);
+      this.transformBtn("disabled", label);
+      return state;
+    }
+
+    if (previousStatus === "disabled") {
+      this.transformBtn("none", localizationProvider.get("translateVideo"));
+      this.overlayVisibility?.queueAutoHide();
+    }
+
+    return state;
   }
 
   isAwaitingAutoplayRecovery(): boolean {
@@ -1544,11 +1622,21 @@ export class VideoHandler {
       this.longWaitingResCount = 0;
       this.hadAsyncWait = false;
       this.transformBtn("none", localizationProvider.get("translateVideo"));
+      const sourceAudioState = this.syncSourceAudioAvailabilityUi();
+      const buttonStatus = this.uiManager.votOverlayView?.votButton?.status;
+      const buttonLabel =
+        this.uiManager.votOverlayView?.votButton?.label?.textContent ||
+        localizationProvider.get("translateVideo");
       this.syncPopupOverlayState({
-        status: "none",
-        label: localizationProvider.get("translateVideo"),
+        status:
+          buttonStatus === "success" || buttonStatus === "error"
+            ? buttonStatus
+            : "none",
+        label: buttonLabel,
         canDownload: false,
-        hint: "Translation audio is not available yet.",
+        hint: sourceAudioState.ready
+          ? "Translation audio is not available yet."
+          : buttonLabel,
       });
       debug.log(`Volume on start: ${this.volumeOnStart}`);
 

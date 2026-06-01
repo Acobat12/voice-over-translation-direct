@@ -677,6 +677,56 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
     if (self.site.host === "rutube" && self.video.src) return;
     queueSetCanPlay();
   });
+  for (const eventName of [
+    "loadedmetadata",
+    "loadeddata",
+    "play",
+    "playing",
+  ] as const) {
+    // Some hosts expose audio metadata only after the first user-initiated
+    // playback or after a later metadata repaint. Re-run the lifecycle check so
+    // the button can move from the temporary disabled state back to normal.
+    add(self.video, eventName, () => {
+      if (eventName === "play" || eventName === "playing") {
+        console.log("[VOT][source-audio] play event received", {
+          eventName,
+          host: self.site.host,
+          paused: self.video.paused,
+          currentTime: Number(self.video.currentTime.toFixed(3)),
+          readyState: self.video.readyState,
+          src: self.video.currentSrc || self.video.src || "",
+        });
+        const sourceAudioState = self.syncSourceAudioAvailabilityUi({
+          forceVisible: true,
+        });
+        if (
+          sourceAudioState.ready &&
+          self.data?.autoTranslate &&
+          self.firstPlay &&
+          !self.hasActiveSource()
+        ) {
+          console.log(
+            "[VOT][source-audio] retry auto-translate after playback",
+            {
+              eventName,
+              kind: sourceAudioState.kind,
+              audioDetected: sourceAudioState.audioDetected,
+              detectionSource: sourceAudioState.detectionSource,
+            },
+          );
+          void self.translationOrchestrator
+            .runAutoTranslationIfEligible()
+            .catch((error) => {
+              debug.log(
+                "[VOT] Failed to retry auto-translate after playback start",
+                error,
+              );
+            });
+        }
+      }
+      queueSetCanPlay();
+    });
+  }
   const handleVideoEmptied = async () => {
     let videoId: string | undefined;
     try {

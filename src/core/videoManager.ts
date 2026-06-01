@@ -21,6 +21,7 @@ import {
 import type { VideoData as RuntimeVideoData } from "../videoHandler/shared";
 import { resolveCustomSiteVideo } from "./customSiteResolvers";
 import { isExternalVolumeHost } from "./hostPolicies";
+import { getSourceAudioAvailability } from "./sourceAudioAvailability";
 import YoutubeHelper, { isMobileYouTubeAdditionalData } from "./youtubeHelper";
 
 const FORCED_DETECTED_LANGUAGE_BY_HOST: Record<string, RequestLang> = {
@@ -1066,6 +1067,14 @@ export class VOTVideoManager {
     if (this.videoHandler.videoData.duration > 14400) {
       throw new VOTLocalizedError("VOTVideoIsTooLong");
     }
+
+    const sourceAudioState = getSourceAudioAvailability(
+      this.videoHandler.video,
+    );
+    if (!sourceAudioState.ready) {
+      throw new VOTLocalizedError(sourceAudioState.localizationKey as any);
+    }
+
     return true;
   }
 

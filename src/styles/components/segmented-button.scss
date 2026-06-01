@@ -109,6 +109,11 @@
     fill: #f28b82;
   }
 
+  &[data-status="disabled"] .vot-translate-button {
+    color: rgba(var(--vot-helper-theme-rgb), 0.56);
+    fill: rgba(var(--vot-helper-theme-rgb), 0.56);
+  }
+
   &[data-loading="true"] {
     #vot-loading-icon {
       display: block !important;

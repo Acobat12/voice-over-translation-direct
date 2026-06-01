@@ -12,6 +12,7 @@ import {
   resetAndHideLifecycle,
   resetLifecycleTranslation,
 } from "./lifecycleShared";
+import type { SourceAudioAvailabilityState } from "./sourceAudioAvailability";
 
 function isVkProbeHost(): boolean {
   return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
@@ -61,6 +62,9 @@ interface VideoLifecycleHost {
   enableSubtitlesForCurrentLangPair(): Promise<unknown>;
   queueOverlayAutoHide?(): void;
   onPrimaryAttachReady?(): void;
+  syncSourceAudioAvailabilityUi(options?: {
+    forceVisible?: boolean;
+  }): SourceAudioAvailabilityState;
 }
 
 export class VideoLifecycleController {
@@ -355,6 +359,18 @@ export class VideoLifecycleController {
       debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
         sourceKey,
       });
+      const overlayView = this.host.uiManager.votOverlayView;
+      this.showOverlayButton(overlayView);
+      const sourceAudioState = this.host.syncSourceAudioAvailabilityUi({
+        forceVisible: true,
+      });
+      console.log("[VOT][source-audio] status refresh after setCanPlay", {
+        sourceKey,
+        kind: sourceAudioState.kind,
+        ready: sourceAudioState.ready,
+        audioDetected: sourceAudioState.audioDetected,
+        detectionSource: sourceAudioState.detectionSource,
+      });
       if (this.shouldDeferAutoStartup()) {
         return;
       }
@@ -371,25 +387,17 @@ export class VideoLifecycleController {
         err,
       );
       this.host.videoData = undefined;
-      if (
-        this.hasResolvableMediaSource() ||
-        this.shouldKeepOverlayAlive(pageKey)
-      ) {
-        debug.log(
-          `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
-          { sourceKey },
-        );
-        this.logMobileOverlay("keep overlay after getVideoData failure", {
-          sourceKey,
-          pageKey,
-          hasResolvableMediaSource: this.hasResolvableMediaSource(),
-        });
-        this.showOverlayButton(this.host.uiManager.votOverlayView);
-      } else {
-        hideLifecycleOverlay(this.host.uiManager.votOverlayView, {
-          hideMenu: true,
-        });
-      }
+      debug.log(
+        `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
+        { sourceKey },
+      );
+      this.logMobileOverlay("keep overlay after getVideoData failure", {
+        sourceKey,
+        pageKey,
+        hasResolvableMediaSource: this.hasResolvableMediaSource(),
+      });
+      this.showOverlayButton(this.host.uiManager.votOverlayView);
+      this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
       return;
     }
 
@@ -522,6 +530,7 @@ export class VideoLifecycleController {
     }
 
     this.showOverlayButton(overlayView);
+    this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
 
     if (this.shouldAbortHandleSrcChanged(sessionId, "after getVideoData")) {
       return;
@@ -529,23 +538,17 @@ export class VideoLifecycleController {
 
     if (!this.host.videoData?.videoId) {
       debug.log(`[VideoLifecycle][session:${sessionId}] No videoId resolved`);
-      if (
-        this.hasResolvableMediaSource() ||
-        this.shouldKeepOverlayAlive(pageKey)
-      ) {
-        debug.log(
-          `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
-          { sourceKey },
-        );
-        this.logMobileOverlay("keep overlay without resolved videoId", {
-          sourceKey,
-          pageKey,
-          hasResolvableMediaSource: this.hasResolvableMediaSource(),
-        });
-        this.showOverlayButton(overlayView);
-      } else {
-        hideLifecycleOverlay(overlayView, { hideMenu: true });
-      }
+      debug.log(
+        `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
+        { sourceKey },
+      );
+      this.logMobileOverlay("keep overlay without resolved videoId", {
+        sourceKey,
+        pageKey,
+        hasResolvableMediaSource: this.hasResolvableMediaSource(),
+      });
+      this.showOverlayButton(overlayView);
+      this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
       return;
     }
 
@@ -572,6 +575,7 @@ export class VideoLifecycleController {
     );
 
     this.showOverlayButton(overlayView);
+    this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
     this.lastSetCanPlaySourceKey = sourceKey;
     this.host.onPrimaryAttachReady?.();
     debug.log(`[VideoLifecycle][session:${sessionId}] src handling finished`);
