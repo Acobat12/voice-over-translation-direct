@@ -1,6 +1,14 @@
 {
   "addons": {
-    "vot-extension@firefox": {
+    "vot-extension-acobat12-local2@acobat12.github.io": {
+      "updates": [
+        {
+          "version": "1.11.5.25",
+          "update_link": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext/vot-extension-firefox-1.11.5.25.xpi"
+        }
+      ]
+    },
+    "vot-extension-acobat12-local@firefox": {
       "updates": [
         {
           "version": "1.11.5.25",
