@@ -19,6 +19,24 @@ const LOCALE_STORAGE_KEYS: readonly LocaleStorageKey[] = [
   "localeLangOverride",
 ];
 const DEFAULT_LOCALE: FlatPhrases = toFlatObj(rawDefaultLocale);
+const BUNDLED_LOCALE_JSON_BY_LANG: Record<string, string> = (() => {
+  const modules = import.meta.glob<Record<string, unknown>>(
+    "./locales/*.json",
+    {
+      eager: true,
+      import: "default",
+    },
+  );
+  const map: Record<string, string> = {};
+
+  for (const [path, locale] of Object.entries(modules)) {
+    const match = path.match(/\/([^/]+)\.json$/i);
+    if (!match) continue;
+    map[match[1].toLowerCase()] = JSON.stringify(locale);
+  }
+
+  return map;
+})();
 
 const repoBranch =
   typeof REPO_BRANCH !== "undefined" && REPO_BRANCH ? REPO_BRANCH : "master";
@@ -77,13 +95,20 @@ class LocalizationProvider {
   }
 
   async init() {
-    const [langOverride, phrases] = await Promise.all([
+    const [langOverride, phrases, storedLocaleLang] = await Promise.all([
       votStorage.get<LangOverride>("localeLangOverride", "auto"),
       votStorage.get<string>("localePhrases", ""),
+      votStorage.get<string>("localeLang", ""),
     ]);
     this._langOverride = langOverride;
     this.lang = this.getLang();
-    this.setLocaleFromJsonString(phrases);
+
+    if (phrases && storedLocaleLang === this.lang) {
+      this.setLocaleFromJsonString(phrases);
+    } else {
+      this.applyBundledLocale(this.lang);
+    }
+
     return this;
   }
 
@@ -107,6 +132,22 @@ class LocalizationProvider {
   private buildUrl(baseUrl: string, path = "", force = false) {
     const query = force ? `?timestamp=${getTimestamp()}` : "";
     return `${baseUrl}${path}${query}`;
+  }
+
+  private getBundledLocaleJsonString(lang: string) {
+    return BUNDLED_LOCALE_JSON_BY_LANG[lang.toLowerCase()] || "";
+  }
+
+  private applyBundledLocale(lang: string) {
+    const bundledLocale = this.getBundledLocaleJsonString(lang);
+    if (!bundledLocale) {
+      this.locale = {};
+      this.warnedMissingKeys.clear();
+      return false;
+    }
+
+    this.setLocaleFromJsonString(bundledLocale);
+    return true;
   }
 
   async changeLang(newLang: LangOverride) {
@@ -166,10 +207,14 @@ class LocalizationProvider {
     if (hash === null) {
       // Do not update localeUpdatedAt on transient failures.
       // This allows a near-term retry instead of waiting for cache TTL.
+      this.applyBundledLocale(this.lang);
       return this;
     }
 
     if (!hash) {
+      if (!Object.keys(this.locale).length) {
+        this.applyBundledLocale(this.lang);
+      }
       return this;
     }
 
@@ -194,7 +239,13 @@ class LocalizationProvider {
       ]);
     } catch (err) {
       console.error("[VOT] [localizationProvider] Failed to get locale:", err);
-      this.setLocaleFromJsonString(await votStorage.get("localePhrases", ""));
+      const storedLocaleLang = await votStorage.get<string>("localeLang", "");
+      const storedLocalePhrases = await votStorage.get("localePhrases", "");
+      if (storedLocalePhrases && storedLocaleLang === this.lang) {
+        this.setLocaleFromJsonString(storedLocalePhrases);
+      } else {
+        this.applyBundledLocale(this.lang);
+      }
     }
 
     return this;

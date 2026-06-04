@@ -54,6 +54,7 @@ export default class Select<
   private contentList?: HTMLElement;
   private readonly contentItemSearchDatasetKey = "votSearchLabel";
   private readonly contentItemIndexDatasetKey = "votIndex";
+  private ignoreNextContentClick = false;
 
   selectedItems: HTMLElement[] = [];
   selectedValues: Set<T>;
@@ -128,22 +129,7 @@ export default class Select<
     this.onSelectItem.dispatch(value);
   };
 
-  private readonly onContentItemClick = (event: Event) => {
-    if (!(event.target instanceof HTMLElement)) {
-      return;
-    }
-
-    const contentItem = event.target.closest<HTMLElement>(
-      ".vot-select-content-item",
-    );
-    if (
-      !contentItem ||
-      contentItem.inert ||
-      !this.contentList?.contains(contentItem)
-    ) {
-      return;
-    }
-
+  private activateContentItem(contentItem: HTMLElement) {
     const rawIndex = contentItem.dataset[this.contentItemIndexDatasetKey];
     if (!rawIndex) {
       return;
@@ -160,6 +146,52 @@ export default class Select<
     }
 
     this.singleSelectItemHandle(item);
+  }
+
+  private readonly onContentItemClick = (event: Event) => {
+    if (this.ignoreNextContentClick) {
+      this.ignoreNextContentClick = false;
+      return;
+    }
+
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+
+    const contentItem = event.target.closest<HTMLElement>(
+      ".vot-select-content-item",
+    );
+    if (
+      !contentItem ||
+      contentItem.inert ||
+      !this.contentList?.contains(contentItem)
+    ) {
+      return;
+    }
+
+    this.activateContentItem(contentItem);
+  };
+
+  private readonly onContentItemPointerDown = (event: Event) => {
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+
+    const contentItem = event.target.closest<HTMLElement>(
+      ".vot-select-content-item",
+    );
+    if (
+      !contentItem ||
+      contentItem.inert ||
+      !this.contentList?.contains(contentItem)
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    this.ignoreNextContentClick = true;
+    this.activateContentItem(contentItem);
   };
 
   private syncItemsSelectionState(items: SelectItem<T>[] = this._items) {
@@ -193,6 +225,7 @@ export default class Select<
       contentList.appendChild(contentItem);
     }
 
+    contentList.addEventListener("pointerdown", this.onContentItemPointerDown);
     contentList.addEventListener("click", this.onContentItemClick);
 
     // Use Element children only (childNodes may include Text/Comment nodes).
@@ -397,6 +430,10 @@ export default class Select<
     this.contentList = this.createDialogContentList();
     dialogContainer.replaceChild(this.contentList, oldContentList);
     return this as unknown as Select<U>;
+  }
+
+  get items() {
+    return this._items;
   }
 
   get visibleText() {

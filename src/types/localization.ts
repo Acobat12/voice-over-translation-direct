@@ -277,6 +277,17 @@ export type Phrase =
   | "hotkeysSettings"
   | "None"
   | "VOTUseLivelyVoice"
+  | "VOTStandardVoices"
+  | "VOTStandardVoicesDescription"
+  | "VOTLivelyVoices"
+  | "VOTLivelyVoicesDescription"
+  | "VOTVoiceModeMenuTitle"
+  | "VOTRailTranslateAndDub"
+  | "VOTRailDisableTranslation"
+  | "VOTRailTranslatingEta"
+  | "VOTRailCompactMinute"
+  | "VOTRailCompactMinutes"
+  | "VOTRailCompactMoreThanHour"
   | "miscSettings"
   | "services.yandexbrowser"
   | "services.msedge"
@@ -520,6 +531,11 @@ export type Phrases = {
   hotkeysSettings: string;
   None: string;
   VOTUseLivelyVoice: string;
+  VOTStandardVoices: string;
+  VOTStandardVoicesDescription: string;
+  VOTLivelyVoices: string;
+  VOTLivelyVoicesDescription: string;
+  VOTVoiceModeMenuTitle: string;
   miscSettings: string;
   services: {
     yandexbrowser: string;

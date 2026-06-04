@@ -1,5 +1,6 @@
 import { availableLangs, availableTTS } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
+import { render } from "lit-html";
 import type { VideoHandler } from "../..";
 import { maxAudioVolume } from "../../config/config";
 import { EventImpl } from "../../core/eventImpl";
@@ -24,11 +25,18 @@ import SliderLabel from "../components/sliderLabel";
 import Tooltip from "../components/tooltip";
 import VOTButton from "../components/votButton";
 import VOTMenu from "../components/votMenu";
-import { SETTINGS_ICON, SUBTITLES_ICON } from "./../icons";
+import VOTRail from "../components/votRail";
+import {
+  CHECK_ICON,
+  SETTINGS_ICON,
+  SUBTITLES_ICON,
+  VOICE_WAVE_ICON,
+} from "./../icons";
 import { didTooltipMountContextChange } from "../mount";
 
 export class OverlayView {
   private static readonly BIG_CONTAINER_WIDTH_PX = 550;
+  private static readonly MENU_CLAMP_GAP_PX = 12;
 
   mount: OverlayMount;
   globalPortal: HTMLElement;
@@ -64,6 +72,10 @@ export class OverlayView {
       OverlayViewEventMap["click:downloadSubtitles"]
     >(),
     "click:translate": new EventImpl<OverlayViewEventMap["click:translate"]>(),
+    "click:subtitles": new EventImpl<OverlayViewEventMap["click:subtitles"]>(),
+    "select:voiceMode": new EventImpl<
+      OverlayViewEventMap["select:voiceMode"]
+    >(),
     "input:videoVolume": new EventImpl<
       OverlayViewEventMap["input:videoVolume"]
     >(),
@@ -82,10 +94,11 @@ export class OverlayView {
   };
 
   // button
-  votButton?: VOTButton;
+  votButton?: VOTButton | VOTRail;
   votButtonTooltip?: Tooltip;
   // menu
   votMenu?: VOTMenu;
+  voiceModeMenu?: VOTMenu;
   downloadTranslationButton?: DownloadButton;
   downloadSubtitlesButton?: HTMLElement;
   openSettingsButton?: HTMLElement;
@@ -123,6 +136,67 @@ export class OverlayView {
     return this.mount.tooltipLayoutRoot;
   }
 
+  get useRailLayout(): boolean {
+    const site = this.videoHandler?.site;
+    if (!site) {
+      return false;
+    }
+
+    if (site.host === "googledrive") {
+      return false;
+    }
+
+    return true;
+  }
+
+  private get menuHost(): HTMLElement {
+    return this.useRailLayout ? this.globalPortal : this.root;
+  }
+
+  private get selectedVoiceMode(): "standard" | "lively" {
+    return this.data.useLivelyVoice ? "lively" : "standard";
+  }
+
+  private getVoiceModeLabel(mode = this.selectedVoiceMode): string {
+    return mode === "lively"
+      ? localizationProvider.get("VOTLivelyVoices")
+      : localizationProvider.get("VOTStandardVoices");
+  }
+
+  private getVoiceModeDescription(mode = this.selectedVoiceMode): string {
+    return mode === "lively"
+      ? localizationProvider.get("VOTLivelyVoicesDescription")
+      : localizationProvider.get("VOTStandardVoicesDescription");
+  }
+
+  private createVoiceModeMenuItem(mode: "standard" | "lively"): HTMLElement {
+    const item = ui.createEl("vot-block", ["vot-voice-mode-menu-item"]);
+    ui.makeButtonLike(item, {
+      ariaLabel: this.getVoiceModeLabel(mode),
+    });
+    item.dataset.mode = mode;
+
+    const icon = ui.createEl("vot-block", ["vot-voice-mode-menu-item-icon"]);
+    render(VOICE_WAVE_ICON, icon);
+
+    const content = ui.createEl("vot-block", [
+      "vot-voice-mode-menu-item-content",
+    ]);
+    const title = ui.createEl("vot-block", ["vot-voice-mode-menu-item-title"]);
+    title.textContent = this.getVoiceModeLabel(mode);
+    const description = ui.createEl("vot-block", [
+      "vot-voice-mode-menu-item-description",
+    ]);
+    description.textContent = this.getVoiceModeDescription(mode);
+    content.append(title, description);
+
+    const check = ui.createEl("vot-block", ["vot-voice-mode-menu-item-check"]);
+    render(CHECK_ICON, check);
+
+    item.append(icon, content, check);
+    return item;
+  }
+
   private shouldLogMobileOverlay(): boolean {
     return /^(m|music)\.youtube\.com$/i.test(
       String(globalThis.location.hostname || ""),
@@ -151,7 +225,10 @@ export class OverlayView {
         nextRoot.appendChild(this.votButton.container);
       }
       if (this.votMenu) {
-        nextRoot.appendChild(this.votMenu.container);
+        this.menuHost.appendChild(this.votMenu.container);
+      }
+      if (this.voiceModeMenu) {
+        this.menuHost.appendChild(this.voiceModeMenu.container);
       }
     }
 
@@ -181,11 +258,12 @@ export class OverlayView {
 
   isInitialized(): this is {
     // #region Button type
-    votButton: VOTButton;
+    votButton: VOTButton | VOTRail;
     votButtonTooltip: Tooltip;
     // #endregion Button type
     // #region Menu type
     votMenu: VOTMenu;
+    voiceModeMenu: VOTMenu;
     downloadTranslationButton: DownloadButton;
     downloadSubtitlesButton: HTMLElement;
     openSettingsButton: HTMLElement;
@@ -202,6 +280,20 @@ export class OverlayView {
   }
 
   calcButtonLayout(position: Position): ButtonLayout {
+    if (this.useRailLayout) {
+      if (position === "left" || position === "right") {
+        return {
+          direction: "column",
+          position,
+        };
+      }
+
+      return {
+        direction: "row",
+        position: position === "top" ? "top" : "default",
+      };
+    }
+
     if (this.isBigContainer && isSidePosition(position)) {
       return {
         direction: "column",
@@ -267,20 +359,38 @@ export class OverlayView {
 
     // #endregion Shared logic
     // #region VOT Button
-    this.votButton = new VOTButton({
-      position,
-      direction,
-      status: "none",
-      labelHtml: localizationProvider.get("translateVideo"),
-    });
+    this.votButton = this.useRailLayout
+      ? new VOTRail({
+          position,
+          direction,
+          status: "none",
+          labelHtml: localizationProvider.get("VOTRailTranslateAndDub"),
+        })
+      : new VOTButton({
+          position,
+          direction,
+          status: "none",
+          labelHtml: localizationProvider.get("translateVideo"),
+        });
     this.votButton.opacity = 0;
     if (!this.pipButtonVisible) {
       this.votButton.showPiPButton(false);
     }
+    if (this.useRailLayout && this.votButton instanceof VOTRail) {
+      this.votButton.showSubtitlesButton(true);
+      this.votButton.setButtonLabels({
+        subtitles: localizationProvider.get("VOTSubtitles"),
+        pip: "Picture in picture",
+        menu: localizationProvider.get("VOTSettings"),
+      });
+    }
     this.root.appendChild(this.votButton.container);
+    this.syncSharedRailPlacement();
     this.votButtonTooltip = new Tooltip({
       target: this.votButton.translateButton,
-      content: localizationProvider.get("translateVideo"),
+      content: this.useRailLayout
+        ? localizationProvider.get("VOTRailTranslateAndDub")
+        : localizationProvider.get("translateVideo"),
       position: this.votButton.tooltipPos,
       // Keep side-tooltip direction stable for the moved button (left/right)
       // so status/error text does not mirror to the opposite side.
@@ -297,7 +407,21 @@ export class OverlayView {
       titleHtml: localizationProvider.get("VOTSettings"),
       position,
     });
-    this.root.appendChild(this.votMenu.container);
+    this.menuHost.appendChild(this.votMenu.container);
+    if (this.useRailLayout) {
+      this.votMenu.container.classList.add("vot-menu--fixed-anchor");
+      this.votMenu.container.style.position = "fixed";
+      this.votMenu.container.style.left = "0";
+      this.votMenu.container.style.top = "0";
+      this.votMenu.container.style.zIndex = "2147483647";
+      this.votMenu.container.style.pointerEvents = "auto";
+      this.votMenu.container.style.width = "min(420px, calc(100vw - 24px))";
+      this.votMenu.container.style.maxHeight = "calc(100vh - 24px)";
+      this.votMenu.container.style.overflow = "visible";
+      this.votMenu.contentWrapper.style.maxHeight = "calc(100vh - 80px)";
+      this.votMenu.contentWrapper.style.overflowY = "auto";
+      this.votMenu.contentWrapper.style.overflowX = "visible";
+    }
 
     // A11y: link the menu toggle button to the popover.
     this.votButton.menuButton.setAttribute(
@@ -400,8 +524,258 @@ export class OverlayView {
       this.translationVolumeSlider.container,
     );
 
+    if (this.useRailLayout) {
+      this.voiceModeMenu = new VOTMenu({
+        titleHtml: localizationProvider.get("VOTVoiceModeMenuTitle"),
+        position: "default",
+      });
+      this.voiceModeMenu.container.classList.add("vot-menu--fixed-anchor");
+      this.voiceModeMenu.container.classList.add("vot-voice-mode-menu");
+      this.voiceModeMenu.container.style.position = "fixed";
+      this.voiceModeMenu.container.style.left = "0";
+      this.voiceModeMenu.container.style.top = "0";
+      this.voiceModeMenu.container.style.zIndex = "2147483647";
+      this.voiceModeMenu.container.style.pointerEvents = "auto";
+      this.voiceModeMenu.container.style.width =
+        "min(360px, calc(100vw - 24px))";
+      this.voiceModeMenu.container.style.maxHeight = "calc(100vh - 24px)";
+      this.voiceModeMenu.container.style.overflow = "visible";
+      this.voiceModeMenu.contentWrapper.style.maxHeight = "calc(100vh - 80px)";
+      this.voiceModeMenu.contentWrapper.style.overflowY = "auto";
+      this.voiceModeMenu.contentWrapper.style.overflowX = "visible";
+      this.voiceModeMenu.hidden = true;
+
+      const standardItem = this.createVoiceModeMenuItem("standard");
+      const livelyItem = this.createVoiceModeMenuItem("lively");
+      this.voiceModeMenu.bodyContainer.append(standardItem, livelyItem);
+      this.menuHost.appendChild(this.voiceModeMenu.container);
+
+      if (this.votButton instanceof VOTRail) {
+        this.votButton.translateChevron.setAttribute(
+          "aria-controls",
+          this.voiceModeMenu.container.id,
+        );
+      }
+      this.syncVoiceModeUi();
+      this.syncSubtitlesButtonUi();
+    }
+
     // #endregion VOT Menu Body
     // #endregion VOT Menu
+    return this;
+  }
+
+  private getMenuBoundsRect(): DOMRect {
+    return (
+      this.videoHandler?.container?.getBoundingClientRect?.() ??
+      this.root.getBoundingClientRect()
+    );
+  }
+
+  private positionFixedMenu(
+    menu: VOTMenu,
+    anchorRect: DOMRect,
+    opts: { alignToGroup?: DOMRect } = {},
+  ): void {
+    if (!this.useRailLayout || !this.votButton) {
+      return;
+    }
+
+    const boundsRect = this.getMenuBoundsRect();
+    const menuWidth = menu.container.offsetWidth || 360;
+    const menuHeight = menu.container.offsetHeight || 240;
+    const isVertical =
+      this.votButton.position === "left" || this.votButton.position === "right";
+    const gap = OverlayView.MENU_CLAMP_GAP_PX;
+    const boundsLeft = Math.max(gap, boundsRect.left + gap);
+    const boundsTop = Math.max(gap, boundsRect.top + gap);
+    const boundsRight = Math.min(
+      globalThis.innerWidth - gap,
+      boundsRect.right - gap,
+    );
+    const boundsBottom = Math.min(
+      globalThis.innerHeight - gap,
+      boundsRect.bottom - gap,
+    );
+    const horizontalAnchorRect = opts.alignToGroup ?? anchorRect;
+
+    const desiredLeft = isVertical
+      ? this.votButton.position === "right"
+        ? anchorRect.left - menuWidth - gap
+        : anchorRect.right + gap
+      : horizontalAnchorRect.left +
+        (horizontalAnchorRect.width - menuWidth) / 2;
+    const left = Math.max(
+      boundsLeft,
+      Math.min(Math.max(boundsLeft, boundsRight - menuWidth), desiredLeft),
+    );
+
+    const desiredTop = isVertical
+      ? anchorRect.top
+      : (opts.alignToGroup?.bottom ?? anchorRect.bottom) + gap;
+    const fallbackTop = isVertical
+      ? Math.max(boundsTop, boundsBottom - menuHeight)
+      : (opts.alignToGroup?.top ?? anchorRect.top) - menuHeight - gap;
+    const top = Math.max(
+      boundsTop,
+      Math.min(
+        Math.max(boundsTop, boundsBottom - menuHeight),
+        desiredTop + menuHeight <= boundsBottom
+          ? desiredTop
+          : Math.max(boundsTop, fallbackTop),
+      ),
+    );
+
+    menu.container.style.left = `${left}px`;
+    menu.container.style.top = `${top}px`;
+  }
+
+  private positionQuickMenu(): void {
+    if (!this.useRailLayout || !this.votMenu || !this.votButton) {
+      return;
+    }
+
+    this.positionFixedMenu(
+      this.votMenu,
+      this.votButton.menuButton.getBoundingClientRect(),
+      {
+        alignToGroup: this.votButton.container.getBoundingClientRect(),
+      },
+    );
+  }
+
+  private positionVoiceModeMenu(): void {
+    if (
+      !this.useRailLayout ||
+      !this.voiceModeMenu ||
+      !(this.votButton instanceof VOTRail)
+    ) {
+      return;
+    }
+
+    this.positionFixedMenu(
+      this.voiceModeMenu,
+      this.votButton.translateGroup.getBoundingClientRect(),
+    );
+  }
+
+  private syncSharedRailPlacement(): void {
+    if (!this.useRailLayout || !(this.votButton instanceof VOTRail)) {
+      return;
+    }
+
+    const style = this.votButton.container.style;
+    style.position = "absolute";
+    style.bottom = "";
+
+    switch (this.votButton.position) {
+      case "left":
+        style.left = "50px";
+        style.right = "";
+        style.top = "12.5vh";
+        style.transform = "";
+        break;
+      case "right":
+        style.left = "";
+        style.right = "0";
+        style.top = "12.5vh";
+        style.transform = "";
+        break;
+      case "top":
+      case "default":
+      default:
+        style.left = "50%";
+        style.right = "";
+        style.top = "5rem";
+        style.transform = "translate(-50%)";
+        break;
+    }
+  }
+
+  syncSubtitlesButtonUi(): this {
+    if (
+      !this.useRailLayout ||
+      !(this.votButton instanceof VOTRail) ||
+      !this.subtitlesSelect
+    ) {
+      return this;
+    }
+
+    this.votButton.showSubtitlesButton(true);
+    return this;
+  }
+
+  private setVoiceModeMenuOpen(open: boolean): void {
+    if (!this.voiceModeMenu || !(this.votButton instanceof VOTRail)) {
+      return;
+    }
+
+    if (open) {
+      this.votMenu!.hidden = true;
+      this.votButton.menuButton.setAttribute("aria-expanded", "false");
+      this.syncVoiceModeUi();
+      this.voiceModeMenu.hidden = false;
+      this.votButton.translateChevron.setAttribute("aria-expanded", "true");
+      queueMicrotask(() => this.positionVoiceModeMenu());
+      return;
+    }
+
+    this.voiceModeMenu.hidden = true;
+    this.votButton.translateChevron.setAttribute("aria-expanded", "false");
+  }
+
+  syncVoiceModeUi(): this {
+    if (!this.useRailLayout || !this.votButton) {
+      return this;
+    }
+
+    const configuredMode = this.selectedVoiceMode;
+    const actualMode = this.videoHandler?.activeVoiceMode;
+    const isLoading =
+      this.votButton.loading || Boolean(this.videoHandler?.hadAsyncWait);
+    const hasActiveSource = Boolean(this.videoHandler?.hasActiveSource());
+    const displayedMode =
+      hasActiveSource && actualMode ? actualMode : configuredMode;
+    const status = this.votButton.status;
+    const playbackState = isLoading
+      ? "loading"
+      : !hasActiveSource || status === "error" || status === "disabled"
+        ? "idle"
+        : this.videoHandler?.video?.paused
+          ? "paused"
+          : "playing";
+
+    this.votButton.container.dataset.voiceMode = displayedMode;
+    this.votButton.container.dataset.voicePlaybackState = playbackState;
+
+    if (status === "success") {
+      this.votButton.setText(this.getVoiceModeLabel(displayedMode));
+      this.votButtonTooltip?.setContent(this.getVoiceModeLabel(displayedMode));
+    }
+
+    if (!this.voiceModeMenu) {
+      return this;
+    }
+
+    for (const item of this.voiceModeMenu.bodyContainer.querySelectorAll<HTMLElement>(
+      ".vot-voice-mode-menu-item",
+    )) {
+      const mode = item.dataset.mode === "lively" ? "lively" : "standard";
+      const isSelected = mode === displayedMode;
+      const title = item.querySelector<HTMLElement>(
+        ".vot-voice-mode-menu-item-title",
+      );
+
+      item.dataset.selected = String(isSelected);
+      item.dataset.playbackState = isSelected ? playbackState : "idle";
+      item.dataset.loading = String(isSelected && isLoading);
+      item.setAttribute("aria-pressed", String(isSelected));
+
+      if (title) {
+        title.textContent = this.getVoiceModeLabel(mode);
+      }
+    }
+
     return this;
   }
 
@@ -446,6 +820,10 @@ export class OverlayView {
     ) => {
       if (!this.isInitialized()) return;
 
+      if (open && this.voiceModeMenu && !this.voiceModeMenu.hidden) {
+        this.setVoiceModeMenuOpen(false);
+      }
+
       this.votMenu.hidden = !open;
       this.votButton.menuButton.setAttribute("aria-expanded", open.toString());
 
@@ -457,6 +835,9 @@ export class OverlayView {
       }
 
       if (open) {
+        if (this.useRailLayout) {
+          queueMicrotask(() => this.positionQuickMenu());
+        }
         queueMicrotask(() => this.openSettingsButton?.focus?.());
       } else if (returnFocusToToggle) {
         queueMicrotask(() => this.votButton.menuButton.focus?.());
@@ -469,29 +850,71 @@ export class OverlayView {
     const closeMenu = (returnFocusToToggle = false) =>
       setMenuOpen(false, { returnFocusToToggle });
 
+    const handleTranslate = () => {
+      if (this.useRailLayout) {
+        if (this.votButton?.status === "success") {
+          this.setVoiceModeMenuOpen(false);
+          closeMenu();
+          this.events["click:translate"].dispatch();
+          return;
+        }
+
+        if (this.votButton?.loading) {
+          return;
+        }
+
+        closeMenu();
+        this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
+        return;
+      }
+
+      closeMenu();
+      this.events["click:translate"].dispatch();
+    };
+
     this.votButton.translateButton.addEventListener(
       "pointerdown",
       (event) => {
         if (!isPrimaryActionPointer(event)) return;
-        closeMenu();
-        this.events["click:translate"].dispatch();
+        handleTranslate();
       },
       { signal },
     );
 
     this.votButton.translateButton.addEventListener(
       "keydown",
-      activateOnKey(() => {
-        closeMenu();
-        this.events["click:translate"].dispatch();
-      }),
+      activateOnKey(handleTranslate),
       { signal },
     );
+
+    if (this.useRailLayout && this.votButton instanceof VOTRail) {
+      const toggleVoiceModeMenu = () => {
+        closeMenu();
+        this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
+      };
+
+      this.votButton.translateChevron.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!isPrimaryActionPointer(event)) return;
+          event.preventDefault();
+          toggleVoiceModeMenu();
+        },
+        { signal },
+      );
+
+      this.votButton.translateChevron.addEventListener(
+        "keydown",
+        activateOnKey(toggleVoiceModeMenu),
+        { signal },
+      );
+    }
 
     this.votButton.pipButton.addEventListener(
       "pointerdown",
       (event) => {
         if (!isPrimaryActionPointer(event)) return;
+        this.setVoiceModeMenuOpen(false);
         closeMenu();
         this.events["click:pip"].dispatch();
       },
@@ -500,6 +923,7 @@ export class OverlayView {
     this.votButton.pipButton.addEventListener(
       "keydown",
       activateOnKey(() => {
+        this.setVoiceModeMenuOpen(false);
         closeMenu();
         this.events["click:pip"].dispatch();
       }),
@@ -511,6 +935,7 @@ export class OverlayView {
       (e) => {
         if (!isPrimaryActionPointer(e)) return;
         e.preventDefault();
+        this.setVoiceModeMenuOpen(false);
         toggleMenu();
       },
       { signal },
@@ -520,6 +945,30 @@ export class OverlayView {
       activateOnKey(toggleMenu),
       { signal },
     );
+
+    if (this.useRailLayout && this.votButton instanceof VOTRail) {
+      const handleOpenSubtitles = () => {
+        this.setVoiceModeMenuOpen(false);
+        closeMenu();
+        queueMicrotask(() => this.subtitlesSelect?.outer.click());
+      };
+
+      this.votButton.subtitlesButton.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!isPrimaryActionPointer(event)) return;
+          event.preventDefault();
+          handleOpenSubtitles();
+        },
+        { signal },
+      );
+
+      this.votButton.subtitlesButton.addEventListener(
+        "keydown",
+        activateOnKey(handleOpenSubtitles),
+        { signal },
+      );
+    }
 
     // #region [Events] VOT Button Dragging
     // Enable cross-platform dragging:
@@ -533,6 +982,10 @@ export class OverlayView {
     this.votButton.translateButton.style.touchAction = touchAction;
     this.votButton.pipButton.style.touchAction = touchAction;
     this.votButton.menuButton.style.touchAction = touchAction;
+    if (this.votButton instanceof VOTRail) {
+      this.votButton.translateChevron.style.touchAction = touchAction;
+      this.votButton.subtitlesButton.style.touchAction = touchAction;
+    }
 
     this.votButton.container.addEventListener("pointerdown", this.onDragStart, {
       signal,
@@ -567,12 +1020,69 @@ export class OverlayView {
       );
     }
 
+    if (this.voiceModeMenu) {
+      this.voiceModeMenu.container.addEventListener(
+        "click",
+        (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          e.stopImmediatePropagation();
+        },
+        { signal },
+      );
+
+      for (const event of ["pointerdown", "mousedown"] as const) {
+        this.voiceModeMenu.container.addEventListener(
+          event,
+          (e) => {
+            e.stopImmediatePropagation();
+          },
+          { signal },
+        );
+      }
+
+      this.voiceModeMenu.container.addEventListener(
+        "keydown",
+        (e) => {
+          if (e.key !== "Escape") return;
+
+          e.preventDefault();
+          e.stopPropagation();
+          this.setVoiceModeMenuOpen(false);
+        },
+        { signal },
+      );
+
+      for (const item of this.voiceModeMenu.bodyContainer.querySelectorAll<HTMLElement>(
+        ".vot-voice-mode-menu-item",
+      )) {
+        const mode = item.dataset.mode === "lively" ? "lively" : "standard";
+        const dispatchMode = () => {
+          this.events["select:voiceMode"].dispatch(mode);
+          this.setVoiceModeMenuOpen(false);
+        };
+
+        item.addEventListener(
+          "pointerdown",
+          (event) => {
+            if (!isPrimaryActionPointer(event)) return;
+            event.preventDefault();
+            dispatchMode();
+          },
+          { signal },
+        );
+        item.addEventListener("keydown", activateOnKey(dispatchMode), {
+          signal,
+        });
+      }
+    }
+
     // Close the quick-settings menu when clicking outside.
     // Capture phase ensures we run even if the host page stops bubbling.
     document.addEventListener(
       "pointerdown",
       (e) => {
-        if (this.votMenu.hidden) return;
+        if (this.votMenu.hidden && this.voiceModeMenu?.hidden !== false) return;
 
         const target = e.target as Node | null;
         const path =
@@ -583,9 +1093,17 @@ export class OverlayView {
         const isInsideMenu =
           (target && this.votMenu.container.contains(target)) ||
           path.includes(this.votMenu.container);
+        const isInsideVoiceModeMenu =
+          !!this.voiceModeMenu &&
+          ((target && this.voiceModeMenu.container.contains(target)) ||
+            path.includes(this.voiceModeMenu.container));
         const isInsideToggle =
           (target && this.votButton.menuButton.contains(target)) ||
           path.includes(this.votButton.menuButton);
+        const isInsideVoiceToggle =
+          this.votButton instanceof VOTRail &&
+          ((target && this.votButton.translateGroup.contains(target)) ||
+            path.includes(this.votButton.translateGroup));
         const isInsideButton =
           (target && this.votButton.container.contains(target)) ||
           path.includes(this.votButton.container);
@@ -598,7 +1116,9 @@ export class OverlayView {
 
         if (
           isInsideMenu ||
+          isInsideVoiceModeMenu ||
           isInsideToggle ||
+          isInsideVoiceToggle ||
           isInsideButton ||
           isInsideDialog
         ) {
@@ -606,6 +1126,7 @@ export class OverlayView {
         }
 
         closeMenu(false);
+        this.setVoiceModeMenuOpen(false);
       },
       { signal, capture: true, passive: true },
     );
@@ -635,7 +1156,8 @@ export class OverlayView {
         // so we manually queue overlay auto-hide when the overlay isn't hovered.
         const hovered =
           this.votButton.container.matches(":hover") ||
-          this.votMenu.container.matches(":hover");
+          this.votMenu.container.matches(":hover") ||
+          this.voiceModeMenu?.container.matches(":hover");
 
         if (!hovered) {
           this.videoHandler?.overlayVisibility?.queueAutoHide?.();
@@ -749,6 +1271,7 @@ export class OverlayView {
         if (this.votButton) {
           this.votButton.loading = prevLoading;
         }
+        this.syncVoiceModeUi();
       }
     });
 
@@ -785,6 +1308,21 @@ export class OverlayView {
       },
     );
 
+    if (this.useRailLayout && this.videoHandler?.video) {
+      const syncRailUi = () => this.syncVoiceModeUi();
+      for (const eventName of [
+        "play",
+        "pause",
+        "waiting",
+        "playing",
+        "ended",
+      ] as const) {
+        this.videoHandler.video.addEventListener(eventName, syncRailUi, {
+          signal,
+        });
+      }
+    }
+
     // #endregion [Events] VOT Menu Body
     // #endregion [Events] VOT Menu
     return this;
@@ -799,9 +1337,17 @@ export class OverlayView {
 
     this.votButton.position = position;
     this.votButton.direction = direction;
+    this.syncSharedRailPlacement();
 
     this.votButtonTooltip.hidden = direction === "row";
     this.votButtonTooltip.setPosition(this.votButton.tooltipPos);
+    this.syncVoiceModeUi();
+    if (!this.votMenu.hidden) {
+      queueMicrotask(() => this.positionQuickMenu());
+    }
+    if (this.voiceModeMenu && !this.voiceModeMenu.hidden) {
+      queueMicrotask(() => this.positionVoiceModeMenu());
+    }
 
     return this;
   }
@@ -995,6 +1541,7 @@ export class OverlayView {
     }
     this.votButton?.remove();
     this.votMenu?.remove();
+    this.voiceModeMenu?.remove();
     this.votButtonTooltip?.release();
   }
 

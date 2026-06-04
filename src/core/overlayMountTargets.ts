@@ -75,14 +75,18 @@ export function resolveOverlayMountTargets(input: {
       ? getPersistentMobileYouTubeOverlayRoot(input.site)
       : null;
   const root = input.fullscreenRoot ?? stableMobileYouTubeRoot ?? base;
+  const shouldUseViewportSubtitlesMount =
+    input.site.host === "youtube" && input.site.additionalData === "music";
   const subtitlesMountContainer =
     input.site.host === "googledrive"
       ? (input.fullscreenRoot ?? document.body)
       : input.site.host === "vk"
         ? (input.fullscreenRoot ?? document.documentElement)
-        : stableMobileYouTubeRoot
-          ? base
-          : root;
+        : shouldUseViewportSubtitlesMount
+          ? root
+          : stableMobileYouTubeRoot
+            ? base
+            : root;
 
   return {
     base,

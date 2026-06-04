@@ -1907,6 +1907,7 @@ export async function updateTranslation(
     }
 
     this.downloadTranslationUrl = null;
+    this.activeVoiceMode = null;
 
     const msg = toErrorMessage(applyResult.error);
     this.transformBtn("error", msg);
@@ -2005,6 +2006,7 @@ export async function updateTranslation(
       }
 
       this.downloadTranslationUrl = null;
+      this.activeVoiceMode = null;
       this.transformBtn("error", "Translated audio did not start");
       throw new Error("Translated audio did not start");
     }
@@ -2098,6 +2100,7 @@ export async function translateFunc(
 
     this.downloadTranslationUrl = null;
     this.activeTranslation = null;
+    this.activeVoiceMode = null;
     this.hadAsyncWait = false;
 
     stopSmartVolumeDucking(this, {
@@ -2160,6 +2163,10 @@ export async function translateFunc(
       try {
         const updated = await applyTranslationUrl(cachedEntry.url);
         if (updated && this.hasActiveSource()) {
+          this.activeVoiceMode = cachedEntry.useLivelyVoice
+            ? "lively"
+            : "standard";
+          this.uiManager.votOverlayView?.syncVoiceModeUi();
           debug.log("[translateFunc] Cached translation was received");
           return;
         }
@@ -2226,6 +2233,13 @@ export async function translateFunc(
     if (!translateRes) {
       debug.log("Skip translation");
       return;
+    }
+
+    if (this.hasActiveSource()) {
+      this.activeVoiceMode = translateRes.usedLivelyVoice
+        ? "lively"
+        : "standard";
+      this.uiManager.votOverlayView?.syncVoiceModeUi();
     }
   })();
 

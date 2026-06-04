@@ -599,6 +599,7 @@ export async function updateSubtitlesLangSelect(this: VideoHandler) {
   );
   overlayView.subtitlesSelect.updateItems(updatedOptions);
   overlayView.subtitlesSelect.setSelectedValue(nextValue);
+  overlayView.syncSubtitlesButtonUi?.();
 
   if (nextValue !== DISABLED_SUBTITLES_VALUE) {
     return;
@@ -693,7 +694,6 @@ export async function enableSubtitlesForCurrentLangPair(this: VideoHandler) {
     return this;
   }
 
-  await this.changeSubtitlesLang(DISABLED_SUBTITLES_VALUE);
   await this.changeSubtitlesLang(String(bestIdx));
   return this;
 }
@@ -712,9 +712,19 @@ export async function toggleSubtitlesForCurrentLangPair(this: VideoHandler) {
   const currentValue = getSelectedSubtitlesValue(
     overlayView.subtitlesSelect.selectedValues,
   );
+  const hasRenderedSubtitles =
+    Array.isArray(this.yandexSubtitles?.subtitles) &&
+    this.yandexSubtitles.subtitles.length > 0;
+  const hasActiveSelection =
+    Boolean(currentValue) && currentValue !== DISABLED_SUBTITLES_VALUE;
 
-  if (currentValue && currentValue !== DISABLED_SUBTITLES_VALUE) {
+  if (hasActiveSelection && hasRenderedSubtitles) {
     await this.changeSubtitlesLang(DISABLED_SUBTITLES_VALUE);
+    return this;
+  }
+
+  if (hasActiveSelection && currentValue) {
+    await this.changeSubtitlesLang(currentValue);
     return this;
   }
 

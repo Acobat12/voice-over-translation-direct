@@ -135,6 +135,7 @@ const RESPONSE_LANG_SET = new Set<string>(availableTTS as readonly string[]);
 const isResponseLang = (value: string): value is ResponseLang =>
   RESPONSE_LANG_SET.has(value);
 const RESOLVED_VOID_PROMISE: Promise<void> = Promise.resolve();
+const GOOGLE_DRIVE_ACTIVE_HANDLER_KEY = "__VOT_GOOGLE_DRIVE_ACTIVE_HANDLER__";
 
 type InternalVideoVolumeSetHistoryEntry = {
   at: number;
@@ -248,6 +249,7 @@ export class VideoHandler {
   subtitlesWidget?: SubtitlesWidget;
 
   activeTranslation: { key: string; promise: Promise<unknown> } | null = null;
+  activeVoiceMode: "standard" | "lively" | null = null;
   lastTranslationVideoId: string | null = null;
   externalTranslationSourceUrl: string | null = null;
   pendingAutoplayRecovery: {
@@ -559,6 +561,14 @@ export class VideoHandler {
     this.video = video;
     this.container = container;
     this.site = site;
+    if (
+      String(globalThis.location.hostname || "").toLowerCase() ===
+        "youtube.googleapis.com" &&
+      globalThis.location.pathname.startsWith("/embed")
+    ) {
+      (globalThis as Record<string, unknown>)[GOOGLE_DRIVE_ACTIVE_HANDLER_KEY] =
+        this;
+    }
     this.abortController = new AbortController();
     this.actionsAbortController = new AbortController();
     this.cacheManager = new CacheManager();
@@ -661,6 +671,8 @@ export class VideoHandler {
         responseLanguage: string,
       ) =>
         this.getSubtitlesCacheKey(videoId, detectedLanguage, responseLanguage),
+      ensureSubtitlesForCurrentLangPair: () =>
+        this.ensureSubtitlesForCurrentLangPair(),
       updateSubtitlesLangSelect: () => this.updateSubtitlesLangSelect(),
       enableSubtitlesForCurrentLangPair: () =>
         this.enableSubtitlesForCurrentLangPair(),
@@ -1606,6 +1618,7 @@ export class VideoHandler {
         debug.log("audioPlayer after stopTranslate", this.audioPlayer);
       }
       this.activeTranslation = null;
+      this.activeVoiceMode = null;
       const overlayView = this.uiManager.votOverlayView;
       if (overlayView) {
         if (overlayView.videoVolumeSlider) {
@@ -2046,6 +2059,16 @@ export class VideoHandler {
     }
     this.interactionChecker?.destroy();
     this.uiManager.release();
+    if (
+      (globalThis as Record<string, unknown>)[
+        GOOGLE_DRIVE_ACTIVE_HANDLER_KEY
+      ] === this
+    ) {
+      Reflect.deleteProperty(
+        globalThis as Record<string, unknown>,
+        GOOGLE_DRIVE_ACTIVE_HANDLER_KEY,
+      );
+    }
 
     if (
       shouldUsePopupOverlayWindow() &&
@@ -2320,6 +2343,20 @@ async function main(): Promise<void> {
     installManifestSniffer();
   }
   const iframeMode = isIframe();
+  const currentHost = String(globalThis.location.hostname || "").toLowerCase();
+  const shouldSkipGoogleDriveTopFrameBootstrap =
+    !iframeMode &&
+    (currentHost === "drive.google.com" || currentHost === "docs.google.com");
+
+  if (shouldSkipGoogleDriveTopFrameBootstrap) {
+    logBootstrap(
+      "Google Drive top frame detected; skipping top-frame VideoHandler bootstrap",
+      { host: currentHost },
+    );
+    await ensureRuntimeActivated("google-drive-top-frame", logBootstrap);
+    return;
+  }
+
   const bootstrapMode = resolveBootstrapMode({
     isIframe: isIframe(),
     href: String(globalThis.location.href || ""),

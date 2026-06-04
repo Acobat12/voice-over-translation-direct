@@ -162,8 +162,21 @@ export function installManifestSniffer(): void {
 
     this.addEventListener("load", function () {
       const ct = this.getResponseHeader("content-type") ?? "";
-      if (ct.includes("application/json") || ct.includes("text/javascript")) {
-        tryInjectDirectSources(this.responseText ?? "");
+      if (!ct.includes("application/json") && !ct.includes("text/javascript")) {
+        return;
+      }
+
+      if (this.responseType !== "" && this.responseType !== "text") {
+        return;
+      }
+
+      try {
+        if (typeof this.responseText === "string") {
+          tryInjectDirectSources(this.responseText);
+        }
+      } catch {
+        // Some sites request JSON/script with a non-text responseType. Ignore it
+        // instead of throwing into the page context from our global XHR hook.
       }
     });
 

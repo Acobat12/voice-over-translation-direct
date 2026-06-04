@@ -194,6 +194,17 @@ export class UIManager {
           debug.warn("[VOT] Failed to toggle Picture-in-Picture", err);
         }
       })
+      .addEventListener("click:subtitles", async () => {
+        if (!this.videoHandler) {
+          return;
+        }
+
+        try {
+          await this.videoHandler.toggleSubtitlesForCurrentLangPair();
+        } catch (err) {
+          debug.warn("[VOT] Failed to toggle subtitles", err);
+        }
+      })
       .addEventListener("click:settings", async () => {
         this.videoHandler?.subtitlesWidget?.releaseTooltip();
         this.videoHandler?.overlayVisibility?.cancel();
@@ -205,6 +216,36 @@ export class UIManager {
       })
       .addEventListener("click:downloadSubtitles", async () => {
         await this.handleDownloadSubtitlesClick();
+      })
+      .addEventListener("select:voiceMode", async (mode) => {
+        const livelyEnabled = mode === "lively";
+        if (livelyEnabled && !this.data.account?.token) {
+          this.videoHandler?.subtitlesWidget?.releaseTooltip();
+          this.videoHandler?.overlayVisibility?.cancel();
+          this.videoHandler?.overlayVisibility?.show();
+          this.votSettingsView.open();
+          return;
+        }
+
+        const previousMode = this.data.useLivelyVoice ? "lively" : "standard";
+        this.data.useLivelyVoice = livelyEnabled;
+        await votStorage.set("useLivelyVoice", livelyEnabled);
+        if (this.votSettingsView.useLivelyVoiceCheckbox) {
+          this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
+        }
+        this.votOverlayView?.syncVoiceModeUi();
+
+        if (!this.videoHandler) {
+          return;
+        }
+
+        try {
+          await this.applyVoiceModeSelection(previousMode, mode, {
+            startWhenIdle: true,
+          });
+        } catch (err) {
+          debug.warn("[VOT] Failed to apply voice mode selection", err);
+        }
       })
       .addEventListener("input:videoVolume", (volume) => {
         if (!this.videoHandler) {
@@ -252,6 +293,348 @@ export class UIManager {
           "Failed to change subtitles language",
         );
       });
+  }
+
+  private snapshotDriveSelectItems(select: any) {
+    const rawItems = Array.isArray(select?._items) ? select._items : [];
+    return rawItems.map((item: any) => ({
+      label: String(item?.label ?? ""),
+      value: String(item?.value ?? ""),
+      selected: item?.selected === true,
+      disabled: item?.disabled === true,
+    }));
+  }
+
+  getDriveQuickMenuState() {
+    const overlayView = this.votOverlayView;
+    if (!overlayView?.isInitialized()) {
+      return null;
+    }
+
+    const fromSelect = overlayView.languagePairSelect?.fromSelect as any;
+    const toSelect = overlayView.languagePairSelect?.toSelect as any;
+    const subtitlesSelect = overlayView.subtitlesSelect as any;
+    const videoVolumeSlider = overlayView.videoVolumeSlider;
+    const translationVolumeSlider = overlayView.translationVolumeSlider;
+
+    return {
+      fromItems: this.snapshotDriveSelectItems(fromSelect),
+      toItems: this.snapshotDriveSelectItems(toSelect),
+      subtitlesItems: this.snapshotDriveSelectItems(subtitlesSelect),
+      videoVolume: Math.round(
+        videoVolumeSlider?.value ??
+          (this.videoHandler?.getVideoVolume?.() ?? 1) * 100,
+      ),
+      translationVolume: Math.round(
+        translationVolumeSlider?.value ?? this.data.defaultVolume ?? 100,
+      ),
+      translationVolumeMax:
+        translationVolumeSlider?.max ??
+        (this.data.audioBooster ? maxAudioVolume : 100),
+      showVideoSlider:
+        !videoVolumeSlider?.hidden && Boolean(this.data.showVideoSlider),
+    };
+  }
+
+  getDriveVoiceState() {
+    const configuredMode = this.data.useLivelyVoice ? "lively" : "standard";
+    const actualMode = this.videoHandler?.activeVoiceMode;
+    const displayedMode =
+      this.videoHandler?.hasActiveSource() && actualMode
+        ? actualMode
+        : configuredMode;
+    const buttonStatus = this.votOverlayView?.votButton?.status ?? "none";
+    const isLoading =
+      this.votOverlayView?.votButton?.loading === true ||
+      Boolean(this.videoHandler?.hadAsyncWait);
+
+    if (isLoading) {
+      return {
+        voiceMode: displayedMode,
+        voicePlaybackState: "loading",
+        loading: true,
+      } as const;
+    }
+
+    if (!this.videoHandler?.hasActiveSource()) {
+      return {
+        voiceMode: displayedMode,
+        voicePlaybackState: "idle",
+        loading: false,
+      } as const;
+    }
+
+    if (buttonStatus === "error" || buttonStatus === "disabled") {
+      return {
+        voiceMode: displayedMode,
+        voicePlaybackState: "idle",
+        loading: false,
+      } as const;
+    }
+
+    return {
+      voiceMode: displayedMode,
+      voicePlaybackState: this.videoHandler.video?.paused
+        ? "paused"
+        : "playing",
+      loading: false,
+    } as const;
+  }
+
+  private isTranslationBusy(): boolean {
+    return Boolean(
+      this.translationActionInFlight ||
+        this.votOverlayView?.votButton?.loading === true ||
+        this.videoHandler?.hadAsyncWait,
+    );
+  }
+
+  private async waitForTranslationActionSettled(timeoutMs = 2000) {
+    const startedAt = Date.now();
+    while (this.isTranslationBusy()) {
+      if (Date.now() - startedAt >= timeoutMs) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  private async applyVoiceModeSelection(
+    previousMode: "standard" | "lively",
+    nextMode: "standard" | "lively",
+    options: { startWhenIdle?: boolean } = {},
+  ) {
+    const videoHandler = this.videoHandler;
+    if (!videoHandler) {
+      return;
+    }
+
+    const { startWhenIdle = false } = options;
+    const hasActiveSource = videoHandler.hasActiveSource();
+    const isBusy = this.isTranslationBusy();
+
+    if (!hasActiveSource && !isBusy && !startWhenIdle) {
+      return;
+    }
+
+    if (previousMode === nextMode && hasActiveSource && !isBusy) {
+      return;
+    }
+
+    if (hasActiveSource || isBusy) {
+      try {
+        await videoHandler.stopTranslation();
+        await videoHandler.waitForPendingStopTranslate();
+        await this.waitForTranslationActionSettled();
+      } catch (err) {
+        debug.warn(
+          "[VOT] Failed to stop translation before voice mode restart",
+          err,
+        );
+      }
+    }
+
+    await this.handleTranslationBtnClick();
+  }
+
+  private async restartDriveTranslationIfActive() {
+    const videoHandler = this.videoHandler;
+    if (!videoHandler || !this.votOverlayView?.isInitialized()) {
+      return;
+    }
+
+    if (!videoHandler.hasActiveSource()) {
+      return;
+    }
+
+    try {
+      await videoHandler.stopTranslation();
+      await videoHandler.waitForPendingStopTranslate();
+      await this.waitForTranslationActionSettled();
+      await this.handleTranslationBtnClick();
+    } catch (err) {
+      debug.warn("[VOT] Failed to restart translation after Drive change", err);
+    }
+  }
+
+  async applyDriveFromLanguage(value: string) {
+    if (!this.videoHandler) {
+      return;
+    }
+
+    if (this.videoHandler.videoData) {
+      this.videoHandler.videoManager.rememberUserLanguageSelection(
+        this.videoHandler.videoData.videoId,
+        value as any,
+      );
+    }
+
+    this.videoHandler.setSelectMenuValues(
+      value as any,
+      this.videoHandler.videoData?.responseLanguage ??
+        this.videoHandler.translateToLang,
+    );
+    await this.videoHandler.ensureSubtitlesForCurrentLangPair?.();
+    await this.videoHandler.updateSubtitlesLangSelect?.();
+    await this.restartDriveTranslationIfActive();
+  }
+
+  async applyDriveToLanguage(value: string) {
+    if (!this.videoHandler) {
+      return;
+    }
+
+    this.data.responseLanguage = value as any;
+    void votStorage.set("responseLanguage", value as any);
+
+    this.videoHandler.setSelectMenuValues(
+      (this.videoHandler.videoData?.detectedLanguage ??
+        this.videoHandler.translateFromLang) as any,
+      value as any,
+    );
+    await this.videoHandler.ensureSubtitlesForCurrentLangPair?.();
+    await this.videoHandler.updateSubtitlesLangSelect?.();
+    await this.restartDriveTranslationIfActive();
+  }
+
+  async applyDriveSubtitles(value: string) {
+    if (!this.videoHandler) {
+      return;
+    }
+
+    await this.videoHandler.changeSubtitlesLang(value);
+  }
+
+  applyDriveVideoVolume(volume: number) {
+    if (!this.videoHandler) {
+      return;
+    }
+
+    const overlayView = this.votOverlayView;
+    const nextVolume = clamp(Math.round(volume), 0, 100);
+    if (overlayView?.isInitialized() && overlayView.videoVolumeSlider) {
+      overlayView.videoVolumeSlider.value = nextVolume;
+    }
+
+    this.videoHandler.setVideoVolume(nextVolume / 100);
+    if (!this.data.syncVolume) {
+      this.videoHandler.onVideoVolumeSliderSynced(nextVolume);
+      return;
+    }
+
+    this.videoHandler.syncVolumeWrapper("video", nextVolume);
+  }
+
+  applyDriveTranslationVolume(volume: number) {
+    if (!this.videoHandler) {
+      return;
+    }
+
+    const overlayView = this.votOverlayView;
+    const maxVolume =
+      overlayView?.isInitialized() && overlayView.translationVolumeSlider
+        ? overlayView.translationVolumeSlider.max
+        : this.data.audioBooster
+          ? maxAudioVolume
+          : 100;
+    const nextVolume = clamp(Math.round(volume), 0, maxVolume);
+
+    if (overlayView?.isInitialized() && overlayView.translationVolumeSlider) {
+      overlayView.translationVolumeSlider.value = nextVolume;
+    } else if (this.data.defaultVolume !== nextVolume) {
+      this.data.defaultVolume = nextVolume;
+      void votStorage.set("defaultVolume", nextVolume);
+    }
+
+    this.videoHandler.syncTranslationPlaybackVolume();
+    if (!this.data.syncVolume) {
+      this.videoHandler.onTranslationVolumeSliderSynced(nextVolume);
+      return;
+    }
+
+    const syncResult = this.videoHandler.syncVolumeWrapper(
+      "translation",
+      nextVolume,
+    );
+    if (typeof syncResult?.nextVideo === "number") {
+      this.videoHandler.applyManualVideoVolumeOverride(
+        syncResult.nextVideo / 100,
+      );
+    }
+  }
+
+  applyDriveSyncVolume(enabled: boolean) {
+    if (!this.videoHandler) {
+      return;
+    }
+
+    this.data.syncVolume = enabled;
+    this.videoHandler.setupAudioSettings();
+    if (!enabled) {
+      return;
+    }
+
+    this.withInitializedOverlayView((overlayView) => {
+      const videoSlider = overlayView.videoVolumeSlider;
+      const translationSlider = overlayView.translationVolumeSlider;
+      if (!videoSlider || !translationSlider) {
+        return;
+      }
+
+      this.videoHandler!.syncTranslationPlaybackVolume();
+      this.videoHandler!.resetVolumeLinkState(
+        Number(videoSlider.value),
+        Number(translationSlider.value),
+      );
+    });
+  }
+
+  applyDriveShowVideoSlider(checked: boolean) {
+    this.data.showVideoSlider = checked;
+
+    this.withInitializedOverlayView((overlayView) => {
+      if (!overlayView.videoVolumeSlider || !overlayView.votButton) {
+        return;
+      }
+
+      overlayView.videoVolumeSlider.container.hidden =
+        !this.data.showVideoSlider ||
+        overlayView.votButton.status !== "success";
+    });
+  }
+
+  applyDriveAudioBooster(enabled: boolean) {
+    this.data.audioBooster = enabled;
+
+    this.withInitializedOverlayView((overlayView) => {
+      if (!overlayView.translationVolumeSlider) {
+        return;
+      }
+
+      const currentVolume = overlayView.translationVolumeSlider.value;
+      const maxVolume = this.data.audioBooster ? maxAudioVolume : 100;
+      overlayView.translationVolumeSlider.max = maxVolume;
+      const nextVolume = clamp(currentVolume, 0, maxVolume);
+      overlayView.translationVolumeSlider.value = nextVolume;
+      this.videoHandler?.onTranslationVolumeSliderSynced(nextVolume);
+      this.videoHandler?.syncTranslationPlaybackVolume();
+    });
+  }
+
+  async applyDriveUseLivelyVoice(enabled: boolean) {
+    const previousMode = this.data.useLivelyVoice ? "lively" : "standard";
+    const nextMode = enabled ? "lively" : "standard";
+    this.data.useLivelyVoice = enabled;
+
+    if (!this.videoHandler) {
+      return;
+    }
+
+    if (!this.videoHandler.hasActiveSource() && !this.isTranslationBusy()) {
+      return;
+    }
+
+    await this.applyVoiceModeSelection(previousMode, nextMode);
   }
 
   private bindSettingsViewEvents() {
@@ -331,23 +714,19 @@ export class UIManager {
           );
         });
       })
-      .addEventListener("change:useLivelyVoice", () => {
+      .addEventListener("change:useLivelyVoice", (checked) => {
         if (!this.videoHandler) {
           return;
         }
 
-        const isWaitingTranslation =
-          this.votOverlayView?.votButton?.loading === true ||
-          Boolean(this.videoHandler.hadAsyncWait);
+        this.votOverlayView?.syncVoiceModeUi();
 
-        if (isWaitingTranslation) {
-          debug.log("[useLivelyVoice] skip reset during waiting translation");
-          return;
-        }
+        const nextMode = checked ? "lively" : "standard";
+        const previousMode = checked ? "standard" : "lively";
 
         this.runDetached(
-          this.videoHandler.stopTranslate(),
-          "Failed to stop translation after voice mode change",
+          this.applyVoiceModeSelection(previousMode, nextMode),
+          "Failed to apply voice mode change",
         );
       })
       .addEventListener("change:subtitlesHighlightWords", (checked) => {
@@ -447,9 +826,7 @@ export class UIManager {
             return;
           }
 
-          overlayView.votButton.pipButton.hidden =
-            overlayView.votButton.separator2.hidden =
-              !overlayView.pipButtonVisible;
+          overlayView.votButton.showPiPButton(overlayView.pipButtonVisible);
         });
       })
       .addEventListener("select:buttonPosition", (item) => {
@@ -458,6 +835,7 @@ export class UIManager {
           const { position, direction } =
             overlayView.calcButtonLayout(preferredPosition);
           overlayView.updateButtonLayout(position, direction);
+          overlayView.syncVoiceModeUi();
         });
       })
       .addEventListener("select:menuLanguage", async () => {
@@ -612,6 +990,7 @@ export class UIManager {
       this.votOverlayView.votMenu.hidden = prevMenuHidden;
       this.votOverlayView.votButton.container.hidden = prevButtonHidden;
       this.votOverlayView.votButton.opacity = prevButtonOpacity;
+      this.votOverlayView.syncVoiceModeUi();
     } catch (err) {
       debug.warn(
         "[VOT] Failed to restore overlay state after menu reload",
@@ -798,6 +1177,7 @@ export class UIManager {
       status === "error" && this.isLoadingText(text);
     this.votOverlayView.votButton.setText(text);
     this.votOverlayView.votButtonTooltip.setContent(text);
+    this.votOverlayView.syncVoiceModeUi();
     return this;
   }
 
@@ -816,9 +1196,9 @@ export class UIManager {
 
     // Release child views before removing the shared portal.
     // Each view is now idempotent and releases events before DOM.
-    this.votOverlayView.release();
-    this.votSettingsView.release();
-    this.votGlobalPortal.remove();
+    this.votOverlayView?.release();
+    this.votSettingsView?.release();
+    this.votGlobalPortal?.remove();
 
     this.initialized = false;
     return this;

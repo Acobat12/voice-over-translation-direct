@@ -1,5 +1,7 @@
 import { authCallbackOrigin, authCallbackPath } from "../config/config";
 import { initAuth } from "../core/auth";
+import { installGoogleDriveOverlayPatch } from "../core/google-drive-overlay";
+import { installGoogleDriveTopFramePatch } from "../core/google-drive-top-frame";
 import { installVkOverlayPatch } from "../core/vk-overlay";
 import { installYandexDiskOverlayPatch } from "../core/yandex-disk-overlay";
 import {
@@ -61,8 +63,28 @@ export async function ensureRuntimeActivated(
       const host = globalThis.location.hostname.toLowerCase();
       return host === "disk.yandex.ru" || host === "disk.yandex.com";
     }
+    function isGoogleDriveEmbedHost(): boolean {
+      const host = globalThis.location.hostname.toLowerCase();
+      return (
+        host === "youtube.googleapis.com" &&
+        globalThis.location.pathname.startsWith("/embed")
+      );
+    }
+    function isGoogleDriveTopFrameHost(): boolean {
+      const host = globalThis.location.hostname.toLowerCase();
+      return (
+        !isIframe() &&
+        (host === "drive.google.com" || host === "docs.google.com")
+      );
+    }
     if (isYandexDiskHost()) {
       installYandexDiskOverlayPatch();
+    }
+    if (isGoogleDriveEmbedHost()) {
+      installGoogleDriveOverlayPatch();
+    }
+    if (isGoogleDriveTopFrameHost()) {
+      installGoogleDriveTopFramePatch();
     }
     installVkOverlayPatch();
     runtimeActivated = true;

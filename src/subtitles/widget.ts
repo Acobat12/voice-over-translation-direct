@@ -227,6 +227,12 @@ export class SubtitlesWidget {
   private readonly onTimeUpdateBound: () => void;
   private readonly onPlaybackStateChangeBound: () => void;
   private readonly onVisualViewportChangeBound: () => void;
+
+  private static shouldUseVideoFrameCallbacksForCurrentHost(): boolean {
+    const host = String(globalThis.location.hostname || "").toLowerCase();
+    return host !== "music.youtube.com";
+  }
+
   constructor(
     video: HTMLVideoElement | undefined,
     container: HTMLElement,
@@ -243,7 +249,8 @@ export class SubtitlesWidget {
     this.tooltipLayoutRoot = tooltipLayoutRoot;
     this.useVideoFrameCallbacks =
       !!this.video &&
-      typeof this.video.requestVideoFrameCallback === "function";
+      typeof this.video.requestVideoFrameCallback === "function" &&
+      SubtitlesWidget.shouldUseVideoFrameCallbacksForCurrentHost();
     this.onPointerDownBound = (event) => this.onPointerDown(event);
     this.onPointerUpBound = (event) => this.onPointerUp(event);
     this.onPointerMoveBound = (event) => this.onPointerMove(event);

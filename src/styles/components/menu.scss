@@ -35,6 +35,11 @@
     opacity var(--vot-duration-medium) var(--vot-easing-standard),
     transform var(--vot-duration-medium) var(--vot-easing-standard);
 
+  &.vot-menu--fixed-anchor {
+    transform: none;
+    transform-origin: top left;
+  }
+
   & * {
     box-sizing: border-box !important;
   }
@@ -45,6 +50,10 @@
     visibility: hidden;
     opacity: 0;
     transform: translate(-50%, -4px) scale(0.98);
+  }
+
+  &.vot-menu--fixed-anchor[hidden] {
+    transform: translateY(-4px) scale(0.98);
   }
 
   &-content-wrapper {

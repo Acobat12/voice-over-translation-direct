@@ -1,0 +1,170 @@
+.vot-voice-mode-menu {
+  width: min(360px, calc(100vw - 24px));
+
+  .vot-menu-body-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+}
+
+@keyframes vot-voice-menu-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vot-voice-mode-menu-item {
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 0;
+  cursor: pointer;
+  color: rgb(var(--vot-onsurface-rgb, 227, 227, 227));
+  border-radius: 0 !important;
+
+  &:not(:last-child) {
+    border-bottom: 1px solid var(--vot-border-color);
+  }
+
+  &[data-selected="true"] {
+    background: rgba(var(--vot-primary-rgb, 139, 180, 245), 0.18);
+    box-shadow: inset 0 0 0 1px rgba(var(--vot-primary-rgb, 139, 180, 245), 0.32);
+  }
+
+  &[data-selected="true"][data-mode="standard"] {
+    background: rgba(var(--vot-primary-rgb, 139, 180, 245), 0.2);
+  }
+
+  &[data-selected="true"][data-mode="lively"] {
+    background: rgba(255, 97, 182, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(255, 97, 182, 0.28);
+  }
+
+  &[data-disabled="true"] {
+    opacity: 0.6;
+  }
+}
+
+.vot-voice-mode-menu-item-icon,
+.vot-voice-mode-menu-item-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+.vot-voice-mode-menu-item-icon {
+  color: rgba(var(--vot-onsurface-rgb, 227, 227, 227), 0.64);
+}
+
+.vot-voice-mode-menu-item[data-selected="true"] .vot-voice-mode-menu-item-icon {
+  color: rgb(var(--vot-primary-rgb, 139, 180, 245));
+}
+
+.vot-voice-mode-menu-item[data-mode="lively"] .vot-voice-mode-menu-item-icon {
+  color: #ff61b6;
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-mode="standard"]
+  .vot-voice-mode-menu-item-title,
+.vot-voice-mode-menu-item[data-selected="true"][data-mode="standard"]
+  .vot-voice-mode-menu-item-check {
+  color: rgb(var(--vot-primary-rgb, 139, 180, 245));
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-mode="standard"]
+  .vot-voice-mode-menu-item-description {
+  color: rgba(var(--vot-primary-rgb, 139, 180, 245), 0.88);
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-mode="lively"]
+  .vot-voice-mode-menu-item-title,
+.vot-voice-mode-menu-item[data-selected="true"][data-mode="lively"]
+  .vot-voice-mode-menu-item-check {
+  color: #ff61b6;
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-mode="lively"]
+  .vot-voice-mode-menu-item-description {
+  color: rgba(255, 97, 182, 0.88);
+}
+
+.vot-voice-wave-bar {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+.vot-voice-wave-bar-1 {
+  animation-delay: -0.3s;
+}
+
+.vot-voice-wave-bar-2 {
+  animation-delay: -0.15s;
+}
+
+.vot-voice-wave-bar-3 {
+  animation-delay: -0.05s;
+}
+
+.vot-voice-wave-bar-4 {
+  animation-delay: -0.2s;
+}
+
+.vot-voice-mode-menu-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.vot-voice-mode-menu-item-title {
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 500 !important;
+}
+
+.vot-voice-mode-menu-item-description {
+  font-size: 14px;
+  line-height: 1.35;
+  color: rgba(var(--vot-onsurface-rgb, 227, 227, 227), 0.7);
+}
+
+.vot-voice-mode-menu-item-check {
+  color: rgb(var(--vot-primary-rgb, 139, 180, 245));
+  opacity: 0;
+  transition: opacity var(--vot-duration-fast) var(--vot-easing-standard);
+}
+
+.vot-voice-mode-menu-item[data-selected="true"] .vot-voice-mode-menu-item-check {
+  opacity: 1;
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-loading="true"]
+  .vot-voice-mode-menu-item-check
+  svg {
+  display: none;
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-loading="true"]
+  .vot-voice-mode-menu-item-check::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: vot-voice-menu-spin 0.9s linear infinite;
+}
+
+.vot-voice-mode-menu-item[data-selected="true"][data-playback-state="playing"]
+  .vot-voice-wave-bar {
+  animation: vot-voice-wave 0.9s ease-in-out infinite;
+}

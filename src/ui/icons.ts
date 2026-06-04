@@ -57,6 +57,17 @@ export const CLOSE_ICON = svg`<svg xmlns="http://www.w3.org/2000/svg" width="24"
   <path d="M480-424 284-228q-11 11-28 11t-28-11q-11-11-11-28t11-28l196-196-196-196q-11-11-11-28t11-28q11-11 28-11t28 11l196 196 196-196q11-11 28-11t28 11q11 11 11 28t-11 28L536-480l196 196q11 11 11 28t-11 28q-11 11-28 11t-28-11L480-424Z"/>
 </svg>`;
 
+export const CHECK_ICON = svg`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 -960 960 960">
+  <path d="M382-240 154-468l57-57 171 171 367-367 57 57-424 424Z"/>
+</svg>`;
+
+export const VOICE_WAVE_ICON = svg`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+  <rect class="vot-voice-wave-bar vot-voice-wave-bar-1" x="3" y="8.5" width="3" height="7" rx="1.5" fill="currentColor"></rect>
+  <rect class="vot-voice-wave-bar vot-voice-wave-bar-2" x="8" y="6" width="3" height="12" rx="1.5" fill="currentColor"></rect>
+  <rect class="vot-voice-wave-bar vot-voice-wave-bar-3" x="13" y="4.5" width="3" height="15" rx="1.5" fill="currentColor"></rect>
+  <rect class="vot-voice-wave-bar vot-voice-wave-bar-4" x="18" y="7" width="3" height="10" rx="1.5" fill="currentColor"></rect>
+</svg>`;
+
 export const WARNING_ICON = svg`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <g fill="none">
     <path d="m12.593 23.258l-.011.002l-.071.035l-.02.004l-.014-.004l-.071-.035q-.016-.005-.024.005l-.004.01l-.017.428l.005.02l.01.013l.104.074l.015.004l.012-.004l.104-.074l.012-.016l.004-.017l-.017-.427q-.004-.016-.017-.018m.265-.113l-.013.002l-.185.093l-.01.01l-.003.011l.018.43l.005.012l.008.007l.201.093q.019.005.029-.008l.004-.014l-.034-.614q-.005-.018-.02-.022m-.715.002a.02.02 0 0 0-.027.006l-.006.014l-.034.614q.001.018.017.024l.015-.002l.201-.093l.01-.008l.004-.011l.017-.43l-.003-.012l-.01-.01z"/><path fill="currentColor" d="M12 2c5.523 0 10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12S6.477 2 12 2m0 2a8 8 0 1 0 0 16a8 8 0 0 0 0-16m0 11a1 1 0 1 1 0 2a1 1 0 0 1 0-2m0-9a1 1 0 0 1 1 1v6a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1"/>

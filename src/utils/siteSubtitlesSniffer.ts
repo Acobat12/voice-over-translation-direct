@@ -689,9 +689,18 @@ export function installSiteSubtitlesSniffer(): void {
             return;
           }
 
-          const responseText =
-            typeof this.responseText === "string" ? this.responseText : "";
-          processPotentialVkTextResponse(requestUrl, responseText);
+          if (this.responseType === "json") {
+            return;
+          }
+
+          try {
+            const responseText =
+              typeof this.responseText === "string" ? this.responseText : "";
+            processPotentialVkTextResponse(requestUrl, responseText);
+          } catch {
+            // Firefox throws when responseText is read for non-text response
+            // types. Ignore those responses instead of bubbling into the page.
+          }
         },
         { once: true },
       );
