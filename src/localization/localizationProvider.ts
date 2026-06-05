@@ -19,6 +19,24 @@ const LOCALE_STORAGE_KEYS: readonly LocaleStorageKey[] = [
   "localeLangOverride",
 ];
 const DEFAULT_LOCALE: FlatPhrases = toFlatObj(rawDefaultLocale);
+const BUNDLED_LOCALE_BY_LANG: Record<string, FlatPhrases> = (() => {
+  const modules = import.meta.glob<Record<string, unknown>>(
+    "./locales/*.json",
+    {
+      eager: true,
+      import: "default",
+    },
+  );
+  const map: Record<string, FlatPhrases> = {};
+
+  for (const [path, locale] of Object.entries(modules)) {
+    const match = path.match(/\/([^/]+)\.json$/i);
+    if (!match) continue;
+    map[match[1].toLowerCase()] = toFlatObj(locale);
+  }
+
+  return map;
+})();
 const BUNDLED_LOCALE_JSON_BY_LANG: Record<string, string> = (() => {
   const modules = import.meta.glob<Record<string, unknown>>(
     "./locales/*.json",
@@ -138,15 +156,20 @@ class LocalizationProvider {
     return BUNDLED_LOCALE_JSON_BY_LANG[lang.toLowerCase()] || "";
   }
 
+  private getBundledLocale(lang: string) {
+    return BUNDLED_LOCALE_BY_LANG[lang.toLowerCase()] || null;
+  }
+
   private applyBundledLocale(lang: string) {
-    const bundledLocale = this.getBundledLocaleJsonString(lang);
+    const bundledLocale = this.getBundledLocale(lang);
     if (!bundledLocale) {
       this.locale = {};
       this.warnedMissingKeys.clear();
       return false;
     }
 
-    this.setLocaleFromJsonString(bundledLocale);
+    this.locale = { ...bundledLocale };
+    this.warnedMissingKeys.clear();
     return true;
   }
 
@@ -265,7 +288,11 @@ class LocalizationProvider {
         throw new Error("Locale payload should be a JSON object");
       }
 
-      this.locale = toFlatObj(locale as Record<string, unknown>);
+      const parsedLocale = toFlatObj(locale as Record<string, unknown>);
+      const bundledLocale = this.getBundledLocale(this.lang);
+      this.locale = bundledLocale
+        ? { ...bundledLocale, ...parsedLocale }
+        : parsedLocale;
     } catch (err) {
       console.error("[VOT] [localizationProvider]", err);
       this.locale = {};

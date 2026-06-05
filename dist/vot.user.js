@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.87
+// @version         1.11.5.88
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -174,7 +174,13 @@
 // @match           *://*/*.mkv*
 // @match           *://*/*.avi*
 // @match           *://*/*.ogv*
+// @match           file://*/*
+// @match           *://localhost/*
+// @match           *://127.0.0.1/*
 // @match           *://*.trycloudflare.com/*
+// @match           *://*.ngrok-free.app/*
+// @match           *://*.ngrok-free.dev/*
+// @match           *://*.ngrok.app/*
 // @match           *://*.yewtu.be/*
 // @match           *://yt.artemislena.eu/*
 // @match           *://invidious.flokinet.to/*
@@ -7806,11 +7812,27 @@ string() {
     "localeLangOverride",
     "account"
   ];
-  const noop = () => {
+  const log = (...text) => {
+    console.log(
+      "%c[VOT DEBUG]",
+      "background: #3700ffff; color: #fff; padding: 5px;",
+      ...text
+    );
   };
-  const log = noop;
-  const warn = noop;
-  const error = noop;
+  const warn = (...text) => {
+    console.warn(
+      "%c[VOT DEBUG]",
+      "background: #e1ff00ff; color: #fff; padding: 5px;",
+      ...text
+    );
+  };
+  const error = (...text) => {
+    console.error(
+      "%c[VOT DEBUG]",
+      "background: #F2452D; color: #fff; padding: 5px;",
+      ...text
+    );
+  };
   const debug = { log, warn, error };
   function getNavigatorLang() {
     return navigator.language?.substring(0, 2).toLowerCase() || "en";
@@ -8702,6 +8724,11 @@ clear() {
     const method = resolveRequestMethod(url, fetchOptions.method);
     const performRequest = async () => {
       if (shouldUseGmXhr(host, urlStr, forceGmXhr)) {
+        debug.log("GM_fetch: routing request via GM_xmlhttpRequest", {
+          host: host ?? "unknown",
+          reason: forceGmXhr ? "forced" : "host-policy",
+          url: urlStr
+        });
         return await gmXhrFetch(urlStr, timeout2, fetchOptions);
       }
       const { signal, cleanup } = createTimeoutSignal(
@@ -10406,7 +10433,7 @@ get isSupportOnlyLS() {
   const smartDucking$Z = "Aanpasbare volume";
   const VOTAutoSubtitles$Z = "Onderskrifte op open";
   const VOTSubtitlesFont$Z = "Onderskrif skrif tipe";
-  const __vite_glob_0_0 = {
+  const __vite_glob_1_0 = {
     recommended: recommended$Z,
     translateVideo: translateVideo$Z,
     disableTranslate: disableTranslate$Z,
@@ -10622,7 +10649,7 @@ get isSupportOnlyLS() {
   const smartDucking$Y = "የመላመድ ድምጽ";
   const VOTAutoSubtitles$Y = "ክፍት ላይ ንዑስ ርዕሶች";
   const VOTSubtitlesFont$Y = "የፊደል ቅርጽ";
-  const __vite_glob_0_1 = {
+  const __vite_glob_1_1 = {
     recommended: recommended$Y,
     translateVideo: translateVideo$Y,
     disableTranslate: disableTranslate$Y,
@@ -10838,7 +10865,7 @@ get isSupportOnlyLS() {
   const smartDucking$X = "حجم التكيف";
   const VOTAutoSubtitles$X = "ترجمات على فتح";
   const VOTSubtitlesFont$X = "خط الترجمة";
-  const __vite_glob_0_2 = {
+  const __vite_glob_1_2 = {
     recommended: recommended$X,
     translateVideo: translateVideo$X,
     disableTranslate: disableTranslate$X,
@@ -11054,7 +11081,7 @@ get isSupportOnlyLS() {
   const smartDucking$W = "Adaptiv həcm";
   const VOTAutoSubtitles$W = "Açıldıqda altyazılar";
   const VOTSubtitlesFont$W = "Altyazı şrifti";
-  const __vite_glob_0_3 = {
+  const __vite_glob_1_3 = {
     recommended: recommended$W,
     translateVideo: translateVideo$W,
     disableTranslate: disableTranslate$W,
@@ -11270,7 +11297,7 @@ get isSupportOnlyLS() {
   const smartDucking$V = "Адаптивен обем";
   const VOTAutoSubtitles$V = "Субтитри на открито";
   const VOTSubtitlesFont$V = "Шрифт за субтитрите";
-  const __vite_glob_0_4 = {
+  const __vite_glob_1_4 = {
     recommended: recommended$V,
     translateVideo: translateVideo$V,
     disableTranslate: disableTranslate$V,
@@ -11486,7 +11513,7 @@ get isSupportOnlyLS() {
   const smartDucking$U = "অভিযোজিত ভলিউম";
   const VOTAutoSubtitles$U = "সাবটাইটেল খোলা";
   const VOTSubtitlesFont$U = "সাবটাইটেল ফন্ট";
-  const __vite_glob_0_5 = {
+  const __vite_glob_1_5 = {
     recommended: recommended$U,
     translateVideo: translateVideo$U,
     disableTranslate: disableTranslate$U,
@@ -11702,7 +11729,7 @@ get isSupportOnlyLS() {
   const smartDucking$T = "Adaptivni volumen";
   const VOTAutoSubtitles$T = "Subtitles on open";
   const VOTSubtitlesFont$T = "Font za titlove";
-  const __vite_glob_0_6 = {
+  const __vite_glob_1_6 = {
     recommended: recommended$T,
     translateVideo: translateVideo$T,
     disableTranslate: disableTranslate$T,
@@ -11918,7 +11945,7 @@ get isSupportOnlyLS() {
   const smartDucking$S = "Volum adaptatiu";
   const VOTAutoSubtitles$S = "Subtítols en obert";
   const VOTSubtitlesFont$S = "Tipus de lletra dels subtítols";
-  const __vite_glob_0_7 = {
+  const __vite_glob_1_7 = {
     recommended: recommended$S,
     translateVideo: translateVideo$S,
     disableTranslate: disableTranslate$S,
@@ -12134,7 +12161,7 @@ get isSupportOnlyLS() {
   const smartDucking$R = "Adaptivní objem";
   const VOTAutoSubtitles$R = "Titulky na open";
   const VOTSubtitlesFont$R = "Písmo titulků";
-  const __vite_glob_0_8 = {
+  const __vite_glob_1_8 = {
     recommended: recommended$R,
     translateVideo: translateVideo$R,
     disableTranslate: disableTranslate$R,
@@ -12350,7 +12377,7 @@ get isSupportOnlyLS() {
   const smartDucking$Q = "Cyfrol addasol";
   const VOTAutoSubtitles$Q = "Isdeitlau ar agor";
   const VOTSubtitlesFont$Q = "Ffont isdeitlau";
-  const __vite_glob_0_9 = {
+  const __vite_glob_1_9 = {
     recommended: recommended$Q,
     translateVideo: translateVideo$Q,
     disableTranslate: disableTranslate$Q,
@@ -12566,7 +12593,7 @@ get isSupportOnlyLS() {
   const smartDucking$P = "Adaptiv volumen";
   const VOTAutoSubtitles$P = "Undertekster på åben";
   const VOTSubtitlesFont$P = "Undertekstfont";
-  const __vite_glob_0_10 = {
+  const __vite_glob_1_10 = {
     recommended: recommended$P,
     translateVideo: translateVideo$P,
     disableTranslate: disableTranslate$P,
@@ -12782,7 +12809,7 @@ get isSupportOnlyLS() {
   const smartDucking$O = "Adaptives Volumen";
   const VOTAutoSubtitles$O = "Untertitel auf open";
   const VOTSubtitlesFont$O = "Schriftart für Untertitel";
-  const __vite_glob_0_11 = {
+  const __vite_glob_1_11 = {
     recommended: recommended$O,
     translateVideo: translateVideo$O,
     disableTranslate: disableTranslate$O,
@@ -12998,7 +13025,7 @@ get isSupportOnlyLS() {
   const smartDucking$N = "Προσαρμοστικός όγκος";
   const VOTAutoSubtitles$N = "Υπότιτλοι σε ανοιχτό";
   const VOTSubtitlesFont$N = "Γραμματοσειρά υποτίτλων";
-  const __vite_glob_0_12 = {
+  const __vite_glob_1_12 = {
     recommended: recommended$N,
     translateVideo: translateVideo$N,
     disableTranslate: disableTranslate$N,
@@ -13229,7 +13256,7 @@ get isSupportOnlyLS() {
   const VOTYandexTokenInfo$M = "You can manually set the account token in this field. Please note that we don't check its validity before sending a translate request";
   const VOTLoginViaToken$M = "Login via token";
   const smartDucking$M = "Adaptive volume";
-  const __vite_glob_0_13 = {
+  const __vite_glob_1_13 = {
     recommended: recommended$M,
     translateVideo: translateVideo$M,
     disableTranslate: disableTranslate$M,
@@ -13460,7 +13487,7 @@ get isSupportOnlyLS() {
   const smartDucking$L = "Volumen adaptable";
   const VOTAutoSubtitles$L = "Subtítulos en abierto";
   const VOTSubtitlesFont$L = "Fuente de subtítulos";
-  const __vite_glob_0_14 = {
+  const __vite_glob_1_14 = {
     recommended: recommended$L,
     translateVideo: translateVideo$L,
     disableTranslate: disableTranslate$L,
@@ -13676,7 +13703,7 @@ get isSupportOnlyLS() {
   const smartDucking$K = "Adaptiivne maht";
   const VOTAutoSubtitles$K = "Subtiitrid avatud";
   const VOTSubtitlesFont$K = "Subtiitrite font";
-  const __vite_glob_0_15 = {
+  const __vite_glob_1_15 = {
     recommended: recommended$K,
     translateVideo: translateVideo$K,
     disableTranslate: disableTranslate$K,
@@ -13892,7 +13919,7 @@ get isSupportOnlyLS() {
   const smartDucking$J = "Bolumen egokitzailea";
   const VOTAutoSubtitles$J = "Azpitituluak irekita";
   const VOTSubtitlesFont$J = "Azpitituluaren letra-tipoa";
-  const __vite_glob_0_16 = {
+  const __vite_glob_1_16 = {
     recommended: recommended$J,
     translateVideo: translateVideo$J,
     disableTranslate: disableTranslate$J,
@@ -14108,7 +14135,7 @@ get isSupportOnlyLS() {
   const smartDucking$I = "حجم سازگاری";
   const VOTAutoSubtitles$I = "زیرنویس در open";
   const VOTSubtitlesFont$I = "فونت زیرنویس";
-  const __vite_glob_0_17 = {
+  const __vite_glob_1_17 = {
     recommended: recommended$I,
     translateVideo: translateVideo$I,
     disableTranslate: disableTranslate$I,
@@ -14324,7 +14351,7 @@ get isSupportOnlyLS() {
   const smartDucking$H = "Mukautuva äänenvoimakkuus";
   const VOTAutoSubtitles$H = "Tekstitys auki";
   const VOTSubtitlesFont$H = "Tekstityksen kirjasin";
-  const __vite_glob_0_18 = {
+  const __vite_glob_1_18 = {
     recommended: recommended$H,
     translateVideo: translateVideo$H,
     disableTranslate: disableTranslate$H,
@@ -14540,7 +14567,7 @@ get isSupportOnlyLS() {
   const smartDucking$G = "Volume adaptatif";
   const VOTAutoSubtitles$G = "Sous-titres à l'ouverture";
   const VOTSubtitlesFont$G = "Police des sous-titres";
-  const __vite_glob_0_19 = {
+  const __vite_glob_1_19 = {
     recommended: recommended$G,
     translateVideo: translateVideo$G,
     disableTranslate: disableTranslate$G,
@@ -14756,7 +14783,7 @@ get isSupportOnlyLS() {
   const smartDucking$F = "Volume adaptativo";
   const VOTAutoSubtitles$F = "Subtítulos en open";
   const VOTSubtitlesFont$F = "Fonte de subtítulos";
-  const __vite_glob_0_20 = {
+  const __vite_glob_1_20 = {
     recommended: recommended$F,
     translateVideo: translateVideo$F,
     disableTranslate: disableTranslate$F,
@@ -14972,7 +14999,7 @@ get isSupportOnlyLS() {
   const smartDucking$E = "अनुकूली मात्रा";
   const VOTAutoSubtitles$E = "उपशीर्षक पर खुला";
   const VOTSubtitlesFont$E = "उपशीर्षक फ़ॉन्ट";
-  const __vite_glob_0_21 = {
+  const __vite_glob_1_21 = {
     recommended: recommended$E,
     translateVideo: translateVideo$E,
     disableTranslate: disableTranslate$E,
@@ -15188,7 +15215,7 @@ get isSupportOnlyLS() {
   const smartDucking$D = "Prilagodljiva glasnoća";
   const VOTAutoSubtitles$D = "Titlovi prilikom otvaranja";
   const VOTSubtitlesFont$D = "Font titlova";
-  const __vite_glob_0_22 = {
+  const __vite_glob_1_22 = {
     recommended: recommended$D,
     translateVideo: translateVideo$D,
     disableTranslate: disableTranslate$D,
@@ -15404,7 +15431,7 @@ get isSupportOnlyLS() {
   const smartDucking$C = "Adaptív kötet";
   const VOTAutoSubtitles$C = "Feliratok nyitva";
   const VOTSubtitlesFont$C = "Felirat betűtípus";
-  const __vite_glob_0_23 = {
+  const __vite_glob_1_23 = {
     recommended: recommended$C,
     translateVideo: translateVideo$C,
     disableTranslate: disableTranslate$C,
@@ -15620,7 +15647,7 @@ get isSupportOnlyLS() {
   const smartDucking$B = "Հարմարվողական ծավալ";
   const VOTAutoSubtitles$B = "Ենթագրերը բացելիս";
   const VOTSubtitlesFont$B = "Ենթագրերի տառատեսակ";
-  const __vite_glob_0_24 = {
+  const __vite_glob_1_24 = {
     recommended: recommended$B,
     translateVideo: translateVideo$B,
     disableTranslate: disableTranslate$B,
@@ -15836,7 +15863,7 @@ get isSupportOnlyLS() {
   const smartDucking$A = "Volume adaptif";
   const VOTAutoSubtitles$A = "Subtitle terbuka";
   const VOTSubtitlesFont$A = "Font teks terjemahan";
-  const __vite_glob_0_25 = {
+  const __vite_glob_1_25 = {
     recommended: recommended$A,
     translateVideo: translateVideo$A,
     disableTranslate: disableTranslate$A,
@@ -16052,7 +16079,7 @@ get isSupportOnlyLS() {
   const smartDucking$z = "Volume adattivo";
   const VOTAutoSubtitles$z = "Sottotitoli su open";
   const VOTSubtitlesFont$z = "Carattere sottotitoli";
-  const __vite_glob_0_26 = {
+  const __vite_glob_1_26 = {
     recommended: recommended$z,
     translateVideo: translateVideo$z,
     disableTranslate: disableTranslate$z,
@@ -16268,7 +16295,7 @@ get isSupportOnlyLS() {
   const smartDucking$y = "適応ボリューム";
   const VOTAutoSubtitles$y = "オープン時の字幕";
   const VOTSubtitlesFont$y = "字幕フォント";
-  const __vite_glob_0_27 = {
+  const __vite_glob_1_27 = {
     recommended: recommended$y,
     translateVideo: translateVideo$y,
     disableTranslate: disableTranslate$y,
@@ -16484,7 +16511,7 @@ get isSupportOnlyLS() {
   const smartDucking$x = "Volume adaptif";
   const VOTAutoSubtitles$x = "Subtitle ing mbukak";
   const VOTSubtitlesFont$x = "Font Subtitle";
-  const __vite_glob_0_28 = {
+  const __vite_glob_1_28 = {
     recommended: recommended$x,
     translateVideo: translateVideo$x,
     disableTranslate: disableTranslate$x,
@@ -16700,7 +16727,7 @@ get isSupportOnlyLS() {
   const smartDucking$w = "Адаптивті көлем";
   const VOTAutoSubtitles$w = "Ашық субтитрлер";
   const VOTSubtitlesFont$w = "Субтитр қаріпі";
-  const __vite_glob_0_29 = {
+  const __vite_glob_1_29 = {
     recommended: recommended$w,
     translateVideo: translateVideo$w,
     disableTranslate: disableTranslate$w,
@@ -16916,7 +16943,7 @@ get isSupportOnlyLS() {
   const smartDucking$v = "កម្រិតសំឡេងសម្របសម្រួល";
   const VOTAutoSubtitles$v = "បើកចំណងជើងរង";
   const VOTSubtitlesFont$v = "ពុម្ពអក្សរចំណងជើងរង";
-  const __vite_glob_0_30 = {
+  const __vite_glob_1_30 = {
     recommended: recommended$v,
     translateVideo: translateVideo$v,
     disableTranslate: disableTranslate$v,
@@ -17132,7 +17159,7 @@ get isSupportOnlyLS() {
   const smartDucking$u = "ಹೊಂದಾಣಿಕೆಯ ಪರಿಮಾಣ";
   const VOTAutoSubtitles$u = "ತೆರೆಯ ಮೇಲೆ ಉಪಶೀರ್ಷಿಕೆಗಳು";
   const VOTSubtitlesFont$u = "ಉಪಶೀರ್ಷಿಕೆ ಫಾಂಟ್";
-  const __vite_glob_0_31 = {
+  const __vite_glob_1_31 = {
     recommended: recommended$u,
     translateVideo: translateVideo$u,
     disableTranslate: disableTranslate$u,
@@ -17348,7 +17375,7 @@ get isSupportOnlyLS() {
   const smartDucking$t = "적응 형 볼륨";
   const VOTAutoSubtitles$t = "자막 열기";
   const VOTSubtitlesFont$t = "자막 글꼴";
-  const __vite_glob_0_32 = {
+  const __vite_glob_1_32 = {
     recommended: recommended$t,
     translateVideo: translateVideo$t,
     disableTranslate: disableTranslate$t,
@@ -17564,7 +17591,7 @@ get isSupportOnlyLS() {
   const smartDucking$s = "ປະລິມານການປັບຕົວ";
   const VOTAutoSubtitles$s = "ຄໍາບັນຍາຍເປີດ";
   const VOTSubtitlesFont$s = "ຕົວອັກສອນບັນຍາຍ";
-  const __vite_glob_0_33 = {
+  const __vite_glob_1_33 = {
     recommended: recommended$s,
     translateVideo: translateVideo$s,
     disableTranslate: disableTranslate$s,
@@ -17780,7 +17807,7 @@ get isSupportOnlyLS() {
   const smartDucking$r = "Адаптивен волумен";
   const VOTAutoSubtitles$r = "Преводи на отворено";
   const VOTSubtitlesFont$r = "Титл фонт";
-  const __vite_glob_0_34 = {
+  const __vite_glob_1_34 = {
     recommended: recommended$r,
     translateVideo: translateVideo$r,
     disableTranslate: disableTranslate$r,
@@ -17996,7 +18023,7 @@ get isSupportOnlyLS() {
   const smartDucking$q = "അഡാപ്റ്റീവ് വോള്യം";
   const VOTAutoSubtitles$q = "സബ്ടൈറ്റിലുകൾ ഓപ്പൺ";
   const VOTSubtitlesFont$q = "സബ്ടൈറ്റില് അക്ഷരസഞ്ചയം";
-  const __vite_glob_0_35 = {
+  const __vite_glob_1_35 = {
     recommended: recommended$q,
     translateVideo: translateVideo$q,
     disableTranslate: disableTranslate$q,
@@ -18212,7 +18239,7 @@ get isSupportOnlyLS() {
   const smartDucking$p = "Дасан зохицох хэмжээ";
   const VOTAutoSubtitles$p = "Нээлттэй дээр хадмалтай";
   const VOTSubtitlesFont$p = "Хадмал үсгийн фонт";
-  const __vite_glob_0_36 = {
+  const __vite_glob_1_36 = {
     recommended: recommended$p,
     translateVideo: translateVideo$p,
     disableTranslate: disableTranslate$p,
@@ -18428,7 +18455,7 @@ get isSupportOnlyLS() {
   const smartDucking$o = "Isipadu adaptif";
   const VOTAutoSubtitles$o = "Subtitle di buka";
   const VOTSubtitlesFont$o = "Font subtajuk";
-  const __vite_glob_0_37 = {
+  const __vite_glob_1_37 = {
     recommended: recommended$o,
     translateVideo: translateVideo$o,
     disableTranslate: disableTranslate$o,
@@ -18644,7 +18671,7 @@ get isSupportOnlyLS() {
   const smartDucking$n = "Volum adattiv";
   const VOTAutoSubtitles$n = "Sottotitoli fuq miftuħa";
   const VOTSubtitlesFont$n = "Font tas-sottotitolu";
-  const __vite_glob_0_38 = {
+  const __vite_glob_1_38 = {
     recommended: recommended$n,
     translateVideo: translateVideo$n,
     disableTranslate: disableTranslate$n,
@@ -18860,7 +18887,7 @@ get isSupportOnlyLS() {
   const smartDucking$m = "အလိုက်သင့်ပြောင်းလဲနိုင်သောပမာဏ";
   const VOTAutoSubtitles$m = "Open မှာစာတန်းထိုးထားတယ်။";
   const VOTSubtitlesFont$m = "စာတန်းထိုးစာလုံး";
-  const __vite_glob_0_39 = {
+  const __vite_glob_1_39 = {
     recommended: recommended$m,
     translateVideo: translateVideo$m,
     disableTranslate: disableTranslate$m,
@@ -19076,7 +19103,7 @@ get isSupportOnlyLS() {
   const smartDucking$l = "अनुकूलनशील मात्रा";
   const VOTAutoSubtitles$l = "उपशीर्षकहरू खोल्नुहोस्";
   const VOTSubtitlesFont$l = "उपशीर्षक फन्ट";
-  const __vite_glob_0_40 = {
+  const __vite_glob_1_40 = {
     recommended: recommended$l,
     translateVideo: translateVideo$l,
     disableTranslate: disableTranslate$l,
@@ -19292,7 +19319,7 @@ get isSupportOnlyLS() {
   const smartDucking$k = "Adaptief volume";
   const VOTAutoSubtitles$k = "Ondertitels op open";
   const VOTSubtitlesFont$k = "Ondertiteling lettertype";
-  const __vite_glob_0_41 = {
+  const __vite_glob_1_41 = {
     recommended: recommended$k,
     translateVideo: translateVideo$k,
     disableTranslate: disableTranslate$k,
@@ -19508,7 +19535,7 @@ get isSupportOnlyLS() {
   const smartDucking$j = "ਅਨੁਕੂਲ ਵਾਲੀਅਮ";
   const VOTAutoSubtitles$j = "ਓਪਨ ' ਤੇ ਉਪਸਿਰਲੇਖ";
   const VOTSubtitlesFont$j = "ਉਪਸਿਰਲੇਖ ਫੋਂਟ";
-  const __vite_glob_0_42 = {
+  const __vite_glob_1_42 = {
     recommended: recommended$j,
     translateVideo: translateVideo$j,
     disableTranslate: disableTranslate$j,
@@ -19724,7 +19751,7 @@ get isSupportOnlyLS() {
   const smartDucking$i = "Adaptacyjna objętość";
   const VOTAutoSubtitles$i = "Napisy na open";
   const VOTSubtitlesFont$i = "Czcionka napisów";
-  const __vite_glob_0_43 = {
+  const __vite_glob_1_43 = {
     recommended: recommended$i,
     translateVideo: translateVideo$i,
     disableTranslate: disableTranslate$i,
@@ -19940,7 +19967,7 @@ get isSupportOnlyLS() {
   const smartDucking$h = "Volume adaptativo";
   const VOTAutoSubtitles$h = "Legendas em aberto";
   const VOTSubtitlesFont$h = "Fonte do subtítulo";
-  const __vite_glob_0_44 = {
+  const __vite_glob_1_44 = {
     recommended: recommended$h,
     translateVideo: translateVideo$h,
     disableTranslate: disableTranslate$h,
@@ -20156,7 +20183,7 @@ get isSupportOnlyLS() {
   const smartDucking$g = "Volum adaptiv";
   const VOTAutoSubtitles$g = "Subtitrari pe open";
   const VOTSubtitlesFont$g = "Font subtitrare";
-  const __vite_glob_0_45 = {
+  const __vite_glob_1_45 = {
     recommended: recommended$g,
     translateVideo: translateVideo$g,
     disableTranslate: disableTranslate$g,
@@ -20387,7 +20414,7 @@ get isSupportOnlyLS() {
   const VOTLoginViaToken$f = "Войти с помощью токена";
   const subtitlesSmartLayout$f = "Умное расположение субтитров";
   const smartDucking$f = "Адаптивная громкость";
-  const __vite_glob_0_46 = {
+  const __vite_glob_1_46 = {
     recommended: recommended$f,
     translateVideo: translateVideo$f,
     disableTranslate: disableTranslate$f,
@@ -20618,7 +20645,7 @@ get isSupportOnlyLS() {
   const smartDucking$e = "අනුවර්තන පරිමාව";
   const VOTAutoSubtitles$e = "විවෘත උපසිරැසි";
   const VOTSubtitlesFont$e = "උපසිරැසි අකුරු";
-  const __vite_glob_0_47 = {
+  const __vite_glob_1_47 = {
     recommended: recommended$e,
     translateVideo: translateVideo$e,
     disableTranslate: disableTranslate$e,
@@ -20834,7 +20861,7 @@ get isSupportOnlyLS() {
   const smartDucking$d = "Adaptívny objem";
   const VOTAutoSubtitles$d = "Titulky otvorené";
   const VOTSubtitlesFont$d = "Písmo titulkov";
-  const __vite_glob_0_48 = {
+  const __vite_glob_1_48 = {
     recommended: recommended$d,
     translateVideo: translateVideo$d,
     disableTranslate: disableTranslate$d,
@@ -21050,7 +21077,7 @@ get isSupportOnlyLS() {
   const smartDucking$c = "Prilagodljiva prostornina";
   const VOTAutoSubtitles$c = "Podnapisi na odprtem";
   const VOTSubtitlesFont$c = "Pisava podnapisov";
-  const __vite_glob_0_49 = {
+  const __vite_glob_1_49 = {
     recommended: recommended$c,
     translateVideo: translateVideo$c,
     disableTranslate: disableTranslate$c,
@@ -21266,7 +21293,7 @@ get isSupportOnlyLS() {
   const smartDucking$b = "Vëllimi adaptiv";
   const VOTAutoSubtitles$b = "Titra në open";
   const VOTSubtitlesFont$b = "Shkronja e titrave";
-  const __vite_glob_0_50 = {
+  const __vite_glob_1_50 = {
     recommended: recommended$b,
     translateVideo: translateVideo$b,
     disableTranslate: disableTranslate$b,
@@ -21482,7 +21509,7 @@ get isSupportOnlyLS() {
   const smartDucking$a = "Адаптивна јачина звука";
   const VOTAutoSubtitles$a = "Титлови приликом отварања";
   const VOTSubtitlesFont$a = "Фонт титлова";
-  const __vite_glob_0_51 = {
+  const __vite_glob_1_51 = {
     recommended: recommended$a,
     translateVideo: translateVideo$a,
     disableTranslate: disableTranslate$a,
@@ -21698,7 +21725,7 @@ get isSupportOnlyLS() {
   const smartDucking$9 = "Volume adaptif";
   const VOTAutoSubtitles$9 = "Subjudul dina buka";
   const VOTSubtitlesFont$9 = "Font subjudul";
-  const __vite_glob_0_52 = {
+  const __vite_glob_1_52 = {
     recommended: recommended$9,
     translateVideo: translateVideo$9,
     disableTranslate: disableTranslate$9,
@@ -21914,7 +21941,7 @@ get isSupportOnlyLS() {
   const smartDucking$8 = "Adaptiv volym";
   const VOTAutoSubtitles$8 = "Undertexter på open";
   const VOTSubtitlesFont$8 = "Textning teckensnitt";
-  const __vite_glob_0_53 = {
+  const __vite_glob_1_53 = {
     recommended: recommended$8,
     translateVideo: translateVideo$8,
     disableTranslate: disableTranslate$8,
@@ -22130,7 +22157,7 @@ get isSupportOnlyLS() {
   const smartDucking$7 = "Kiasi cha kubadilika";
   const VOTAutoSubtitles$7 = "Subtitles juu ya wazi";
   const VOTSubtitlesFont$7 = "Fonti ya kichwa kidogo";
-  const __vite_glob_0_54 = {
+  const __vite_glob_1_54 = {
     recommended: recommended$7,
     translateVideo: translateVideo$7,
     disableTranslate: disableTranslate$7,
@@ -22346,7 +22373,7 @@ get isSupportOnlyLS() {
   const smartDucking$6 = "Uyarlanabilir hacim";
   const VOTAutoSubtitles$6 = "Altyazılar açık";
   const VOTSubtitlesFont$6 = "Altyazı yazı tipi";
-  const __vite_glob_0_55 = {
+  const __vite_glob_1_55 = {
     recommended: recommended$6,
     translateVideo: translateVideo$6,
     disableTranslate: disableTranslate$6,
@@ -22562,7 +22589,7 @@ get isSupportOnlyLS() {
   const smartDucking$5 = "Адаптивна гучність";
   const VOTAutoSubtitles$5 = "Субтитри при відкритті";
   const VOTSubtitlesFont$5 = "Шрифт субтитрів";
-  const __vite_glob_0_56 = {
+  const __vite_glob_1_56 = {
     recommended: recommended$5,
     translateVideo: translateVideo$5,
     disableTranslate: disableTranslate$5,
@@ -22778,7 +22805,7 @@ get isSupportOnlyLS() {
   const smartDucking$4 = "انکولی حجم";
   const VOTAutoSubtitles$4 = "اوپن پر سب ٹائٹلز";
   const VOTSubtitlesFont$4 = "ذیلی عنوان فونٹ";
-  const __vite_glob_0_57 = {
+  const __vite_glob_1_57 = {
     recommended: recommended$4,
     translateVideo: translateVideo$4,
     disableTranslate: disableTranslate$4,
@@ -22994,7 +23021,7 @@ get isSupportOnlyLS() {
   const smartDucking$3 = "Moslashuvchan hajm";
   const VOTAutoSubtitles$3 = "Ochiq subtitrlar";
   const VOTSubtitlesFont$3 = "Subtitr shrifti";
-  const __vite_glob_0_58 = {
+  const __vite_glob_1_58 = {
     recommended: recommended$3,
     translateVideo: translateVideo$3,
     disableTranslate: disableTranslate$3,
@@ -23210,7 +23237,7 @@ get isSupportOnlyLS() {
   const smartDucking$2 = "Khối lượng thích ứng";
   const VOTAutoSubtitles$2 = "Phụ đề mở";
   const VOTSubtitlesFont$2 = "Phông chữ phụ đề";
-  const __vite_glob_0_59 = {
+  const __vite_glob_1_59 = {
     recommended: recommended$2,
     translateVideo: translateVideo$2,
     disableTranslate: disableTranslate$2,
@@ -23426,7 +23453,7 @@ get isSupportOnlyLS() {
   const smartDucking$1 = "自适应音量";
   const VOTAutoSubtitles$1 = "公开字幕";
   const VOTSubtitlesFont$1 = "字幕字体";
-  const __vite_glob_0_60 = {
+  const __vite_glob_1_60 = {
     recommended: recommended$1,
     translateVideo: translateVideo$1,
     disableTranslate: disableTranslate$1,
@@ -23642,7 +23669,7 @@ get isSupportOnlyLS() {
   const smartDucking = "Umthamo wokuzivumelanisa nezimo";
   const VOTAutoSubtitles = "Izihlokwana ezivulekile";
   const VOTSubtitlesFont = "Ifonti yesihlokwana";
-  const __vite_glob_0_61 = {
+  const __vite_glob_1_61 = {
     recommended,
     translateVideo,
     disableTranslate,
@@ -23760,71 +23787,144 @@ get isSupportOnlyLS() {
     "localeUpdatedAt",
     "localeLangOverride"
   ];
-  const DEFAULT_LOCALE = toFlatObj(__vite_glob_0_13);
+  const DEFAULT_LOCALE = toFlatObj(__vite_glob_1_13);
+  const BUNDLED_LOCALE_BY_LANG = (() => {
+    const modules = Object.assign({
+      "./locales/af.json": __vite_glob_1_0,
+      "./locales/am.json": __vite_glob_1_1,
+      "./locales/ar.json": __vite_glob_1_2,
+      "./locales/az.json": __vite_glob_1_3,
+      "./locales/bg.json": __vite_glob_1_4,
+      "./locales/bn.json": __vite_glob_1_5,
+      "./locales/bs.json": __vite_glob_1_6,
+      "./locales/ca.json": __vite_glob_1_7,
+      "./locales/cs.json": __vite_glob_1_8,
+      "./locales/cy.json": __vite_glob_1_9,
+      "./locales/da.json": __vite_glob_1_10,
+      "./locales/de.json": __vite_glob_1_11,
+      "./locales/el.json": __vite_glob_1_12,
+      "./locales/en.json": __vite_glob_1_13,
+      "./locales/es.json": __vite_glob_1_14,
+      "./locales/et.json": __vite_glob_1_15,
+      "./locales/eu.json": __vite_glob_1_16,
+      "./locales/fa.json": __vite_glob_1_17,
+      "./locales/fi.json": __vite_glob_1_18,
+      "./locales/fr.json": __vite_glob_1_19,
+      "./locales/gl.json": __vite_glob_1_20,
+      "./locales/hi.json": __vite_glob_1_21,
+      "./locales/hr.json": __vite_glob_1_22,
+      "./locales/hu.json": __vite_glob_1_23,
+      "./locales/hy.json": __vite_glob_1_24,
+      "./locales/id.json": __vite_glob_1_25,
+      "./locales/it.json": __vite_glob_1_26,
+      "./locales/ja.json": __vite_glob_1_27,
+      "./locales/jv.json": __vite_glob_1_28,
+      "./locales/kk.json": __vite_glob_1_29,
+      "./locales/km.json": __vite_glob_1_30,
+      "./locales/kn.json": __vite_glob_1_31,
+      "./locales/ko.json": __vite_glob_1_32,
+      "./locales/lo.json": __vite_glob_1_33,
+      "./locales/mk.json": __vite_glob_1_34,
+      "./locales/ml.json": __vite_glob_1_35,
+      "./locales/mn.json": __vite_glob_1_36,
+      "./locales/ms.json": __vite_glob_1_37,
+      "./locales/mt.json": __vite_glob_1_38,
+      "./locales/my.json": __vite_glob_1_39,
+      "./locales/ne.json": __vite_glob_1_40,
+      "./locales/nl.json": __vite_glob_1_41,
+      "./locales/pa.json": __vite_glob_1_42,
+      "./locales/pl.json": __vite_glob_1_43,
+      "./locales/pt.json": __vite_glob_1_44,
+      "./locales/ro.json": __vite_glob_1_45,
+      "./locales/ru.json": __vite_glob_1_46,
+      "./locales/si.json": __vite_glob_1_47,
+      "./locales/sk.json": __vite_glob_1_48,
+      "./locales/sl.json": __vite_glob_1_49,
+      "./locales/sq.json": __vite_glob_1_50,
+      "./locales/sr.json": __vite_glob_1_51,
+      "./locales/su.json": __vite_glob_1_52,
+      "./locales/sv.json": __vite_glob_1_53,
+      "./locales/sw.json": __vite_glob_1_54,
+      "./locales/tr.json": __vite_glob_1_55,
+      "./locales/uk.json": __vite_glob_1_56,
+      "./locales/ur.json": __vite_glob_1_57,
+      "./locales/uz.json": __vite_glob_1_58,
+      "./locales/vi.json": __vite_glob_1_59,
+      "./locales/zh.json": __vite_glob_1_60,
+      "./locales/zu.json": __vite_glob_1_61
+    });
+    const map = {};
+    for (const [path, locale] of Object.entries(modules)) {
+      const match = path.match(/\/([^/]+)\.json$/i);
+      if (!match) continue;
+      map[match[1].toLowerCase()] = toFlatObj(locale);
+    }
+    return map;
+  })();
   const BUNDLED_LOCALE_JSON_BY_LANG = (() => {
     const modules = Object.assign({
-      "./locales/af.json": __vite_glob_0_0,
-      "./locales/am.json": __vite_glob_0_1,
-      "./locales/ar.json": __vite_glob_0_2,
-      "./locales/az.json": __vite_glob_0_3,
-      "./locales/bg.json": __vite_glob_0_4,
-      "./locales/bn.json": __vite_glob_0_5,
-      "./locales/bs.json": __vite_glob_0_6,
-      "./locales/ca.json": __vite_glob_0_7,
-      "./locales/cs.json": __vite_glob_0_8,
-      "./locales/cy.json": __vite_glob_0_9,
-      "./locales/da.json": __vite_glob_0_10,
-      "./locales/de.json": __vite_glob_0_11,
-      "./locales/el.json": __vite_glob_0_12,
-      "./locales/en.json": __vite_glob_0_13,
-      "./locales/es.json": __vite_glob_0_14,
-      "./locales/et.json": __vite_glob_0_15,
-      "./locales/eu.json": __vite_glob_0_16,
-      "./locales/fa.json": __vite_glob_0_17,
-      "./locales/fi.json": __vite_glob_0_18,
-      "./locales/fr.json": __vite_glob_0_19,
-      "./locales/gl.json": __vite_glob_0_20,
-      "./locales/hi.json": __vite_glob_0_21,
-      "./locales/hr.json": __vite_glob_0_22,
-      "./locales/hu.json": __vite_glob_0_23,
-      "./locales/hy.json": __vite_glob_0_24,
-      "./locales/id.json": __vite_glob_0_25,
-      "./locales/it.json": __vite_glob_0_26,
-      "./locales/ja.json": __vite_glob_0_27,
-      "./locales/jv.json": __vite_glob_0_28,
-      "./locales/kk.json": __vite_glob_0_29,
-      "./locales/km.json": __vite_glob_0_30,
-      "./locales/kn.json": __vite_glob_0_31,
-      "./locales/ko.json": __vite_glob_0_32,
-      "./locales/lo.json": __vite_glob_0_33,
-      "./locales/mk.json": __vite_glob_0_34,
-      "./locales/ml.json": __vite_glob_0_35,
-      "./locales/mn.json": __vite_glob_0_36,
-      "./locales/ms.json": __vite_glob_0_37,
-      "./locales/mt.json": __vite_glob_0_38,
-      "./locales/my.json": __vite_glob_0_39,
-      "./locales/ne.json": __vite_glob_0_40,
-      "./locales/nl.json": __vite_glob_0_41,
-      "./locales/pa.json": __vite_glob_0_42,
-      "./locales/pl.json": __vite_glob_0_43,
-      "./locales/pt.json": __vite_glob_0_44,
-      "./locales/ro.json": __vite_glob_0_45,
-      "./locales/ru.json": __vite_glob_0_46,
-      "./locales/si.json": __vite_glob_0_47,
-      "./locales/sk.json": __vite_glob_0_48,
-      "./locales/sl.json": __vite_glob_0_49,
-      "./locales/sq.json": __vite_glob_0_50,
-      "./locales/sr.json": __vite_glob_0_51,
-      "./locales/su.json": __vite_glob_0_52,
-      "./locales/sv.json": __vite_glob_0_53,
-      "./locales/sw.json": __vite_glob_0_54,
-      "./locales/tr.json": __vite_glob_0_55,
-      "./locales/uk.json": __vite_glob_0_56,
-      "./locales/ur.json": __vite_glob_0_57,
-      "./locales/uz.json": __vite_glob_0_58,
-      "./locales/vi.json": __vite_glob_0_59,
-      "./locales/zh.json": __vite_glob_0_60,
-      "./locales/zu.json": __vite_glob_0_61
+      "./locales/af.json": __vite_glob_1_0,
+      "./locales/am.json": __vite_glob_1_1,
+      "./locales/ar.json": __vite_glob_1_2,
+      "./locales/az.json": __vite_glob_1_3,
+      "./locales/bg.json": __vite_glob_1_4,
+      "./locales/bn.json": __vite_glob_1_5,
+      "./locales/bs.json": __vite_glob_1_6,
+      "./locales/ca.json": __vite_glob_1_7,
+      "./locales/cs.json": __vite_glob_1_8,
+      "./locales/cy.json": __vite_glob_1_9,
+      "./locales/da.json": __vite_glob_1_10,
+      "./locales/de.json": __vite_glob_1_11,
+      "./locales/el.json": __vite_glob_1_12,
+      "./locales/en.json": __vite_glob_1_13,
+      "./locales/es.json": __vite_glob_1_14,
+      "./locales/et.json": __vite_glob_1_15,
+      "./locales/eu.json": __vite_glob_1_16,
+      "./locales/fa.json": __vite_glob_1_17,
+      "./locales/fi.json": __vite_glob_1_18,
+      "./locales/fr.json": __vite_glob_1_19,
+      "./locales/gl.json": __vite_glob_1_20,
+      "./locales/hi.json": __vite_glob_1_21,
+      "./locales/hr.json": __vite_glob_1_22,
+      "./locales/hu.json": __vite_glob_1_23,
+      "./locales/hy.json": __vite_glob_1_24,
+      "./locales/id.json": __vite_glob_1_25,
+      "./locales/it.json": __vite_glob_1_26,
+      "./locales/ja.json": __vite_glob_1_27,
+      "./locales/jv.json": __vite_glob_1_28,
+      "./locales/kk.json": __vite_glob_1_29,
+      "./locales/km.json": __vite_glob_1_30,
+      "./locales/kn.json": __vite_glob_1_31,
+      "./locales/ko.json": __vite_glob_1_32,
+      "./locales/lo.json": __vite_glob_1_33,
+      "./locales/mk.json": __vite_glob_1_34,
+      "./locales/ml.json": __vite_glob_1_35,
+      "./locales/mn.json": __vite_glob_1_36,
+      "./locales/ms.json": __vite_glob_1_37,
+      "./locales/mt.json": __vite_glob_1_38,
+      "./locales/my.json": __vite_glob_1_39,
+      "./locales/ne.json": __vite_glob_1_40,
+      "./locales/nl.json": __vite_glob_1_41,
+      "./locales/pa.json": __vite_glob_1_42,
+      "./locales/pl.json": __vite_glob_1_43,
+      "./locales/pt.json": __vite_glob_1_44,
+      "./locales/ro.json": __vite_glob_1_45,
+      "./locales/ru.json": __vite_glob_1_46,
+      "./locales/si.json": __vite_glob_1_47,
+      "./locales/sk.json": __vite_glob_1_48,
+      "./locales/sl.json": __vite_glob_1_49,
+      "./locales/sq.json": __vite_glob_1_50,
+      "./locales/sr.json": __vite_glob_1_51,
+      "./locales/su.json": __vite_glob_1_52,
+      "./locales/sv.json": __vite_glob_1_53,
+      "./locales/sw.json": __vite_glob_1_54,
+      "./locales/tr.json": __vite_glob_1_55,
+      "./locales/uk.json": __vite_glob_1_56,
+      "./locales/ur.json": __vite_glob_1_57,
+      "./locales/uz.json": __vite_glob_1_58,
+      "./locales/vi.json": __vite_glob_1_59,
+      "./locales/zh.json": __vite_glob_1_60,
+      "./locales/zu.json": __vite_glob_1_61
     });
     const map = {};
     for (const [path, locale] of Object.entries(modules)) {
@@ -23834,7 +23934,7 @@ get isSupportOnlyLS() {
     }
     return map;
   })();
-  const repoBranch = "master";
+  const repoBranch = "dev";
   const availableLocales = (() => {
     const locales = typeof define_AVAILABLE_LOCALES_default !== "undefined" && Array.isArray(define_AVAILABLE_LOCALES_default) ? define_AVAILABLE_LOCALES_default : ["en"];
     return locales.includes("auto") ? locales : ["auto", ...locales];
@@ -23843,7 +23943,7 @@ get isSupportOnlyLS() {
     return buildVersion || scriptVersion || "unknown";
   }
   function getRuntimeLocaleVersion() {
-    const buildVersion = String("1.11.5.87");
+    const buildVersion = String("1.11.5.88");
     const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
     return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
   }
@@ -23894,14 +23994,18 @@ locale;
     getBundledLocaleJsonString(lang2) {
       return BUNDLED_LOCALE_JSON_BY_LANG[lang2.toLowerCase()] || "";
     }
+    getBundledLocale(lang2) {
+      return BUNDLED_LOCALE_BY_LANG[lang2.toLowerCase()] || null;
+    }
     applyBundledLocale(lang2) {
-      const bundledLocale = this.getBundledLocaleJsonString(lang2);
+      const bundledLocale = this.getBundledLocale(lang2);
       if (!bundledLocale) {
         this.locale = {};
         this.warnedMissingKeys.clear();
         return false;
       }
-      this.setLocaleFromJsonString(bundledLocale);
+      this.locale = { ...bundledLocale };
+      this.warnedMissingKeys.clear();
       return true;
     }
     async changeLang(newLang) {
@@ -23916,6 +24020,7 @@ locale;
       return true;
     }
     async checkUpdates(force = false) {
+      debug.log("Check locale updates...");
       try {
         const res = await GM_fetch(this.buildUrl(this.hashesUrl, "", force), {
           forceGmXhr: true
@@ -23960,6 +24065,7 @@ locale;
         return this;
       }
       const timestamp = getTimestamp();
+      debug.log("Updating locale...");
       try {
         const res = await GM_fetch(
           this.buildUrl(this.localesUrl, `/${this.lang}.json`, force),
@@ -23999,7 +24105,9 @@ locale;
         if (!locale || typeof locale !== "object" || Array.isArray(locale)) {
           throw new Error("Locale payload should be a JSON object");
         }
-        this.locale = toFlatObj(locale);
+        const parsedLocale = toFlatObj(locale);
+        const bundledLocale = this.getBundledLocale(this.lang);
+        this.locale = bundledLocale ? { ...bundledLocale, ...parsedLocale } : parsedLocale;
       } catch (err) {
         console.error("[VOT] [localizationProvider]", err);
         this.locale = {};
@@ -25743,6 +25851,10 @@ menuId = typeof crypto !== "undefined" && "randomUUID" in crypto ? `vot-menu-${c
         }
         options.onLoaded?.();
       } catch (error2) {
+        debug.log("Failed to load Google Font for subtitles", {
+          fontFamily,
+          error: error2
+        });
       } finally {
         pendingSubtitleGoogleFonts.delete(fontFamily);
       }
@@ -25773,6 +25885,7 @@ menuId = typeof crypto !== "undefined" && "randomUUID" in crypto ? `vot-menu-${c
       );
     })().catch((error2) => {
       googleFontsCatalogPromise = null;
+      debug.log("Failed to load Google Fonts catalog", error2);
       return [];
     });
     return await googleFontsCatalogPromise;
@@ -29347,6 +29460,7 @@ updateMount({
         if (data.type !== "code") return;
         const expectedState = sessionStorage.getItem("vot-yandex-oauth-state") ?? void 0;
         if (!data.state || !expectedState || data.state !== expectedState) {
+          debug.log("[VOT] OAuth state mismatch");
           return;
         }
         try {
@@ -29368,6 +29482,10 @@ updateMount({
           } catch (err) {
             console.warn("[VOT] Failed to update account UI:", err);
           }
+        } else {
+          debug.log(
+            "[VOT] SettingsView is not initialized, skipping account UI update"
+          );
         }
       });
     }
@@ -29408,6 +29526,7 @@ updateMount({
     setSubtitlesSmartLayout(checked) {
       this.data.subtitlesSmartLayout = checked;
       void votStorage.set("subtitlesSmartLayout", checked);
+      debug.log("subtitlesSmartLayout value changed. New value:", checked);
       if (this.subtitlesSmartLayoutCheckbox?.checked !== checked) {
         this.suppressSubtitlesSmartLayoutCheckboxChange = true;
         this.subtitlesSmartLayoutCheckbox.checked = checked;
@@ -29450,6 +29569,7 @@ updateMount({
       control.addEventListener(event, async (value) => {
         apply(value);
         await votStorage.set(storageKey, readPersistedValue());
+        debug.log(`${logLabel} value changed. New value:`, value);
         if (afterPersist) {
           await afterPersist(value);
         }
@@ -30124,6 +30244,10 @@ updateMount({
             "enabledDontTranslateLanguages",
             this.data.enabledDontTranslateLanguages
           );
+          debug.log(
+            "enabledDontTranslateLanguages value changed. New value:",
+            checked
+          );
         }
       );
       this.dontTranslateLanguagesSelect.addEventListener(
@@ -30134,6 +30258,7 @@ updateMount({
             "dontTranslateLanguages",
             this.data.dontTranslateLanguages
           );
+          debug.log("dontTranslateLanguages value changed. New value:", values);
         }
       );
       this.bindPersistedSetting({
@@ -30284,6 +30409,7 @@ updateMount({
           "subtitlesMaxLength",
           this.data.subtitlesMaxLength
         );
+        debug.log("subtitlesMaxLength value changed. New value:", value);
         this.events["input:subtitlesMaxLength"].dispatch(value);
       });
       this.subtitlesFontSizeSlider.addEventListener("input", (value) => {
@@ -30296,6 +30422,7 @@ updateMount({
           "subtitlesFontSize",
           this.data.subtitlesFontSize
         );
+        debug.log("subtitlesFontSize value changed. New value:", value);
         this.events["input:subtitlesFontSize"].dispatch(value);
       });
       this.subtitlesBackgroundOpacitySlider.addEventListener("input", (value) => {
@@ -30305,6 +30432,7 @@ updateMount({
           "subtitlesOpacity",
           this.data.subtitlesOpacity
         );
+        debug.log("subtitlesOpacity value changed. New value:", value);
         this.events["input:subtitlesBackgroundOpacity"].dispatch(value);
       });
       this.bindPersistedSetting({
@@ -30434,6 +30562,7 @@ updateMount({
       this.autoHideButtonDelaySlider.addEventListener("input", (value) => {
         this.autoHideButtonDelaySliderLabel.value = value;
         const newDelay = Math.round(value * 1e3);
+        debug.log("autoHideButtonDelay value changed. New value:", newDelay);
         this.data.autoHideButtonDelay = newDelay;
         this.scheduleStoragePersist(
           "autoHideButtonDelay",
@@ -32154,6 +32283,8 @@ updateMount({
         await ensureLocalizationProviderReady();
         await localizationProvider.update();
         debug.log(`Selected menu language: ${localizationProvider.lang}`);
+      } else {
+        debug.log("[VOT] iframe mode: skip localization init");
       }
       if (!iframeInteractorBound) {
         iframeInteractorBound = true;
@@ -34714,8 +34845,12 @@ updateMount({
       ...directVideoUrls,
       selectedVideoSrc
     ]);
+    debug.log("[VOT] VK strategy videoId:", videoId);
+    debug.log("[VOT] VK strategy manifest:", sniffedManifestUrl);
+    debug.log("[VOT] VK strategy performance media:", performanceMediaUrl);
     debug.log("[VOT] VK strategy currentSrc:", video.currentSrc);
     debug.log("[VOT] VK strategy src:", video.src);
+    debug.log("[VOT] VK strategy selected video src:", selectedVideoSrc);
     debug.log(
       "[VOT] VK strategy candidate videos:",
       videos.map((candidate) => ({
@@ -34726,6 +34861,7 @@ updateMount({
         score: scoreVideoCandidate(candidate, preferredVideo)
       }))
     );
+    debug.log("[VOT] VK strategy selected src:", src);
     if (!src) {
       throw new Error("[VOT] VK: empty video src");
     }
@@ -34763,6 +34899,7 @@ updateMount({
     const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
     const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
     debug.log("[VOT] VK strategy bytes:", bytes.byteLength);
+    debug.log("[VOT] VK strategy mediaPartsLength:", mediaPartsLength);
     return {
       fileId,
       mediaPartsLength,
@@ -34786,6 +34923,7 @@ updateMount({
       throw new Error("[VOT] Yandex Disk: video element not found");
     }
     const src = video.currentSrc || video.src;
+    debug.log("[VOT] Yandex Disk strategy video src:", src);
     if (!src) {
       throw new Error("[VOT] Yandex Disk: empty video src");
     }
@@ -34795,6 +34933,7 @@ updateMount({
         `[VOT] Yandex Disk: failed to fetch media source: ${response.status}`
       );
     }
+    debug.log("[VOT] Yandex Disk strategy videoId:", videoId);
     debug.log("[VOT] Yandex Disk strategy currentSrc:", video.currentSrc);
     debug.log("[VOT] Yandex Disk strategy src:", video.src);
     const buffer = await response.arrayBuffer();
@@ -34806,6 +34945,7 @@ updateMount({
     const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
     const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
     debug.log("[VOT] Yandex Disk strategy bytes:", bytes.byteLength);
+    debug.log("[VOT] Yandex Disk strategy mediaPartsLength:", mediaPartsLength);
     return {
       fileId,
       mediaPartsLength,
@@ -34896,6 +35036,9 @@ updateMount({
     strategy;
     constructor(strategy = YT_AUDIO_STRATEGY) {
       this.strategy = strategy;
+      debug.log("Audio downloader created", {
+        strategy
+      });
     }
     async runAudioDownload(videoId, translationId, signal, preferredVideo) {
       try {
@@ -35924,7 +36067,9 @@ localizedMessage;
       throw new Error("Failed to build Yandex Disk translation target");
     }
     onDownloadedAudio = async (translationId, data) => {
+      debug.log("downloadedAudio", data);
       if (!this.downloading) {
+        debug.log("skip downloadedAudio");
         return;
       }
       const { videoId, fileId, audioData } = data;
@@ -35946,6 +36091,7 @@ localizedMessage;
           }
         );
       } catch (error2) {
+        debug.error("Failed to upload downloaded audio", error2);
         console.log("[VOT] Upload full audio failed", {
           message: getErrorMessage(error2),
           serverMessage: getServerErrorMessage(error2),
@@ -35959,7 +36105,9 @@ localizedMessage;
       this.finishDownloadSuccess();
     };
     onDownloadedPartialAudio = async (translationId, data) => {
+      debug.log("downloadedPartialAudio", data);
       if (!this.downloading) {
+        debug.log("skip downloadedPartialAudio");
         return;
       }
       const { audioData, fileId, videoId, amount, version, index } = data;
@@ -35988,6 +36136,7 @@ localizedMessage;
           }
         );
       } catch (error2) {
+        debug.error("Failed to upload downloaded audio chunk", error2);
         console.log("[VOT] Upload audio chunk failed", {
           message: getErrorMessage(error2),
           serverMessage: getServerErrorMessage(error2),
@@ -36007,8 +36156,10 @@ localizedMessage;
     };
     onDownloadAudioError = async (videoId) => {
       if (!this.downloading) {
+        debug.log("skip downloadAudioError");
         return;
       }
+      debug.log(`Failed to download audio ${videoId}`);
       const videoUrl = this.getCanonicalUrl(videoId);
       const shouldUseFallback = this.videoHandler.site.host === "youtube" && Boolean(this.videoHandler.data?.useAudioDownload);
       console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
@@ -36032,6 +36183,7 @@ localizedMessage;
         }
         this.finishDownloadSuccess();
       } catch (error2) {
+        debug.error("fail-audio-js request failed", error2);
         this.finishDownloadFailure(
           new VOTLocalizedError("VOTFailedDownloadAudio")
         );
@@ -36257,6 +36409,10 @@ localizedMessage;
         requestLang,
         responseLang2
       );
+      debug.log(
+        videoData2,
+        `Translate video (requestLang: ${requestLang}, requestLangForApi: ${requestLangForApi}, responseLang: ${responseLang2})`
+      );
       let livelyDisabled = disableLivelyVoice;
       const useLocalFileWorkflow = this.shouldUseLocalFileWorkflow(videoData2);
       this.updateAudioDownloaderStrategy(videoData2);
@@ -36421,6 +36577,7 @@ localizedMessage;
         }
       } catch (err) {
         if (isAbortError(err)) {
+          debug.log("aborted video translation");
           return null;
         }
         const uiError = mapVotClientErrorForUi(err, this.videoHandler.site.host);
@@ -36542,6 +36699,7 @@ localizedMessage;
     }
     setState(next) {
       this.state = next;
+      debug.log("[TranslationOrchestrator] state", next);
     }
     reset() {
       this.setState({ status: "idle" });
@@ -36554,8 +36712,14 @@ localizedMessage;
         return;
       }
       if (this.deps.isMobileYouTubeMuted?.()) {
+        debug.log(
+          "[TranslationOrchestrator] Mobile YouTube video is muted, deferring auto-translate"
+        );
         this.setState({ status: "deferred", reason: "muted" });
         this.deps.setMuteWatcher?.(() => {
+          debug.log(
+            "[TranslationOrchestrator] Video unmuted, running deferred auto-translate"
+          );
           this.setState({ status: "idle" });
           void this.runAutoTranslationIfEligible();
         });
@@ -36701,6 +36865,7 @@ localizedMessage;
       this.lifecycleGeneration += 1;
       const sessionId = this.lifecycleGeneration;
       this.resetActions(`[VideoLifecycle][session:${sessionId}] ${reason}`);
+      debug.log(`[VideoLifecycle][session:${sessionId}] started`, { reason });
       return sessionId;
     }
     shouldAbortHandleSrcChanged(callId, stage) {
@@ -36754,18 +36919,32 @@ localizedMessage;
         const autoSubtitlesPromise = this.runAutoSubtitlesIfEnabled(sessionId);
         await this.host.translationOrchestrator.runAutoTranslationIfEligible();
         if (this.isStale(sessionId)) {
+          debug.log(
+            `[VideoLifecycle][session:${sessionId}] auto-translation result ignored (stale session)`
+          );
           return;
         }
         await autoSubtitlesPromise;
-        if (this.isStale(sessionId)) ;
+        if (this.isStale(sessionId)) {
+          debug.log(
+            `[VideoLifecycle][session:${sessionId}] auto-subtitles result ignored (stale session)`
+          );
+        }
         return;
       }
       await this.host.translationOrchestrator.runAutoTranslationIfEligible();
       if (this.isStale(sessionId)) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] deferred auto-translation ignored (stale session)`
+        );
         return;
       }
       await this.runAutoSubtitlesIfEnabled(sessionId);
-      if (this.isStale(sessionId)) ;
+      if (this.isStale(sessionId)) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] deferred auto-subtitles ignored (stale session)`
+        );
+      }
     }
     scheduleDeferredAutoStartup(sessionId, sourceKey) {
       if (!this.hasAutoStartupWork()) {
@@ -36778,9 +36957,17 @@ localizedMessage;
           return;
         }
         if (this.getCurrentSourceKey() !== sourceKey) {
+          debug.log(
+            `[VideoLifecycle][session:${sessionId}] deferred auto startup skipped after source change`,
+            { sourceKey }
+          );
           return;
         }
         void this.runAutoStartupSequence(sessionId, "deferred").catch((err) => {
+          debug.log(
+            `[VideoLifecycle][session:${sessionId}] deferred auto startup failed`,
+            err
+          );
         });
       }, 800);
     }
@@ -36816,6 +37003,10 @@ localizedMessage;
           this.invalidateActiveSession(
             "setCanPlay source changed while previous trigger is running"
           );
+        } else {
+          debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
+            sourceKey: incomingSourceKey
+          });
         }
         return await this.setCanPlayLoopPromise;
       }
@@ -36838,6 +37029,9 @@ localizedMessage;
       const sourceKey = this.getCurrentSourceKey();
       const pageKey = this.getCurrentPageKey();
       if (this.host.videoData?.videoId && sourceKey === this.lastSetCanPlaySourceKey) {
+        debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
+          sourceKey
+        });
         const overlayView = this.host.uiManager.votOverlayView;
         this.showOverlayButton(overlayView);
         const sourceAudioState = this.host.syncSourceAudioAvailabilityUi({
@@ -36860,7 +37054,15 @@ localizedMessage;
       try {
         nextVideoData = await this.host.getVideoData();
       } catch (err) {
+        debug.log(
+          `[VideoLifecycle] getVideoData failed for source ${sourceKey}`,
+          err
+        );
         this.host.videoData = void 0;
+        debug.log(
+          `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
+          { sourceKey }
+        );
         this.logMobileOverlay("keep overlay after getVideoData failure", {
           sourceKey,
           pageKey,
@@ -36871,6 +37073,10 @@ localizedMessage;
         return;
       }
       if (this.getCurrentSourceKey() !== sourceKey) {
+        debug.log(
+          "[VideoLifecycle] discarded stale getVideoData result after source change",
+          { sourceKey }
+        );
         return;
       }
       this.host.videoData = nextVideoData;
@@ -36885,6 +37091,9 @@ localizedMessage;
       }
       this.activeSetCanPlaySourceKey = sourceKey;
       const currentId = this.startSession(`setCanPlay (source: ${sourceKey})`);
+      debug.log(`[VideoLifecycle][session:${currentId}] setCanPlay started`, {
+        sourceKey
+      });
       try {
         await this.handleSrcChanged(currentId, sourceKey);
         if (this.isStale(currentId)) {
@@ -36916,6 +37125,10 @@ localizedMessage;
       try {
         await this.host.enableSubtitlesForCurrentLangPair();
       } catch (err) {
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] auto-subtitles failed`,
+          err
+        );
       }
     }
     async handleSrcChanged(callId, expectedSourceKey) {
@@ -36925,6 +37138,9 @@ localizedMessage;
       if (this.shouldAbortHandleSrcChanged(sessionId, "before start")) {
         return;
       }
+      debug.log(`[VideoLifecycle][session:${sessionId}] src changed`, {
+        sourceKey
+      });
       this.host.translationOrchestrator.reset();
       this.host.firstPlay = true;
       const overlayView = this.host.uiManager.votOverlayView;
@@ -36964,6 +37180,11 @@ localizedMessage;
         return;
       }
       if (!this.host.videoData?.videoId) {
+        debug.log(`[VideoLifecycle][session:${sessionId}] No videoId resolved`);
+        debug.log(
+          `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
+          { sourceKey }
+        );
         this.logMobileOverlay("keep overlay without resolved videoId", {
           sourceKey,
           pageKey,
@@ -36994,6 +37215,7 @@ localizedMessage;
       this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
       this.lastSetCanPlaySourceKey = sourceKey;
       this.host.onPrimaryAttachReady?.();
+      debug.log(`[VideoLifecycle][session:${sessionId}] src handling finished`);
     }
   }
   const VK_HOST_PATTERN = /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i;
@@ -38510,6 +38732,7 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         return inFlightDetect;
       }
       const task = (async () => {
+        debug.log(`Detecting language text: ${text}`);
         const language = normalizeToRequestLang(await detect(text));
         return isResolvedLanguage(language) ? language : void 0;
       })();
@@ -42907,14 +43130,17 @@ selectTitle: localizationProvider.get(
       const handleTranslate = () => {
         if (this.useRailLayout) {
           if (this.votButton?.status === "success") {
+            debug.log("[voice-menu] translate button clicked while active");
             this.setVoiceModeMenuOpen(false);
             closeMenu();
             this.events["click:translate"].dispatch();
             return;
           }
           if (this.votButton?.loading) {
+            debug.log("[voice-menu] translate button ignored because loading");
             return;
           }
+          debug.log("[voice-menu] translate button opens voice mode menu");
           closeMenu();
           this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
           return;
@@ -43120,6 +43346,7 @@ selectTitle: localizationProvider.get(
         )) {
           const mode = item.dataset.mode === "lively" ? "lively" : "standard";
           const dispatchMode = () => {
+            debug.log("[voice-menu] voice menu item clicked", { mode });
             void this.events["select:voiceMode"].dispatchAsync(mode);
             this.setVoiceModeMenuOpen(false);
           };
@@ -43620,6 +43847,7 @@ votSettingsView;
           const isPiPActive = this.videoHandler.video === document.pictureInPictureElement;
           await (isPiPActive ? document.exitPictureInPicture() : this.videoHandler.video.requestPictureInPicture());
         } catch (err) {
+          debug.warn("[VOT] Failed to toggle Picture-in-Picture", err);
         }
       }).addEventListener("click:subtitles", async () => {
         if (!this.videoHandler) {
@@ -43628,6 +43856,7 @@ votSettingsView;
         try {
           await this.videoHandler.toggleSubtitlesForCurrentLangPair();
         } catch (err) {
+          debug.warn("[VOT] Failed to toggle subtitles", err);
         }
       }).addEventListener("click:settings", async () => {
         this.videoHandler?.subtitlesWidget?.releaseTooltip();
@@ -43676,6 +43905,8 @@ votSettingsView;
             startWhenIdle: true
           });
         } catch (err) {
+          debug.warn("[voice-menu] translation failed", err);
+          debug.warn("[VOT] Failed to apply voice mode selection", err);
         } finally {
           this.runDetached(
             votStorage.set("useLivelyVoice", livelyEnabled),
@@ -43812,6 +44043,10 @@ votSettingsView;
         forceVisible: true
       });
       if (!sourceAudioState.ready) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "source-audio-not-ready",
+          state: sourceAudioState
+        });
         return;
       }
       if (this.votOverlayView.votButton.status === "disabled") {
@@ -43820,8 +44055,10 @@ votSettingsView;
       if (this.votOverlayView.votButton.status === "error") {
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       } else if (this.votOverlayView.votButton.status !== "disabled" && this.votOverlayView.votButton.status !== "none" && !videoHandler.hasActiveSource()) {
+        debug.log("[startTranslationFlow] reset stale button state");
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       }
+      debug.log("[startTranslationFlow] trying execute translation");
       await videoHandler.primePlaybackByGesture("translate-button");
       const videoData2 = await this.getVideoDataForTranslation(videoHandler);
       await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
@@ -43843,6 +44080,7 @@ votSettingsView;
           activeTranslation: Boolean(videoHandler.activeTranslation)
         });
       } catch (err) {
+        debug.warn("[voice-menu] translation failed", err);
         throw err;
       }
     }
@@ -43864,14 +44102,24 @@ votSettingsView;
         translationActionInFlight: this.translationActionInFlight
       });
       if (!hasActiveSource && !isBusy && !startWhenIdle) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "idle-and-startWhenIdle-disabled"
+        });
         return;
       }
       if (previousMode === nextMode && hasActiveSource && !isBusy) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "same-mode-while-translation-active"
+        });
         return;
       }
       try {
         await videoHandler.primePlaybackByGesture("voice-mode-selection");
       } catch (err) {
+        debug.warn(
+          "[VOT] Failed to prime playback before voice mode switch",
+          err
+        );
       }
       if (hasActiveSource || isBusy) {
         try {
@@ -43879,15 +44127,25 @@ votSettingsView;
           await videoHandler.waitForPendingStopTranslate();
           await this.waitForTranslationActionSettled();
         } catch (err) {
+          debug.warn(
+            "[VOT] Failed to stop translation before voice mode restart",
+            err
+          );
         }
       }
       if (videoHandler.hasActiveSource()) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "active-source-still-present-after-stop"
+        });
         return;
       }
       if (this.translationActionInFlight) {
         await this.waitForTranslationActionSettled();
       }
       if (this.translationActionInFlight) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "translation-action-still-in-flight"
+        });
         return;
       }
       this.translationActionInFlight = true;
@@ -43911,6 +44169,7 @@ votSettingsView;
         await this.waitForTranslationActionSettled();
         await this.handleTranslationBtnClick();
       } catch (err) {
+        debug.warn("[VOT] Failed to restart translation after Drive change", err);
       }
     }
     async applyDriveFromLanguage(value) {
@@ -44323,15 +44582,21 @@ votSettingsView;
         this.votOverlayView.votButton.opacity = prevButtonOpacity;
         this.votOverlayView.syncVoiceModeUi();
       } catch (err) {
+        debug.warn(
+          "[VOT] Failed to restore overlay state after menu reload",
+          err
+        );
       }
       try {
         this.videoHandler.rebindOverlayVisibilityTargets();
       } catch (err) {
+        debug.warn("[VOT] Failed to rebind overlay visibility targets", err);
       }
       if (settingsWasOpen) {
         try {
           this.votSettingsView?.open();
         } catch (err) {
+          debug.warn("[VOT] Failed to reopen settings after menu reload", err);
         }
       }
       await this.videoHandler.updateSubtitlesLangSelect();
@@ -44349,15 +44614,19 @@ votSettingsView;
       if (!videoHandler) {
         return this;
       }
+      debug.log("[handleTranslationBtnClick] click translationBtn");
       if (videoHandler.isAwaitingAutoplayRecovery()) {
+        debug.log("[handleTranslationBtnClick] resume pending autoplay recovery");
         await videoHandler.resumePendingAutoplayRecovery("button");
         return this;
       }
       if (videoHandler.hasActiveSource()) {
+        debug.log("[handleTranslationBtnClick] stop active translation");
         await videoHandler.stopTranslation();
         return this;
       }
       if (this.translationActionInFlight || this.votOverlayView.votButton.loading) {
+        debug.log("[handleTranslationBtnClick] ignore re-entry while loading");
         return this;
       }
       this.translationActionInFlight = true;
@@ -44448,6 +44717,7 @@ votSettingsView;
     }
     runDetached(task, errorMessage) {
       void task.catch((err) => {
+        debug.warn(`[VOT] ${errorMessage}`, err);
       });
     }
     triggerUrlDownload(url, filename) {
@@ -44484,6 +44754,7 @@ votSettingsView;
         await videoHandler.stopTranslate();
         videoHandler.createPlayer();
       } catch (err) {
+        debug.warn("[VOT] Failed to restart audio player", err);
       }
     }
   }
@@ -44595,6 +44866,7 @@ scheduleHide(event) {
         active = document.activeElement;
       }
       if (active && this.deps.isInteractiveNode(active)) {
+        debug.log("[OverlayVisibility] skip hide (focus inside overlay)");
         return;
       }
       const view = this.getView();
@@ -44875,6 +45147,7 @@ scheduleHide(event) {
         return true;
       }
     } catch (err) {
+      debug.log("[notify] userscript api error", err);
     }
     return false;
   }
@@ -44896,6 +45169,7 @@ scheduleHide(event) {
           debug.log("[notify] unavailable", normalized);
         }
       } catch (err) {
+        debug.log("[notify] send error", err);
       }
     }
     translationCompleted(host) {
@@ -45009,6 +45283,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         try {
           sub(root);
         } catch (error2) {
+          debug.error("attachShadow subscriber failed", error2);
         }
       }
       return root;
@@ -45154,6 +45429,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       if (this.isAdRelated(video)) return false;
       if (this.isInsideAd(video)) return false;
       if (!this.hasAudio(video) && !this.isVkLikeVideo(video)) {
+        debug.log("Ignoring video without audio:", video);
         return false;
       }
       return true;
@@ -46007,6 +46283,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           }
         }
       } catch (error2) {
+        debug.log("[VOT] Failed to sync audio track language", error2);
       }
     };
     const player2 = YoutubeHelper2.getPlayer();
@@ -46016,6 +46293,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         try {
           player2.addEventListener(eventName, syncAudioTrackLanguage);
         } catch (error2) {
+          debug.log(`[VOT] Failed to bind ${eventName}`, error2);
         }
       }
     }
@@ -46028,6 +46306,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           try {
             player2.removeEventListener(eventName, syncAudioTrackLanguage);
           } catch (error2) {
+            debug.log(`[VOT] Failed to unbind ${eventName}`, error2);
           }
         }
       },
@@ -46046,6 +46325,9 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       const isVideo = target ? self.container.contains(target) : false;
       const isSettings = target && settings ? settings.contains(target) : false;
       const isTempDialog = target instanceof Element && target.closest(".vot-dialog-temp") instanceof Element;
+      debug.log(
+        `[document click] ${isButton} ${isMenu} ${isVideo} ${isSettings} ${isTempDialog}`
+      );
       if (isButton || isMenu || isSettings || isTempDialog) return;
       if (!isVideo && !isVkLikeSiteHost(self.site.host) && !isMobileYouTubeLikeSite(self.site)) {
         overlayView.updateButtonOpacity(0);
@@ -46060,6 +46342,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
     const clearUserPressedKeys = () => userPressedKeys.clear();
     const runHotkeyAction = (action, actionName) => {
       void action().catch((error2) => {
+        debug.log(`[VOT] ${actionName} hotkey action failed`, error2);
       });
     };
     add(document, "keydown", (event) => {
@@ -46077,7 +46360,8 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       )) {
         clearUserPressedKeys();
         runHotkeyAction(
-          () => self.uiManager.handleTranslationBtnClick()
+          () => self.uiManager.handleTranslationBtnClick(),
+          "Translation"
         );
         return;
       }
@@ -46087,7 +46371,8 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       )) {
         clearUserPressedKeys();
         runHotkeyAction(
-          () => self.toggleSubtitlesForCurrentLangPair()
+          () => self.toggleSubtitlesForCurrentLangPair(),
+          "Subtitles"
         );
       }
     });
@@ -46161,6 +46446,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       try {
         await self.setCanPlay();
       } catch (err) {
+        debug.log("[VOT] setCanPlay() failed", err);
       }
     };
     let setCanPlayQueued = false;
@@ -46206,6 +46492,10 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
               }
             );
             void self.translationOrchestrator.runAutoTranslationIfEligible().catch((error2) => {
+              debug.log(
+                "[VOT] Failed to retry auto-translate after playback start",
+                error2
+              );
             });
           }
         }
@@ -46220,13 +46510,16 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           video: self.video
         });
       } catch (error2) {
+        debug.log("[VOT] Failed to resolve video id on emptied", error2);
       }
       if (self.videoData && videoId && videoId === self.videoData.videoId) {
         return;
       }
       if (self.site.host === "custom" && getTunnelPlayerContext()) {
+        debug.log("[VOT][custom][tunnel] ignore video emptied");
         return;
       }
+      debug.log("lipsync mode is emptied");
       if (isMobileYouTubeLikeSite(self.site)) {
         logMobileOverlay("video emptied; start grace period", {
           currentVideoId: self.videoData?.videoId,
@@ -46257,6 +46550,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
     };
     add(self.video, "emptied", () => {
       void handleVideoEmptied().catch((error2) => {
+        debug.log("[VOT] Failed to handle emptied lifecycle event", error2);
       });
     });
     if (!isMuteSyncDisabledHost(self.site.host)) {
@@ -46274,6 +46568,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
     }
     if (self.site.host === "youtube" && !self.site.additionalData) {
       add(document, "yt-page-data-updated", () => {
+        debug.log("yt-page-data-updated");
         if (!globalThis.location.pathname.startsWith("/shorts/")) return;
         queueSetCanPlay();
       });
@@ -46445,6 +46740,7 @@ useAudioDownload: isSupportGMXhr,
       this.data.translateProxyEnabled,
       this.data.translateProxyEnabledDefault
     );
+    debug.log("Extension compatibility passed...");
     await this.initVOTClient();
     this.uiManager.initUI();
     this.uiManager.initUIEvents();
@@ -47680,6 +47976,7 @@ useAudioDownload: isSupportGMXhr,
     return null;
   }
   async function changeSubtitlesLang(subs) {
+    debug.log("[onchange] subtitles", subs);
     const requestVersion = nextSubtitlesSelectionRequestVersion(this);
     const overlayView = this.uiManager.votOverlayView;
     if (!overlayView?.subtitlesSelect || !overlayView.downloadSubtitlesButton) {
@@ -47751,6 +48048,7 @@ useAudioDownload: isSupportGMXhr,
     }
     const hasVisibleSubtitles = Array.isArray(fetchedSubtitles.subtitles) && fetchedSubtitles.subtitles.length > 0;
     if (!hasVisibleSubtitles) {
+      debug.log("[subtitles] fetched subtitles are empty", subtitlesObj);
       if (this.hasSubtitlesWidget()) {
         this.subtitlesWidget?.setContent(null);
       }
@@ -48195,6 +48493,10 @@ useAudioDownload: isSupportGMXhr,
       try {
         globalRecord.__VOT_PENDING_AUTOPLAY_RECOVERY__ = null;
       } catch (error2) {
+        debug.log(
+          "[VOT][audio] failed to reset pending autoplay debug value",
+          error2
+        );
       }
       return;
     }
@@ -48205,6 +48507,10 @@ useAudioDownload: isSupportGMXhr,
         pageUrl: globalThis.location.href
       };
     } catch (error2) {
+      debug.log(
+        "[VOT][audio] failed to store pending autoplay debug value",
+        error2
+      );
     }
   }
   function clearPendingAutoplayRecoveryState(handler) {
@@ -48287,10 +48593,19 @@ useAudioDownload: isSupportGMXhr,
         actionContext
       );
       if (applyResult.status !== "success") {
+        debug.log("[VOT][audio] failed to restore pending translated source", {
+          trigger,
+          applyResult
+        });
         return false;
       }
     }
-    await resumePlayerAudioContextIfNeeded(handler);
+    const resumeResult = await resumePlayerAudioContextIfNeeded(handler);
+    if (resumeResult === "failed") {
+      debug.log(
+        "[VOT][audio] AudioContext resume failed during autoplay recovery"
+      );
+    }
     await attemptTranslatedPlaybackStart(handler, actionContext);
     const started = await ensureTranslatedAudioStarted(
       handler,
@@ -48368,10 +48683,12 @@ useAudioDownload: isSupportGMXhr,
     try {
       player2.lipSync?.("play");
     } catch (error2) {
+      debug.log("[updateTranslation] lipSync(play) failed", error2);
     }
     try {
       await player2.play?.();
     } catch (error2) {
+      debug.log("[updateTranslation] player.play() failed", error2);
     }
     if (!media) {
       return;
@@ -48387,6 +48704,7 @@ useAudioDownload: isSupportGMXhr,
     try {
       await media.play();
     } catch (error2) {
+      debug.log("[updateTranslation] media.play() failed", error2);
     }
   }
   function clearPendingAutoplayRecovery(resetUi = false) {
@@ -48433,6 +48751,10 @@ useAudioDownload: isSupportGMXhr,
         player: this.audioPlayer?.player?.constructor?.name ?? "unknown"
       });
     } catch (error2) {
+      debug.log("[VOT][audio] failed to prime playback context", {
+        trigger,
+        error: error2
+      });
     }
   }
   function getNowMs() {
@@ -48453,6 +48775,7 @@ useAudioDownload: isSupportGMXhr,
         await ctx.resume();
         return "resumed";
       } catch (err) {
+        debug.log("[updateTranslation] Failed to resume AudioContext", err);
         return "failed";
       }
     })();
@@ -48463,6 +48786,11 @@ useAudioDownload: isSupportGMXhr,
     const result = await Promise.race([resumePromise, timeoutPromise]);
     if (timeoutId !== void 0) {
       clearTimeout(timeoutId);
+    }
+    if (result === "resumed") {
+      debug.log("[updateTranslation] AudioContext resumed");
+    } else if (result === "timeout") {
+      debug.log("[updateTranslation] AudioContext resume timeout");
     }
     return result;
   }
@@ -48482,6 +48810,7 @@ useAudioDownload: isSupportGMXhr,
       player2.src = "";
       debug.log("[updateTranslation] cleared stale partially-applied source");
     } catch (err) {
+      debug.log("[updateTranslation] failed to clear stale source", err);
     }
   }
   function getSmartDuckingAudioContext(handler) {
@@ -48538,6 +48867,7 @@ useAudioDownload: isSupportGMXhr,
       return source;
     } catch (err) {
       state.mediaSourceCreationFailed = true;
+      debug.log("[SmartDucking] failed to create media source", err);
       return void 0;
     }
   }
@@ -48578,6 +48908,7 @@ useAudioDownload: isSupportGMXhr,
         inputNode.connect(analyser);
         state.connectedInputNode = inputNode;
       } catch (err) {
+        debug.log("[SmartDucking] failed to connect analyser", err);
         return void 0;
       }
     }
@@ -48629,6 +48960,7 @@ useAudioDownload: isSupportGMXhr,
       try {
         smartDuckingTick(handler);
       } catch (err) {
+        debug.log("[SmartDucking] tick failed, stopping smart ducking", err);
         stopSmartVolumeDucking(handler);
         return;
       }
@@ -48784,6 +49116,7 @@ headers: {
         if (handler.isActionStale(actionContext) || signal.aborted) {
           return false;
         }
+        debug.log("[validateAudioUrl] probe error", { audioUrl, attempt, err });
       }
       if (attempt < AUDIO_PROBE_MAX_ATTEMPTS) {
         if (handler.isActionStale(actionContext) || signal.aborted) {
@@ -48825,6 +49158,7 @@ headers: {
         actionContext
       );
       if (isDirectUrlValid) {
+        debug.log("[validateAudioUrl] switching to direct audio URL after probe");
         return directUrl;
       }
     }
@@ -48839,6 +49173,7 @@ headers: {
     const refreshDelayMs = Math.max(3e4, YANDEX_TTL_MS - 5 * 60 * 1e3);
     this.translationRefreshTimeout = setTimeout(() => {
       this.refreshTranslationAudio().catch((error2) => {
+        debug.log("[scheduleTranslationRefresh] refresh failed", error2);
       });
     }, refreshDelayMs);
   }
@@ -48927,12 +49262,16 @@ headers: {
       translateProxyEnabled: this.data?.translateProxyEnabled,
       proxyWorkerHost: this.data?.proxyWorkerHost
     });
+    if (proxiedAudioUrl !== audioUrl) {
+      debug.log(`[VOT] Audio proxied via ${proxiedAudioUrl}`);
+    }
     return proxiedAudioUrl;
   }
   function unproxifyAudio(audioUrl) {
     return unproxifyYandexAudioUrl(audioUrl);
   }
   async function handleProxySettingsChanged(reason = "proxySettingsChanged") {
+    debug.log(`[VOT] ${reason}: clearing translation/subtitles cache`);
     try {
       this.cacheManager.clear();
       this.activeTranslation = null;
@@ -49103,6 +49442,7 @@ headers: {
     try {
       await handler.audioPlayer?.player?.clear();
     } catch (err) {
+      debug.log("[updateTranslation] player.clear failed during recovery", err);
     }
     try {
       if (handler.audioPlayer?.player) {
@@ -49113,6 +49453,7 @@ headers: {
     try {
       handler.createPlayer();
     } catch (err) {
+      debug.log("[updateTranslation] createPlayer failed during recovery", err);
       return false;
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -49125,6 +49466,7 @@ headers: {
       actionContext
     );
     if (retryResult.status !== "success") {
+      debug.log("[updateTranslation] recovery retry failed", retryResult);
       return false;
     }
     if (shouldRequireImmediateTranslatedStart(handler)) {
@@ -49134,8 +49476,15 @@ headers: {
         TRANSLATED_AUDIO_START_TIMEOUT_MS
       );
       if (!started) {
+        debug.log(
+          "[updateTranslation] recovery retry attached src but playback did not start"
+        );
         return false;
       }
+    } else {
+      debug.log(
+        "[updateTranslation] recovery succeeded while host video is paused; skip immediate start check"
+      );
     }
     handler.setupAudioSettings();
     handler.transformBtn("success", localizationProvider.get("disableTranslate"));
@@ -49158,6 +49507,7 @@ headers: {
       this.createPlayer();
     }
     if (this.audioPlayer.audioContext?.state === "closed") {
+      debug.log("[updateTranslation] AudioContext is closed, recreating player");
       this.createPlayer();
     }
     const normalizedTargetUrl = normalizeManagedAudioUrl(this, audioUrl);
@@ -49234,6 +49584,7 @@ headers: {
       try {
         await this.audioPlayer?.player?.clear();
       } catch (err) {
+        debug.log("[updateTranslation] player.clear failed", err);
       }
       try {
         if (this.audioPlayer?.player) {
@@ -49254,7 +49605,13 @@ headers: {
         TRANSLATED_AUDIO_START_TIMEOUT_MS
       );
       if (!started) {
+        debug.log(
+          "[updateTranslation] audio source attached but playback did not start"
+        );
         if (isCustomPlaybackTarget(this.site.host, this.videoData?.host)) {
+          debug.log(
+            "[updateTranslation] custom source: translated audio did not auto-start, keeping translation active"
+          );
           this.setupAudioSettings();
           this.afterUpdateTranslation(nextAudioUrl);
           markAutoplayRecoveryPending(this, nextAudioUrl, actionContext);
@@ -49305,6 +49662,10 @@ headers: {
         try {
           await this.audioPlayer?.player?.clear();
         } catch (err) {
+          debug.log(
+            "[updateTranslation] player.clear after no-start failed",
+            err
+          );
         }
         try {
           if (this.audioPlayer?.player) {
@@ -49317,6 +49678,10 @@ headers: {
         this.transformBtn("error", "Translated audio did not start");
         throw new Error("Translated audio did not start");
       }
+    } else {
+      debug.log(
+        "[updateTranslation] translated source attached while host video is paused; skip immediate start check"
+      );
     }
     this.setupAudioSettings();
     this.transformBtn("success", localizationProvider.get("disableTranslate"));
@@ -49324,18 +49689,21 @@ headers: {
   }
   async function translateFunc(VIDEO_ID2, _isStream, requestLang, responseLang2, translationHelp) {
     await this.waitForPendingStopTranslate();
+    debug.log("Run videoValidator");
     await this.videoValidator();
     if (this.actionsAbortController?.signal?.aborted) {
       this.resetActionsAbortController("translateFunc");
     }
     const overlayView = this.uiManager.votOverlayView;
     if (!overlayView?.votButton) {
+      debug.log("[translateFunc] Overlay view missing, skipping translation");
       return;
     }
     overlayView.votButton.loading = true;
     this.hadAsyncWait = false;
     this.volumeOnStart = this.getVideoVolume();
     if (!VIDEO_ID2) {
+      debug.log("Skip translation - no VIDEO_ID resolved yet");
       await this.updateTranslationErrorMsg(
         new VOTLocalizedError("VOTNoVideoIDFound"),
         this.actionsAbortController.signal
@@ -49360,6 +49728,7 @@ headers: {
       try {
         await this.audioPlayer?.player?.clear();
       } catch (err) {
+        debug.log("[translateFunc] player.clear failed during video switch", err);
       }
       try {
         if (this.audioPlayer?.player) {
@@ -49385,6 +49754,7 @@ headers: {
       try {
         this.createPlayer();
       } catch (err) {
+        debug.log("[translateFunc] createPlayer failed during video switch", err);
       }
       this.lastTranslationVideoId = currentVideoId;
     }
@@ -49399,6 +49769,7 @@ headers: {
     );
     const activeKey = `video_${cacheKey2}`;
     if (this.activeTranslation?.key === activeKey) {
+      debug.log("[translateFunc] Reusing in-flight translation");
       await this.activeTranslation.promise;
       return;
     }
@@ -49408,6 +49779,7 @@ headers: {
     };
     const translationPromise = (async () => {
       if (this.isActionStale(actionContext)) {
+        debug.log("[translateFunc] Stale translation task - skipping");
         return;
       }
       const reqLang = resolvedRequestLang;
@@ -49433,6 +49805,10 @@ headers: {
             "[translateFunc] Cached translation did not activate source, dropping cache and requesting fresh URL"
           );
         } catch (err) {
+          debug.log(
+            "[translateFunc] Cached translation failed, dropping cache and requesting fresh URL",
+            err
+          );
         }
         if (typeof this.cacheManager.deleteTranslation === "function") {
           this.cacheManager.deleteTranslation(cacheKey2);
@@ -49466,7 +49842,9 @@ headers: {
           }
         }
       });
+      debug.log("[translateRes]", translateRes);
       if (!translateRes) {
+        debug.log("Skip translation");
         return;
       }
       if (this.hasActiveSource()) {
@@ -49481,6 +49859,7 @@ headers: {
     try {
       return await translationPromise;
     } catch (err) {
+      debug.log("[translateFunc] transient media abort", err);
       this.hadAsyncWait = notifyTranslationFailureIfNeeded({
         aborted: this.actionsAbortController.signal.aborted,
         translateApiErrorsEnabled: Boolean(this.data?.translateAPIErrors),
@@ -49496,6 +49875,7 @@ headers: {
       }
       const overlayBtn = this.uiManager.votOverlayView?.votButton;
       if (!this.activeTranslation && overlayBtn?.loading && !this.hasActiveSource()) {
+        debug.log("[translateFunc] clearing stale loading state");
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       }
     }
@@ -49766,6 +50146,13 @@ getSubtitlesCacheKey(videoId, detectedLanguage, responseLanguage) {
       this.updateVOTClientRequestSignal();
     }
 constructor(video, container, site) {
+      debug.log(
+        "[VideoHandler] add video:",
+        video,
+        "container:",
+        container,
+        this
+      );
       this.video = video;
       this.container = container;
       this.site = site;
@@ -50042,9 +50429,10 @@ getPreferAudio() {
     }
 createPlayer() {
       const preferAudio = this.getPreferAudio();
+      debug.log("preferAudio:", preferAudio);
       this.audioPlayer = new Chaimu({
         video: this.video,
-debug: Boolean(false),
+debug: Boolean(true),
         fetchFn: GM_fetch,
         fetchOpts: {
           timeout: 0
@@ -50366,6 +50754,7 @@ stopTranslate() {
             this.audioPlayer.player.src = "";
             await this.audioPlayer.player.clear();
           } catch (err) {
+            debug.log("[stopTranslate] audioPlayer cleanup error", err);
           }
           debug.log("audioPlayer after stopTranslate", this.audioPlayer);
         }
@@ -50432,6 +50821,7 @@ async updateTranslationErrorMsg(errorMessage, signal) {
       if (this.longWaitingResCount > minLongWaitingCount) {
         errorMessage = new VOTLocalizedError("TranslationDelayed");
       }
+      debug.log("updateTranslationErrorMsg message", errorMessage);
       if (errorMessage?.name === "VOTLocalizedError") {
         this.transformBtn("error", errorMessage.localizedMessage);
       } else if (errorMessage instanceof Error) {
@@ -50586,6 +50976,7 @@ isYouTubeHosts() {
       const rawUrl = String(
         this.videoData?.url || this.video?.currentSrc || this.video?.src || ""
       );
+      debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
       const canForceLocalFileUpload = (() => {
         if (!rawUrl) {
           return isCustomPlaybackTarget(host, this.videoData?.host);
@@ -50630,6 +51021,7 @@ handleSrcChanged() {
       return this.lifecycleController.handleSrcChanged();
     }
 async release() {
+      debug.log("[VideoHandler] release");
       if (/^(m|music)\.youtube\.com$/i.test(
         String(globalThis.location.hostname || "")
       )) {
@@ -50642,6 +51034,7 @@ async release() {
       try {
         await this.stopTranslation();
       } catch (err) {
+        debug.log("[VideoHandler] stopTranslation failed during release", err);
       }
       this.lifecycleController?.teardown();
       this.abortController?.abort();
@@ -50798,9 +51191,11 @@ releaseExtraEvents = releaseExtraEvents;
     return servicesCache;
   }
   function findContainer(site, video) {
+    debug.log("findContainer", site, video);
     if (site.selector) {
       const matched = findConnectedContainerBySelector(video, site.selector);
       if (matched) {
+        debug.log("findContainer matched by site.selector", matched);
         return matched;
       }
     }
@@ -50809,8 +51204,10 @@ releaseExtraEvents = releaseExtraEvents;
       GENERIC_PLAYER_SELECTOR
     );
     if (genericMatched) {
+      debug.log("findContainer matched by generic selector", genericMatched);
       return genericMatched;
     }
+    debug.log("findContainer fallback to parentElement");
     return video.parentElement;
   }
   function isYouTubePage() {
