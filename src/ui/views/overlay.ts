@@ -791,6 +791,10 @@ export class OverlayView {
       return this;
     }
 
+    this.voiceModeMenu.setText(
+      localizationProvider.get("VOTVoiceModeMenuTitle"),
+    );
+
     for (const item of this.voiceModeMenu.bodyContainer.querySelectorAll<HTMLElement>(
       ".vot-voice-mode-menu-item",
     )) {
@@ -799,14 +803,23 @@ export class OverlayView {
       const title = item.querySelector<HTMLElement>(
         ".vot-voice-mode-menu-item-title",
       );
+      const description = item.querySelector<HTMLElement>(
+        ".vot-voice-mode-menu-item-description",
+      );
+      const label = this.getVoiceModeLabel(mode);
 
       item.dataset.selected = String(isSelected);
       item.dataset.playbackState = isSelected ? playbackState : "idle";
       item.dataset.loading = String(isSelected && isLoading);
       item.setAttribute("aria-pressed", String(isSelected));
+      item.setAttribute("aria-label", label);
 
       if (title) {
-        title.textContent = this.getVoiceModeLabel(mode);
+        title.textContent = label;
+      }
+
+      if (description) {
+        description.textContent = this.getVoiceModeDescription(mode);
       }
     }
 

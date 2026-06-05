@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.86
+// @version         1.11.5.87
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -174,13 +174,7 @@
 // @match           *://*/*.mkv*
 // @match           *://*/*.avi*
 // @match           *://*/*.ogv*
-// @match           file://*/*
-// @match           *://localhost/*
-// @match           *://127.0.0.1/*
 // @match           *://*.trycloudflare.com/*
-// @match           *://*.ngrok-free.app/*
-// @match           *://*.ngrok-free.dev/*
-// @match           *://*.ngrok.app/*
 // @match           *://*.yewtu.be/*
 // @match           *://yt.artemislena.eu/*
 // @match           *://invidious.flokinet.to/*
@@ -7812,27 +7806,11 @@ string() {
     "localeLangOverride",
     "account"
   ];
-  const log = (...text) => {
-    console.log(
-      "%c[VOT DEBUG]",
-      "background: #3700ffff; color: #fff; padding: 5px;",
-      ...text
-    );
+  const noop = () => {
   };
-  const warn = (...text) => {
-    console.warn(
-      "%c[VOT DEBUG]",
-      "background: #e1ff00ff; color: #fff; padding: 5px;",
-      ...text
-    );
-  };
-  const error = (...text) => {
-    console.error(
-      "%c[VOT DEBUG]",
-      "background: #F2452D; color: #fff; padding: 5px;",
-      ...text
-    );
-  };
+  const log = noop;
+  const warn = noop;
+  const error = noop;
   const debug = { log, warn, error };
   function getNavigatorLang() {
     return navigator.language?.substring(0, 2).toLowerCase() || "en";
@@ -8724,11 +8702,6 @@ clear() {
     const method = resolveRequestMethod(url, fetchOptions.method);
     const performRequest = async () => {
       if (shouldUseGmXhr(host, urlStr, forceGmXhr)) {
-        debug.log("GM_fetch: routing request via GM_xmlhttpRequest", {
-          host: host ?? "unknown",
-          reason: forceGmXhr ? "forced" : "host-policy",
-          url: urlStr
-        });
         return await gmXhrFetch(urlStr, timeout2, fetchOptions);
       }
       const { signal, cleanup } = createTimeoutSignal(
@@ -23861,7 +23834,7 @@ get isSupportOnlyLS() {
     }
     return map;
   })();
-  const repoBranch = "dev";
+  const repoBranch = "master";
   const availableLocales = (() => {
     const locales = typeof define_AVAILABLE_LOCALES_default !== "undefined" && Array.isArray(define_AVAILABLE_LOCALES_default) ? define_AVAILABLE_LOCALES_default : ["en"];
     return locales.includes("auto") ? locales : ["auto", ...locales];
@@ -23870,7 +23843,7 @@ get isSupportOnlyLS() {
     return buildVersion || scriptVersion || "unknown";
   }
   function getRuntimeLocaleVersion() {
-    const buildVersion = String("1.11.5.86");
+    const buildVersion = String("1.11.5.87");
     const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
     return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
   }
@@ -23943,7 +23916,6 @@ locale;
       return true;
     }
     async checkUpdates(force = false) {
-      debug.log("Check locale updates...");
       try {
         const res = await GM_fetch(this.buildUrl(this.hashesUrl, "", force), {
           forceGmXhr: true
@@ -23988,7 +23960,6 @@ locale;
         return this;
       }
       const timestamp = getTimestamp();
-      debug.log("Updating locale...");
       try {
         const res = await GM_fetch(
           this.buildUrl(this.localesUrl, `/${this.lang}.json`, force),
@@ -25772,10 +25743,6 @@ menuId = typeof crypto !== "undefined" && "randomUUID" in crypto ? `vot-menu-${c
         }
         options.onLoaded?.();
       } catch (error2) {
-        debug.log("Failed to load Google Font for subtitles", {
-          fontFamily,
-          error: error2
-        });
       } finally {
         pendingSubtitleGoogleFonts.delete(fontFamily);
       }
@@ -25806,7 +25773,6 @@ menuId = typeof crypto !== "undefined" && "randomUUID" in crypto ? `vot-menu-${c
       );
     })().catch((error2) => {
       googleFontsCatalogPromise = null;
-      debug.log("Failed to load Google Fonts catalog", error2);
       return [];
     });
     return await googleFontsCatalogPromise;
@@ -29381,7 +29347,6 @@ updateMount({
         if (data.type !== "code") return;
         const expectedState = sessionStorage.getItem("vot-yandex-oauth-state") ?? void 0;
         if (!data.state || !expectedState || data.state !== expectedState) {
-          debug.log("[VOT] OAuth state mismatch");
           return;
         }
         try {
@@ -29403,10 +29368,6 @@ updateMount({
           } catch (err) {
             console.warn("[VOT] Failed to update account UI:", err);
           }
-        } else {
-          debug.log(
-            "[VOT] SettingsView is not initialized, skipping account UI update"
-          );
         }
       });
     }
@@ -29447,7 +29408,6 @@ updateMount({
     setSubtitlesSmartLayout(checked) {
       this.data.subtitlesSmartLayout = checked;
       void votStorage.set("subtitlesSmartLayout", checked);
-      debug.log("subtitlesSmartLayout value changed. New value:", checked);
       if (this.subtitlesSmartLayoutCheckbox?.checked !== checked) {
         this.suppressSubtitlesSmartLayoutCheckboxChange = true;
         this.subtitlesSmartLayoutCheckbox.checked = checked;
@@ -29490,7 +29450,6 @@ updateMount({
       control.addEventListener(event, async (value) => {
         apply(value);
         await votStorage.set(storageKey, readPersistedValue());
-        debug.log(`${logLabel} value changed. New value:`, value);
         if (afterPersist) {
           await afterPersist(value);
         }
@@ -30165,10 +30124,6 @@ updateMount({
             "enabledDontTranslateLanguages",
             this.data.enabledDontTranslateLanguages
           );
-          debug.log(
-            "enabledDontTranslateLanguages value changed. New value:",
-            checked
-          );
         }
       );
       this.dontTranslateLanguagesSelect.addEventListener(
@@ -30179,7 +30134,6 @@ updateMount({
             "dontTranslateLanguages",
             this.data.dontTranslateLanguages
           );
-          debug.log("dontTranslateLanguages value changed. New value:", values);
         }
       );
       this.bindPersistedSetting({
@@ -30330,7 +30284,6 @@ updateMount({
           "subtitlesMaxLength",
           this.data.subtitlesMaxLength
         );
-        debug.log("subtitlesMaxLength value changed. New value:", value);
         this.events["input:subtitlesMaxLength"].dispatch(value);
       });
       this.subtitlesFontSizeSlider.addEventListener("input", (value) => {
@@ -30343,7 +30296,6 @@ updateMount({
           "subtitlesFontSize",
           this.data.subtitlesFontSize
         );
-        debug.log("subtitlesFontSize value changed. New value:", value);
         this.events["input:subtitlesFontSize"].dispatch(value);
       });
       this.subtitlesBackgroundOpacitySlider.addEventListener("input", (value) => {
@@ -30353,7 +30305,6 @@ updateMount({
           "subtitlesOpacity",
           this.data.subtitlesOpacity
         );
-        debug.log("subtitlesOpacity value changed. New value:", value);
         this.events["input:subtitlesBackgroundOpacity"].dispatch(value);
       });
       this.bindPersistedSetting({
@@ -30483,7 +30434,6 @@ updateMount({
       this.autoHideButtonDelaySlider.addEventListener("input", (value) => {
         this.autoHideButtonDelaySliderLabel.value = value;
         const newDelay = Math.round(value * 1e3);
-        debug.log("autoHideButtonDelay value changed. New value:", newDelay);
         this.data.autoHideButtonDelay = newDelay;
         this.scheduleStoragePersist(
           "autoHideButtonDelay",
@@ -32204,8 +32154,6 @@ updateMount({
         await ensureLocalizationProviderReady();
         await localizationProvider.update();
         debug.log(`Selected menu language: ${localizationProvider.lang}`);
-      } else {
-        debug.log("[VOT] iframe mode: skip localization init");
       }
       if (!iframeInteractorBound) {
         iframeInteractorBound = true;
@@ -34766,12 +34714,8 @@ updateMount({
       ...directVideoUrls,
       selectedVideoSrc
     ]);
-    debug.log("[VOT] VK strategy videoId:", videoId);
-    debug.log("[VOT] VK strategy manifest:", sniffedManifestUrl);
-    debug.log("[VOT] VK strategy performance media:", performanceMediaUrl);
     debug.log("[VOT] VK strategy currentSrc:", video.currentSrc);
     debug.log("[VOT] VK strategy src:", video.src);
-    debug.log("[VOT] VK strategy selected video src:", selectedVideoSrc);
     debug.log(
       "[VOT] VK strategy candidate videos:",
       videos.map((candidate) => ({
@@ -34782,7 +34726,6 @@ updateMount({
         score: scoreVideoCandidate(candidate, preferredVideo)
       }))
     );
-    debug.log("[VOT] VK strategy selected src:", src);
     if (!src) {
       throw new Error("[VOT] VK: empty video src");
     }
@@ -34820,7 +34763,6 @@ updateMount({
     const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
     const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
     debug.log("[VOT] VK strategy bytes:", bytes.byteLength);
-    debug.log("[VOT] VK strategy mediaPartsLength:", mediaPartsLength);
     return {
       fileId,
       mediaPartsLength,
@@ -34844,7 +34786,6 @@ updateMount({
       throw new Error("[VOT] Yandex Disk: video element not found");
     }
     const src = video.currentSrc || video.src;
-    debug.log("[VOT] Yandex Disk strategy video src:", src);
     if (!src) {
       throw new Error("[VOT] Yandex Disk: empty video src");
     }
@@ -34854,7 +34795,6 @@ updateMount({
         `[VOT] Yandex Disk: failed to fetch media source: ${response.status}`
       );
     }
-    debug.log("[VOT] Yandex Disk strategy videoId:", videoId);
     debug.log("[VOT] Yandex Disk strategy currentSrc:", video.currentSrc);
     debug.log("[VOT] Yandex Disk strategy src:", video.src);
     const buffer = await response.arrayBuffer();
@@ -34866,7 +34806,6 @@ updateMount({
     const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
     const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
     debug.log("[VOT] Yandex Disk strategy bytes:", bytes.byteLength);
-    debug.log("[VOT] Yandex Disk strategy mediaPartsLength:", mediaPartsLength);
     return {
       fileId,
       mediaPartsLength,
@@ -34957,9 +34896,6 @@ updateMount({
     strategy;
     constructor(strategy = YT_AUDIO_STRATEGY) {
       this.strategy = strategy;
-      debug.log("Audio downloader created", {
-        strategy
-      });
     }
     async runAudioDownload(videoId, translationId, signal, preferredVideo) {
       try {
@@ -35988,9 +35924,7 @@ localizedMessage;
       throw new Error("Failed to build Yandex Disk translation target");
     }
     onDownloadedAudio = async (translationId, data) => {
-      debug.log("downloadedAudio", data);
       if (!this.downloading) {
-        debug.log("skip downloadedAudio");
         return;
       }
       const { videoId, fileId, audioData } = data;
@@ -36012,7 +35946,6 @@ localizedMessage;
           }
         );
       } catch (error2) {
-        debug.error("Failed to upload downloaded audio", error2);
         console.log("[VOT] Upload full audio failed", {
           message: getErrorMessage(error2),
           serverMessage: getServerErrorMessage(error2),
@@ -36026,9 +35959,7 @@ localizedMessage;
       this.finishDownloadSuccess();
     };
     onDownloadedPartialAudio = async (translationId, data) => {
-      debug.log("downloadedPartialAudio", data);
       if (!this.downloading) {
-        debug.log("skip downloadedPartialAudio");
         return;
       }
       const { audioData, fileId, videoId, amount, version, index } = data;
@@ -36057,7 +35988,6 @@ localizedMessage;
           }
         );
       } catch (error2) {
-        debug.error("Failed to upload downloaded audio chunk", error2);
         console.log("[VOT] Upload audio chunk failed", {
           message: getErrorMessage(error2),
           serverMessage: getServerErrorMessage(error2),
@@ -36077,10 +36007,8 @@ localizedMessage;
     };
     onDownloadAudioError = async (videoId) => {
       if (!this.downloading) {
-        debug.log("skip downloadAudioError");
         return;
       }
-      debug.log(`Failed to download audio ${videoId}`);
       const videoUrl = this.getCanonicalUrl(videoId);
       const shouldUseFallback = this.videoHandler.site.host === "youtube" && Boolean(this.videoHandler.data?.useAudioDownload);
       console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
@@ -36104,7 +36032,6 @@ localizedMessage;
         }
         this.finishDownloadSuccess();
       } catch (error2) {
-        debug.error("fail-audio-js request failed", error2);
         this.finishDownloadFailure(
           new VOTLocalizedError("VOTFailedDownloadAudio")
         );
@@ -36330,10 +36257,6 @@ localizedMessage;
         requestLang,
         responseLang2
       );
-      debug.log(
-        videoData2,
-        `Translate video (requestLang: ${requestLang}, requestLangForApi: ${requestLangForApi}, responseLang: ${responseLang2})`
-      );
       let livelyDisabled = disableLivelyVoice;
       const useLocalFileWorkflow = this.shouldUseLocalFileWorkflow(videoData2);
       this.updateAudioDownloaderStrategy(videoData2);
@@ -36498,7 +36421,6 @@ localizedMessage;
         }
       } catch (err) {
         if (isAbortError(err)) {
-          debug.log("aborted video translation");
           return null;
         }
         const uiError = mapVotClientErrorForUi(err, this.videoHandler.site.host);
@@ -36620,7 +36542,6 @@ localizedMessage;
     }
     setState(next) {
       this.state = next;
-      debug.log("[TranslationOrchestrator] state", next);
     }
     reset() {
       this.setState({ status: "idle" });
@@ -36633,14 +36554,8 @@ localizedMessage;
         return;
       }
       if (this.deps.isMobileYouTubeMuted?.()) {
-        debug.log(
-          "[TranslationOrchestrator] Mobile YouTube video is muted, deferring auto-translate"
-        );
         this.setState({ status: "deferred", reason: "muted" });
         this.deps.setMuteWatcher?.(() => {
-          debug.log(
-            "[TranslationOrchestrator] Video unmuted, running deferred auto-translate"
-          );
           this.setState({ status: "idle" });
           void this.runAutoTranslationIfEligible();
         });
@@ -36786,7 +36701,6 @@ localizedMessage;
       this.lifecycleGeneration += 1;
       const sessionId = this.lifecycleGeneration;
       this.resetActions(`[VideoLifecycle][session:${sessionId}] ${reason}`);
-      debug.log(`[VideoLifecycle][session:${sessionId}] started`, { reason });
       return sessionId;
     }
     shouldAbortHandleSrcChanged(callId, stage) {
@@ -36840,32 +36754,18 @@ localizedMessage;
         const autoSubtitlesPromise = this.runAutoSubtitlesIfEnabled(sessionId);
         await this.host.translationOrchestrator.runAutoTranslationIfEligible();
         if (this.isStale(sessionId)) {
-          debug.log(
-            `[VideoLifecycle][session:${sessionId}] auto-translation result ignored (stale session)`
-          );
           return;
         }
         await autoSubtitlesPromise;
-        if (this.isStale(sessionId)) {
-          debug.log(
-            `[VideoLifecycle][session:${sessionId}] auto-subtitles result ignored (stale session)`
-          );
-        }
+        if (this.isStale(sessionId)) ;
         return;
       }
       await this.host.translationOrchestrator.runAutoTranslationIfEligible();
       if (this.isStale(sessionId)) {
-        debug.log(
-          `[VideoLifecycle][session:${sessionId}] deferred auto-translation ignored (stale session)`
-        );
         return;
       }
       await this.runAutoSubtitlesIfEnabled(sessionId);
-      if (this.isStale(sessionId)) {
-        debug.log(
-          `[VideoLifecycle][session:${sessionId}] deferred auto-subtitles ignored (stale session)`
-        );
-      }
+      if (this.isStale(sessionId)) ;
     }
     scheduleDeferredAutoStartup(sessionId, sourceKey) {
       if (!this.hasAutoStartupWork()) {
@@ -36878,17 +36778,9 @@ localizedMessage;
           return;
         }
         if (this.getCurrentSourceKey() !== sourceKey) {
-          debug.log(
-            `[VideoLifecycle][session:${sessionId}] deferred auto startup skipped after source change`,
-            { sourceKey }
-          );
           return;
         }
         void this.runAutoStartupSequence(sessionId, "deferred").catch((err) => {
-          debug.log(
-            `[VideoLifecycle][session:${sessionId}] deferred auto startup failed`,
-            err
-          );
         });
       }, 800);
     }
@@ -36924,10 +36816,6 @@ localizedMessage;
           this.invalidateActiveSession(
             "setCanPlay source changed while previous trigger is running"
           );
-        } else {
-          debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
-            sourceKey: incomingSourceKey
-          });
         }
         return await this.setCanPlayLoopPromise;
       }
@@ -36950,9 +36838,6 @@ localizedMessage;
       const sourceKey = this.getCurrentSourceKey();
       const pageKey = this.getCurrentPageKey();
       if (this.host.videoData?.videoId && sourceKey === this.lastSetCanPlaySourceKey) {
-        debug.log("[VideoLifecycle] setCanPlay deduplicated for same source", {
-          sourceKey
-        });
         const overlayView = this.host.uiManager.votOverlayView;
         this.showOverlayButton(overlayView);
         const sourceAudioState = this.host.syncSourceAudioAvailabilityUi({
@@ -36975,15 +36860,7 @@ localizedMessage;
       try {
         nextVideoData = await this.host.getVideoData();
       } catch (err) {
-        debug.log(
-          `[VideoLifecycle] getVideoData failed for source ${sourceKey}`,
-          err
-        );
         this.host.videoData = void 0;
-        debug.log(
-          `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
-          { sourceKey }
-        );
         this.logMobileOverlay("keep overlay after getVideoData failure", {
           sourceKey,
           pageKey,
@@ -36994,10 +36871,6 @@ localizedMessage;
         return;
       }
       if (this.getCurrentSourceKey() !== sourceKey) {
-        debug.log(
-          "[VideoLifecycle] discarded stale getVideoData result after source change",
-          { sourceKey }
-        );
         return;
       }
       this.host.videoData = nextVideoData;
@@ -37012,9 +36885,6 @@ localizedMessage;
       }
       this.activeSetCanPlaySourceKey = sourceKey;
       const currentId = this.startSession(`setCanPlay (source: ${sourceKey})`);
-      debug.log(`[VideoLifecycle][session:${currentId}] setCanPlay started`, {
-        sourceKey
-      });
       try {
         await this.handleSrcChanged(currentId, sourceKey);
         if (this.isStale(currentId)) {
@@ -37046,10 +36916,6 @@ localizedMessage;
       try {
         await this.host.enableSubtitlesForCurrentLangPair();
       } catch (err) {
-        debug.log(
-          `[VideoLifecycle][session:${sessionId}] auto-subtitles failed`,
-          err
-        );
       }
     }
     async handleSrcChanged(callId, expectedSourceKey) {
@@ -37059,9 +36925,6 @@ localizedMessage;
       if (this.shouldAbortHandleSrcChanged(sessionId, "before start")) {
         return;
       }
-      debug.log(`[VideoLifecycle][session:${sessionId}] src changed`, {
-        sourceKey
-      });
       this.host.translationOrchestrator.reset();
       this.host.firstPlay = true;
       const overlayView = this.host.uiManager.votOverlayView;
@@ -37101,11 +36964,6 @@ localizedMessage;
         return;
       }
       if (!this.host.videoData?.videoId) {
-        debug.log(`[VideoLifecycle][session:${sessionId}] No videoId resolved`);
-        debug.log(
-          `[VideoLifecycle][session:${sessionId}] keeping overlay visible for manual retry`,
-          { sourceKey }
-        );
         this.logMobileOverlay("keep overlay without resolved videoId", {
           sourceKey,
           pageKey,
@@ -37136,7 +36994,6 @@ localizedMessage;
       this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
       this.lastSetCanPlaySourceKey = sourceKey;
       this.host.onPrimaryAttachReady?.();
-      debug.log(`[VideoLifecycle][session:${sessionId}] src handling finished`);
     }
   }
   const VK_HOST_PATTERN = /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i;
@@ -38653,7 +38510,6 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         return inFlightDetect;
       }
       const task = (async () => {
-        debug.log(`Detecting language text: ${text}`);
         const language = normalizeToRequestLang(await detect(text));
         return isResolvedLanguage(language) ? language : void 0;
       })();
@@ -42969,6 +42825,9 @@ selectTitle: localizationProvider.get(
       if (!this.voiceModeMenu) {
         return this;
       }
+      this.voiceModeMenu.setText(
+        localizationProvider.get("VOTVoiceModeMenuTitle")
+      );
       for (const item of this.voiceModeMenu.bodyContainer.querySelectorAll(
         ".vot-voice-mode-menu-item"
       )) {
@@ -42977,12 +42836,20 @@ selectTitle: localizationProvider.get(
         const title = item.querySelector(
           ".vot-voice-mode-menu-item-title"
         );
+        const description = item.querySelector(
+          ".vot-voice-mode-menu-item-description"
+        );
+        const label = this.getVoiceModeLabel(mode);
         item.dataset.selected = String(isSelected);
         item.dataset.playbackState = isSelected ? playbackState : "idle";
         item.dataset.loading = String(isSelected && isLoading);
         item.setAttribute("aria-pressed", String(isSelected));
+        item.setAttribute("aria-label", label);
         if (title) {
-          title.textContent = this.getVoiceModeLabel(mode);
+          title.textContent = label;
+        }
+        if (description) {
+          description.textContent = this.getVoiceModeDescription(mode);
         }
       }
       return this;
@@ -43040,17 +42907,14 @@ selectTitle: localizationProvider.get(
       const handleTranslate = () => {
         if (this.useRailLayout) {
           if (this.votButton?.status === "success") {
-            debug.log("[voice-menu] translate button clicked while active");
             this.setVoiceModeMenuOpen(false);
             closeMenu();
             this.events["click:translate"].dispatch();
             return;
           }
           if (this.votButton?.loading) {
-            debug.log("[voice-menu] translate button ignored because loading");
             return;
           }
-          debug.log("[voice-menu] translate button opens voice mode menu");
           closeMenu();
           this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
           return;
@@ -43256,7 +43120,6 @@ selectTitle: localizationProvider.get(
         )) {
           const mode = item.dataset.mode === "lively" ? "lively" : "standard";
           const dispatchMode = () => {
-            debug.log("[voice-menu] voice menu item clicked", { mode });
             void this.events["select:voiceMode"].dispatchAsync(mode);
             this.setVoiceModeMenuOpen(false);
           };
@@ -43757,7 +43620,6 @@ votSettingsView;
           const isPiPActive = this.videoHandler.video === document.pictureInPictureElement;
           await (isPiPActive ? document.exitPictureInPicture() : this.videoHandler.video.requestPictureInPicture());
         } catch (err) {
-          debug.warn("[VOT] Failed to toggle Picture-in-Picture", err);
         }
       }).addEventListener("click:subtitles", async () => {
         if (!this.videoHandler) {
@@ -43766,7 +43628,6 @@ votSettingsView;
         try {
           await this.videoHandler.toggleSubtitlesForCurrentLangPair();
         } catch (err) {
-          debug.warn("[VOT] Failed to toggle subtitles", err);
         }
       }).addEventListener("click:settings", async () => {
         this.videoHandler?.subtitlesWidget?.releaseTooltip();
@@ -43815,8 +43676,6 @@ votSettingsView;
             startWhenIdle: true
           });
         } catch (err) {
-          debug.warn("[voice-menu] translation failed", err);
-          debug.warn("[VOT] Failed to apply voice mode selection", err);
         } finally {
           this.runDetached(
             votStorage.set("useLivelyVoice", livelyEnabled),
@@ -43953,10 +43812,6 @@ votSettingsView;
         forceVisible: true
       });
       if (!sourceAudioState.ready) {
-        debug.warn("[voice-menu] startTranslationFlow early return reason", {
-          reason: "source-audio-not-ready",
-          state: sourceAudioState
-        });
         return;
       }
       if (this.votOverlayView.votButton.status === "disabled") {
@@ -43965,10 +43820,8 @@ votSettingsView;
       if (this.votOverlayView.votButton.status === "error") {
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       } else if (this.votOverlayView.votButton.status !== "disabled" && this.votOverlayView.votButton.status !== "none" && !videoHandler.hasActiveSource()) {
-        debug.log("[startTranslationFlow] reset stale button state");
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       }
-      debug.log("[startTranslationFlow] trying execute translation");
       await videoHandler.primePlaybackByGesture("translate-button");
       const videoData2 = await this.getVideoDataForTranslation(videoHandler);
       await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
@@ -43990,7 +43843,6 @@ votSettingsView;
           activeTranslation: Boolean(videoHandler.activeTranslation)
         });
       } catch (err) {
-        debug.warn("[voice-menu] translation failed", err);
         throw err;
       }
     }
@@ -44012,24 +43864,14 @@ votSettingsView;
         translationActionInFlight: this.translationActionInFlight
       });
       if (!hasActiveSource && !isBusy && !startWhenIdle) {
-        debug.warn("[voice-menu] startTranslationFlow early return reason", {
-          reason: "idle-and-startWhenIdle-disabled"
-        });
         return;
       }
       if (previousMode === nextMode && hasActiveSource && !isBusy) {
-        debug.warn("[voice-menu] startTranslationFlow early return reason", {
-          reason: "same-mode-while-translation-active"
-        });
         return;
       }
       try {
         await videoHandler.primePlaybackByGesture("voice-mode-selection");
       } catch (err) {
-        debug.warn(
-          "[VOT] Failed to prime playback before voice mode switch",
-          err
-        );
       }
       if (hasActiveSource || isBusy) {
         try {
@@ -44037,25 +43879,15 @@ votSettingsView;
           await videoHandler.waitForPendingStopTranslate();
           await this.waitForTranslationActionSettled();
         } catch (err) {
-          debug.warn(
-            "[VOT] Failed to stop translation before voice mode restart",
-            err
-          );
         }
       }
       if (videoHandler.hasActiveSource()) {
-        debug.warn("[voice-menu] startTranslationFlow early return reason", {
-          reason: "active-source-still-present-after-stop"
-        });
         return;
       }
       if (this.translationActionInFlight) {
         await this.waitForTranslationActionSettled();
       }
       if (this.translationActionInFlight) {
-        debug.warn("[voice-menu] startTranslationFlow early return reason", {
-          reason: "translation-action-still-in-flight"
-        });
         return;
       }
       this.translationActionInFlight = true;
@@ -44079,7 +43911,6 @@ votSettingsView;
         await this.waitForTranslationActionSettled();
         await this.handleTranslationBtnClick();
       } catch (err) {
-        debug.warn("[VOT] Failed to restart translation after Drive change", err);
       }
     }
     async applyDriveFromLanguage(value) {
@@ -44492,21 +44323,15 @@ votSettingsView;
         this.votOverlayView.votButton.opacity = prevButtonOpacity;
         this.votOverlayView.syncVoiceModeUi();
       } catch (err) {
-        debug.warn(
-          "[VOT] Failed to restore overlay state after menu reload",
-          err
-        );
       }
       try {
         this.videoHandler.rebindOverlayVisibilityTargets();
       } catch (err) {
-        debug.warn("[VOT] Failed to rebind overlay visibility targets", err);
       }
       if (settingsWasOpen) {
         try {
           this.votSettingsView?.open();
         } catch (err) {
-          debug.warn("[VOT] Failed to reopen settings after menu reload", err);
         }
       }
       await this.videoHandler.updateSubtitlesLangSelect();
@@ -44524,19 +44349,15 @@ votSettingsView;
       if (!videoHandler) {
         return this;
       }
-      debug.log("[handleTranslationBtnClick] click translationBtn");
       if (videoHandler.isAwaitingAutoplayRecovery()) {
-        debug.log("[handleTranslationBtnClick] resume pending autoplay recovery");
         await videoHandler.resumePendingAutoplayRecovery("button");
         return this;
       }
       if (videoHandler.hasActiveSource()) {
-        debug.log("[handleTranslationBtnClick] stop active translation");
         await videoHandler.stopTranslation();
         return this;
       }
       if (this.translationActionInFlight || this.votOverlayView.votButton.loading) {
-        debug.log("[handleTranslationBtnClick] ignore re-entry while loading");
         return this;
       }
       this.translationActionInFlight = true;
@@ -44627,7 +44448,6 @@ votSettingsView;
     }
     runDetached(task, errorMessage) {
       void task.catch((err) => {
-        debug.warn(`[VOT] ${errorMessage}`, err);
       });
     }
     triggerUrlDownload(url, filename) {
@@ -44664,7 +44484,6 @@ votSettingsView;
         await videoHandler.stopTranslate();
         videoHandler.createPlayer();
       } catch (err) {
-        debug.warn("[VOT] Failed to restart audio player", err);
       }
     }
   }
@@ -44776,7 +44595,6 @@ scheduleHide(event) {
         active = document.activeElement;
       }
       if (active && this.deps.isInteractiveNode(active)) {
-        debug.log("[OverlayVisibility] skip hide (focus inside overlay)");
         return;
       }
       const view = this.getView();
@@ -45057,7 +44875,6 @@ scheduleHide(event) {
         return true;
       }
     } catch (err) {
-      debug.log("[notify] userscript api error", err);
     }
     return false;
   }
@@ -45079,7 +44896,6 @@ scheduleHide(event) {
           debug.log("[notify] unavailable", normalized);
         }
       } catch (err) {
-        debug.log("[notify] send error", err);
       }
     }
     translationCompleted(host) {
@@ -45193,7 +45009,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         try {
           sub(root);
         } catch (error2) {
-          debug.error("attachShadow subscriber failed", error2);
         }
       }
       return root;
@@ -45339,7 +45154,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       if (this.isAdRelated(video)) return false;
       if (this.isInsideAd(video)) return false;
       if (!this.hasAudio(video) && !this.isVkLikeVideo(video)) {
-        debug.log("Ignoring video without audio:", video);
         return false;
       }
       return true;
@@ -46193,7 +46007,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           }
         }
       } catch (error2) {
-        debug.log("[VOT] Failed to sync audio track language", error2);
       }
     };
     const player2 = YoutubeHelper2.getPlayer();
@@ -46203,7 +46016,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
         try {
           player2.addEventListener(eventName, syncAudioTrackLanguage);
         } catch (error2) {
-          debug.log(`[VOT] Failed to bind ${eventName}`, error2);
         }
       }
     }
@@ -46216,7 +46028,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           try {
             player2.removeEventListener(eventName, syncAudioTrackLanguage);
           } catch (error2) {
-            debug.log(`[VOT] Failed to unbind ${eventName}`, error2);
           }
         }
       },
@@ -46235,9 +46046,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       const isVideo = target ? self.container.contains(target) : false;
       const isSettings = target && settings ? settings.contains(target) : false;
       const isTempDialog = target instanceof Element && target.closest(".vot-dialog-temp") instanceof Element;
-      debug.log(
-        `[document click] ${isButton} ${isMenu} ${isVideo} ${isSettings} ${isTempDialog}`
-      );
       if (isButton || isMenu || isSettings || isTempDialog) return;
       if (!isVideo && !isVkLikeSiteHost(self.site.host) && !isMobileYouTubeLikeSite(self.site)) {
         overlayView.updateButtonOpacity(0);
@@ -46252,7 +46060,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
     const clearUserPressedKeys = () => userPressedKeys.clear();
     const runHotkeyAction = (action, actionName) => {
       void action().catch((error2) => {
-        debug.log(`[VOT] ${actionName} hotkey action failed`, error2);
       });
     };
     add(document, "keydown", (event) => {
@@ -46270,8 +46077,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       )) {
         clearUserPressedKeys();
         runHotkeyAction(
-          () => self.uiManager.handleTranslationBtnClick(),
-          "Translation"
+          () => self.uiManager.handleTranslationBtnClick()
         );
         return;
       }
@@ -46281,8 +46087,7 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       )) {
         clearUserPressedKeys();
         runHotkeyAction(
-          () => self.toggleSubtitlesForCurrentLangPair(),
-          "Subtitles"
+          () => self.toggleSubtitlesForCurrentLangPair()
         );
       }
     });
@@ -46356,7 +46161,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
       try {
         await self.setCanPlay();
       } catch (err) {
-        debug.log("[VOT] setCanPlay() failed", err);
       }
     };
     let setCanPlayQueued = false;
@@ -46402,10 +46206,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
               }
             );
             void self.translationOrchestrator.runAutoTranslationIfEligible().catch((error2) => {
-              debug.log(
-                "[VOT] Failed to retry auto-translate after playback start",
-                error2
-              );
             });
           }
         }
@@ -46420,16 +46220,13 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
           video: self.video
         });
       } catch (error2) {
-        debug.log("[VOT] Failed to resolve video id on emptied", error2);
       }
       if (self.videoData && videoId && videoId === self.videoData.videoId) {
         return;
       }
       if (self.site.host === "custom" && getTunnelPlayerContext()) {
-        debug.log("[VOT][custom][tunnel] ignore video emptied");
         return;
       }
-      debug.log("lipsync mode is emptied");
       if (isMobileYouTubeLikeSite(self.site)) {
         logMobileOverlay("video emptied; start grace period", {
           currentVideoId: self.videoData?.videoId,
@@ -46460,7 +46257,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
     };
     add(self.video, "emptied", () => {
       void handleVideoEmptied().catch((error2) => {
-        debug.log("[VOT] Failed to handle emptied lifecycle event", error2);
       });
     });
     if (!isMuteSyncDisabledHost(self.site.host)) {
@@ -46478,7 +46274,6 @@ tag: `VOTtranslationFailed_${videoId || "unknown"}`,
     }
     if (self.site.host === "youtube" && !self.site.additionalData) {
       add(document, "yt-page-data-updated", () => {
-        debug.log("yt-page-data-updated");
         if (!globalThis.location.pathname.startsWith("/shorts/")) return;
         queueSetCanPlay();
       });
@@ -46650,7 +46445,6 @@ useAudioDownload: isSupportGMXhr,
       this.data.translateProxyEnabled,
       this.data.translateProxyEnabledDefault
     );
-    debug.log("Extension compatibility passed...");
     await this.initVOTClient();
     this.uiManager.initUI();
     this.uiManager.initUIEvents();
@@ -47886,7 +47680,6 @@ useAudioDownload: isSupportGMXhr,
     return null;
   }
   async function changeSubtitlesLang(subs) {
-    debug.log("[onchange] subtitles", subs);
     const requestVersion = nextSubtitlesSelectionRequestVersion(this);
     const overlayView = this.uiManager.votOverlayView;
     if (!overlayView?.subtitlesSelect || !overlayView.downloadSubtitlesButton) {
@@ -47958,7 +47751,6 @@ useAudioDownload: isSupportGMXhr,
     }
     const hasVisibleSubtitles = Array.isArray(fetchedSubtitles.subtitles) && fetchedSubtitles.subtitles.length > 0;
     if (!hasVisibleSubtitles) {
-      debug.log("[subtitles] fetched subtitles are empty", subtitlesObj);
       if (this.hasSubtitlesWidget()) {
         this.subtitlesWidget?.setContent(null);
       }
@@ -48403,10 +48195,6 @@ useAudioDownload: isSupportGMXhr,
       try {
         globalRecord.__VOT_PENDING_AUTOPLAY_RECOVERY__ = null;
       } catch (error2) {
-        debug.log(
-          "[VOT][audio] failed to reset pending autoplay debug value",
-          error2
-        );
       }
       return;
     }
@@ -48417,10 +48205,6 @@ useAudioDownload: isSupportGMXhr,
         pageUrl: globalThis.location.href
       };
     } catch (error2) {
-      debug.log(
-        "[VOT][audio] failed to store pending autoplay debug value",
-        error2
-      );
     }
   }
   function clearPendingAutoplayRecoveryState(handler) {
@@ -48503,19 +48287,10 @@ useAudioDownload: isSupportGMXhr,
         actionContext
       );
       if (applyResult.status !== "success") {
-        debug.log("[VOT][audio] failed to restore pending translated source", {
-          trigger,
-          applyResult
-        });
         return false;
       }
     }
-    const resumeResult = await resumePlayerAudioContextIfNeeded(handler);
-    if (resumeResult === "failed") {
-      debug.log(
-        "[VOT][audio] AudioContext resume failed during autoplay recovery"
-      );
-    }
+    await resumePlayerAudioContextIfNeeded(handler);
     await attemptTranslatedPlaybackStart(handler, actionContext);
     const started = await ensureTranslatedAudioStarted(
       handler,
@@ -48593,12 +48368,10 @@ useAudioDownload: isSupportGMXhr,
     try {
       player2.lipSync?.("play");
     } catch (error2) {
-      debug.log("[updateTranslation] lipSync(play) failed", error2);
     }
     try {
       await player2.play?.();
     } catch (error2) {
-      debug.log("[updateTranslation] player.play() failed", error2);
     }
     if (!media) {
       return;
@@ -48614,7 +48387,6 @@ useAudioDownload: isSupportGMXhr,
     try {
       await media.play();
     } catch (error2) {
-      debug.log("[updateTranslation] media.play() failed", error2);
     }
   }
   function clearPendingAutoplayRecovery(resetUi = false) {
@@ -48661,10 +48433,6 @@ useAudioDownload: isSupportGMXhr,
         player: this.audioPlayer?.player?.constructor?.name ?? "unknown"
       });
     } catch (error2) {
-      debug.log("[VOT][audio] failed to prime playback context", {
-        trigger,
-        error: error2
-      });
     }
   }
   function getNowMs() {
@@ -48685,7 +48453,6 @@ useAudioDownload: isSupportGMXhr,
         await ctx.resume();
         return "resumed";
       } catch (err) {
-        debug.log("[updateTranslation] Failed to resume AudioContext", err);
         return "failed";
       }
     })();
@@ -48696,11 +48463,6 @@ useAudioDownload: isSupportGMXhr,
     const result = await Promise.race([resumePromise, timeoutPromise]);
     if (timeoutId !== void 0) {
       clearTimeout(timeoutId);
-    }
-    if (result === "resumed") {
-      debug.log("[updateTranslation] AudioContext resumed");
-    } else if (result === "timeout") {
-      debug.log("[updateTranslation] AudioContext resume timeout");
     }
     return result;
   }
@@ -48720,7 +48482,6 @@ useAudioDownload: isSupportGMXhr,
       player2.src = "";
       debug.log("[updateTranslation] cleared stale partially-applied source");
     } catch (err) {
-      debug.log("[updateTranslation] failed to clear stale source", err);
     }
   }
   function getSmartDuckingAudioContext(handler) {
@@ -48777,7 +48538,6 @@ useAudioDownload: isSupportGMXhr,
       return source;
     } catch (err) {
       state.mediaSourceCreationFailed = true;
-      debug.log("[SmartDucking] failed to create media source", err);
       return void 0;
     }
   }
@@ -48818,7 +48578,6 @@ useAudioDownload: isSupportGMXhr,
         inputNode.connect(analyser);
         state.connectedInputNode = inputNode;
       } catch (err) {
-        debug.log("[SmartDucking] failed to connect analyser", err);
         return void 0;
       }
     }
@@ -48870,7 +48629,6 @@ useAudioDownload: isSupportGMXhr,
       try {
         smartDuckingTick(handler);
       } catch (err) {
-        debug.log("[SmartDucking] tick failed, stopping smart ducking", err);
         stopSmartVolumeDucking(handler);
         return;
       }
@@ -49026,7 +48784,6 @@ headers: {
         if (handler.isActionStale(actionContext) || signal.aborted) {
           return false;
         }
-        debug.log("[validateAudioUrl] probe error", { audioUrl, attempt, err });
       }
       if (attempt < AUDIO_PROBE_MAX_ATTEMPTS) {
         if (handler.isActionStale(actionContext) || signal.aborted) {
@@ -49068,7 +48825,6 @@ headers: {
         actionContext
       );
       if (isDirectUrlValid) {
-        debug.log("[validateAudioUrl] switching to direct audio URL after probe");
         return directUrl;
       }
     }
@@ -49083,7 +48839,6 @@ headers: {
     const refreshDelayMs = Math.max(3e4, YANDEX_TTL_MS - 5 * 60 * 1e3);
     this.translationRefreshTimeout = setTimeout(() => {
       this.refreshTranslationAudio().catch((error2) => {
-        debug.log("[scheduleTranslationRefresh] refresh failed", error2);
       });
     }, refreshDelayMs);
   }
@@ -49172,16 +48927,12 @@ headers: {
       translateProxyEnabled: this.data?.translateProxyEnabled,
       proxyWorkerHost: this.data?.proxyWorkerHost
     });
-    if (proxiedAudioUrl !== audioUrl) {
-      debug.log(`[VOT] Audio proxied via ${proxiedAudioUrl}`);
-    }
     return proxiedAudioUrl;
   }
   function unproxifyAudio(audioUrl) {
     return unproxifyYandexAudioUrl(audioUrl);
   }
   async function handleProxySettingsChanged(reason = "proxySettingsChanged") {
-    debug.log(`[VOT] ${reason}: clearing translation/subtitles cache`);
     try {
       this.cacheManager.clear();
       this.activeTranslation = null;
@@ -49352,7 +49103,6 @@ headers: {
     try {
       await handler.audioPlayer?.player?.clear();
     } catch (err) {
-      debug.log("[updateTranslation] player.clear failed during recovery", err);
     }
     try {
       if (handler.audioPlayer?.player) {
@@ -49363,7 +49113,6 @@ headers: {
     try {
       handler.createPlayer();
     } catch (err) {
-      debug.log("[updateTranslation] createPlayer failed during recovery", err);
       return false;
     }
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -49376,7 +49125,6 @@ headers: {
       actionContext
     );
     if (retryResult.status !== "success") {
-      debug.log("[updateTranslation] recovery retry failed", retryResult);
       return false;
     }
     if (shouldRequireImmediateTranslatedStart(handler)) {
@@ -49386,15 +49134,8 @@ headers: {
         TRANSLATED_AUDIO_START_TIMEOUT_MS
       );
       if (!started) {
-        debug.log(
-          "[updateTranslation] recovery retry attached src but playback did not start"
-        );
         return false;
       }
-    } else {
-      debug.log(
-        "[updateTranslation] recovery succeeded while host video is paused; skip immediate start check"
-      );
     }
     handler.setupAudioSettings();
     handler.transformBtn("success", localizationProvider.get("disableTranslate"));
@@ -49417,7 +49158,6 @@ headers: {
       this.createPlayer();
     }
     if (this.audioPlayer.audioContext?.state === "closed") {
-      debug.log("[updateTranslation] AudioContext is closed, recreating player");
       this.createPlayer();
     }
     const normalizedTargetUrl = normalizeManagedAudioUrl(this, audioUrl);
@@ -49494,7 +49234,6 @@ headers: {
       try {
         await this.audioPlayer?.player?.clear();
       } catch (err) {
-        debug.log("[updateTranslation] player.clear failed", err);
       }
       try {
         if (this.audioPlayer?.player) {
@@ -49515,13 +49254,7 @@ headers: {
         TRANSLATED_AUDIO_START_TIMEOUT_MS
       );
       if (!started) {
-        debug.log(
-          "[updateTranslation] audio source attached but playback did not start"
-        );
         if (isCustomPlaybackTarget(this.site.host, this.videoData?.host)) {
-          debug.log(
-            "[updateTranslation] custom source: translated audio did not auto-start, keeping translation active"
-          );
           this.setupAudioSettings();
           this.afterUpdateTranslation(nextAudioUrl);
           markAutoplayRecoveryPending(this, nextAudioUrl, actionContext);
@@ -49572,10 +49305,6 @@ headers: {
         try {
           await this.audioPlayer?.player?.clear();
         } catch (err) {
-          debug.log(
-            "[updateTranslation] player.clear after no-start failed",
-            err
-          );
         }
         try {
           if (this.audioPlayer?.player) {
@@ -49588,10 +49317,6 @@ headers: {
         this.transformBtn("error", "Translated audio did not start");
         throw new Error("Translated audio did not start");
       }
-    } else {
-      debug.log(
-        "[updateTranslation] translated source attached while host video is paused; skip immediate start check"
-      );
     }
     this.setupAudioSettings();
     this.transformBtn("success", localizationProvider.get("disableTranslate"));
@@ -49599,21 +49324,18 @@ headers: {
   }
   async function translateFunc(VIDEO_ID2, _isStream, requestLang, responseLang2, translationHelp) {
     await this.waitForPendingStopTranslate();
-    debug.log("Run videoValidator");
     await this.videoValidator();
     if (this.actionsAbortController?.signal?.aborted) {
       this.resetActionsAbortController("translateFunc");
     }
     const overlayView = this.uiManager.votOverlayView;
     if (!overlayView?.votButton) {
-      debug.log("[translateFunc] Overlay view missing, skipping translation");
       return;
     }
     overlayView.votButton.loading = true;
     this.hadAsyncWait = false;
     this.volumeOnStart = this.getVideoVolume();
     if (!VIDEO_ID2) {
-      debug.log("Skip translation - no VIDEO_ID resolved yet");
       await this.updateTranslationErrorMsg(
         new VOTLocalizedError("VOTNoVideoIDFound"),
         this.actionsAbortController.signal
@@ -49638,7 +49360,6 @@ headers: {
       try {
         await this.audioPlayer?.player?.clear();
       } catch (err) {
-        debug.log("[translateFunc] player.clear failed during video switch", err);
       }
       try {
         if (this.audioPlayer?.player) {
@@ -49664,7 +49385,6 @@ headers: {
       try {
         this.createPlayer();
       } catch (err) {
-        debug.log("[translateFunc] createPlayer failed during video switch", err);
       }
       this.lastTranslationVideoId = currentVideoId;
     }
@@ -49679,7 +49399,6 @@ headers: {
     );
     const activeKey = `video_${cacheKey2}`;
     if (this.activeTranslation?.key === activeKey) {
-      debug.log("[translateFunc] Reusing in-flight translation");
       await this.activeTranslation.promise;
       return;
     }
@@ -49689,7 +49408,6 @@ headers: {
     };
     const translationPromise = (async () => {
       if (this.isActionStale(actionContext)) {
-        debug.log("[translateFunc] Stale translation task - skipping");
         return;
       }
       const reqLang = resolvedRequestLang;
@@ -49715,10 +49433,6 @@ headers: {
             "[translateFunc] Cached translation did not activate source, dropping cache and requesting fresh URL"
           );
         } catch (err) {
-          debug.log(
-            "[translateFunc] Cached translation failed, dropping cache and requesting fresh URL",
-            err
-          );
         }
         if (typeof this.cacheManager.deleteTranslation === "function") {
           this.cacheManager.deleteTranslation(cacheKey2);
@@ -49752,9 +49466,7 @@ headers: {
           }
         }
       });
-      debug.log("[translateRes]", translateRes);
       if (!translateRes) {
-        debug.log("Skip translation");
         return;
       }
       if (this.hasActiveSource()) {
@@ -49769,7 +49481,6 @@ headers: {
     try {
       return await translationPromise;
     } catch (err) {
-      debug.log("[translateFunc] transient media abort", err);
       this.hadAsyncWait = notifyTranslationFailureIfNeeded({
         aborted: this.actionsAbortController.signal.aborted,
         translateApiErrorsEnabled: Boolean(this.data?.translateAPIErrors),
@@ -49785,7 +49496,6 @@ headers: {
       }
       const overlayBtn = this.uiManager.votOverlayView?.votButton;
       if (!this.activeTranslation && overlayBtn?.loading && !this.hasActiveSource()) {
-        debug.log("[translateFunc] clearing stale loading state");
         this.transformBtn("none", localizationProvider.get("translateVideo"));
       }
     }
@@ -50056,13 +49766,6 @@ getSubtitlesCacheKey(videoId, detectedLanguage, responseLanguage) {
       this.updateVOTClientRequestSignal();
     }
 constructor(video, container, site) {
-      debug.log(
-        "[VideoHandler] add video:",
-        video,
-        "container:",
-        container,
-        this
-      );
       this.video = video;
       this.container = container;
       this.site = site;
@@ -50339,10 +50042,9 @@ getPreferAudio() {
     }
 createPlayer() {
       const preferAudio = this.getPreferAudio();
-      debug.log("preferAudio:", preferAudio);
       this.audioPlayer = new Chaimu({
         video: this.video,
-debug: Boolean(true),
+debug: Boolean(false),
         fetchFn: GM_fetch,
         fetchOpts: {
           timeout: 0
@@ -50664,7 +50366,6 @@ stopTranslate() {
             this.audioPlayer.player.src = "";
             await this.audioPlayer.player.clear();
           } catch (err) {
-            debug.log("[stopTranslate] audioPlayer cleanup error", err);
           }
           debug.log("audioPlayer after stopTranslate", this.audioPlayer);
         }
@@ -50731,7 +50432,6 @@ async updateTranslationErrorMsg(errorMessage, signal) {
       if (this.longWaitingResCount > minLongWaitingCount) {
         errorMessage = new VOTLocalizedError("TranslationDelayed");
       }
-      debug.log("updateTranslationErrorMsg message", errorMessage);
       if (errorMessage?.name === "VOTLocalizedError") {
         this.transformBtn("error", errorMessage.localizedMessage);
       } else if (errorMessage instanceof Error) {
@@ -50886,7 +50586,6 @@ isYouTubeHosts() {
       const rawUrl = String(
         this.videoData?.url || this.video?.currentSrc || this.video?.src || ""
       );
-      debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
       const canForceLocalFileUpload = (() => {
         if (!rawUrl) {
           return isCustomPlaybackTarget(host, this.videoData?.host);
@@ -50931,7 +50630,6 @@ handleSrcChanged() {
       return this.lifecycleController.handleSrcChanged();
     }
 async release() {
-      debug.log("[VideoHandler] release");
       if (/^(m|music)\.youtube\.com$/i.test(
         String(globalThis.location.hostname || "")
       )) {
@@ -50944,7 +50642,6 @@ async release() {
       try {
         await this.stopTranslation();
       } catch (err) {
-        debug.log("[VideoHandler] stopTranslation failed during release", err);
       }
       this.lifecycleController?.teardown();
       this.abortController?.abort();
@@ -51101,11 +50798,9 @@ releaseExtraEvents = releaseExtraEvents;
     return servicesCache;
   }
   function findContainer(site, video) {
-    debug.log("findContainer", site, video);
     if (site.selector) {
       const matched = findConnectedContainerBySelector(video, site.selector);
       if (matched) {
-        debug.log("findContainer matched by site.selector", matched);
         return matched;
       }
     }
@@ -51114,10 +50809,8 @@ releaseExtraEvents = releaseExtraEvents;
       GENERIC_PLAYER_SELECTOR
     );
     if (genericMatched) {
-      debug.log("findContainer matched by generic selector", genericMatched);
       return genericMatched;
     }
-    debug.log("findContainer fallback to parentElement");
     return video.parentElement;
   }
   function isYouTubePage() {
