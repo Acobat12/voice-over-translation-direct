@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.79
+// @version         1.11.5.86
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -23870,7 +23870,7 @@ get isSupportOnlyLS() {
     return buildVersion || scriptVersion || "unknown";
   }
   function getRuntimeLocaleVersion() {
-    const buildVersion = String("1.11.5.79");
+    const buildVersion = String("1.11.5.86");
     const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
     return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
   }
@@ -42428,11 +42428,14 @@ _labelText;
   class OverlayView {
     static BIG_CONTAINER_WIDTH_PX = 550;
     static MENU_CLAMP_GAP_PX = 12;
+    static MENU_CLICK_GUARD_MS = 180;
     mount;
     globalPortal;
     abortController = null;
     defaultVolumePersistTimer;
     defaultVolumePersistDelayMs = 250;
+    quickMenuOpenedAt = 0;
+    voiceModeMenuOpenedAt = 0;
     dragging = false;
     dragCandidate = false;
     dragDirty = false;
@@ -42871,6 +42874,27 @@ selectTitle: localizationProvider.get(
         this.votButton.translateGroup.getBoundingClientRect()
       );
     }
+    shouldSuppressFreshMenuInteraction(kind, event) {
+      const openedAt = kind === "quick" ? this.quickMenuOpenedAt : this.voiceModeMenuOpenedAt;
+      if (!openedAt) {
+        return false;
+      }
+      const elapsed = Date.now() - openedAt;
+      if (elapsed > OverlayView.MENU_CLICK_GUARD_MS) {
+        return false;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if ("stopImmediatePropagation" in event) {
+        event.stopImmediatePropagation();
+      }
+      debug.log("[menu-guard] suppress fresh menu interaction", {
+        kind,
+        elapsed,
+        type: event.type
+      });
+      return true;
+    }
     syncSharedRailPlacement() {
       if (!this.useRailLayout || !(this.votButton instanceof VOTRail)) {
         return;
@@ -42917,6 +42941,7 @@ selectTitle: localizationProvider.get(
         this.votButton.menuButton.setAttribute("aria-expanded", "false");
         this.syncVoiceModeUi();
         this.voiceModeMenu.hidden = false;
+        this.voiceModeMenuOpenedAt = Date.now();
         this.votButton.translateChevron.setAttribute("aria-expanded", "true");
         queueMicrotask(() => this.positionVoiceModeMenu());
         return;
@@ -42999,6 +43024,7 @@ selectTitle: localizationProvider.get(
           this.votButtonTooltip.hidden = open || this.votButton.direction === "row";
         }
         if (open) {
+          this.quickMenuOpenedAt = Date.now();
           if (this.useRailLayout) {
             queueMicrotask(() => this.positionQuickMenu());
           }
@@ -43014,14 +43040,17 @@ selectTitle: localizationProvider.get(
       const handleTranslate = () => {
         if (this.useRailLayout) {
           if (this.votButton?.status === "success") {
+            debug.log("[voice-menu] translate button clicked while active");
             this.setVoiceModeMenuOpen(false);
             closeMenu();
             this.events["click:translate"].dispatch();
             return;
           }
           if (this.votButton?.loading) {
+            debug.log("[voice-menu] translate button ignored because loading");
             return;
           }
+          debug.log("[voice-menu] translate button opens voice mode menu");
           closeMenu();
           this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
           return;
@@ -43029,14 +43058,27 @@ selectTitle: localizationProvider.get(
         closeMenu();
         this.events["click:translate"].dispatch();
       };
-      this.votButton.translateButton.addEventListener(
-        "pointerdown",
-        (event) => {
-          if (!isPrimaryActionPointer(event)) return;
-          handleTranslate();
-        },
-        { signal }
-      );
+      if (this.useRailLayout) {
+        this.votButton.translateButton.addEventListener(
+          "click",
+          (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            handleTranslate();
+          },
+          { signal }
+        );
+      } else {
+        this.votButton.translateButton.addEventListener(
+          "pointerdown",
+          (event) => {
+            if (!isPrimaryActionPointer(event)) return;
+            event.preventDefault();
+            handleTranslate();
+          },
+          { signal }
+        );
+      }
       this.votButton.translateButton.addEventListener(
         "keydown",
         activateOnKey(handleTranslate),
@@ -43048,10 +43090,10 @@ selectTitle: localizationProvider.get(
           this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
         };
         this.votButton.translateChevron.addEventListener(
-          "pointerdown",
+          "click",
           (event) => {
-            if (!isPrimaryActionPointer(event)) return;
             event.preventDefault();
+            event.stopPropagation();
             toggleVoiceModeMenu();
           },
           { signal }
@@ -43082,10 +43124,10 @@ selectTitle: localizationProvider.get(
         { signal }
       );
       this.votButton.menuButton.addEventListener(
-        "pointerdown",
+        "click",
         (e2) => {
-          if (!isPrimaryActionPointer(e2)) return;
           e2.preventDefault();
+          e2.stopPropagation();
           this.setVoiceModeMenuOpen(false);
           toggleMenu();
         },
@@ -43103,10 +43145,10 @@ selectTitle: localizationProvider.get(
           queueMicrotask(() => this.subtitlesSelect?.outer.click());
         };
         this.votButton.subtitlesButton.addEventListener(
-          "pointerdown",
+          "click",
           (event) => {
-            if (!isPrimaryActionPointer(event)) return;
             event.preventDefault();
+            event.stopPropagation();
             handleOpenSubtitles();
           },
           { signal }
@@ -43135,6 +43177,20 @@ selectTitle: localizationProvider.get(
         { signal, passive: false }
       );
       this.votMenu.container.addEventListener(
+        "pointerdown",
+        (e2) => {
+          this.shouldSuppressFreshMenuInteraction("quick", e2);
+        },
+        { signal, capture: true }
+      );
+      this.votMenu.container.addEventListener(
+        "click",
+        (e2) => {
+          this.shouldSuppressFreshMenuInteraction("quick", e2);
+        },
+        { signal, capture: true }
+      );
+      this.votMenu.container.addEventListener(
         "click",
         (e2) => {
           e2.preventDefault();
@@ -43153,6 +43209,20 @@ selectTitle: localizationProvider.get(
         );
       }
       if (this.voiceModeMenu) {
+        this.voiceModeMenu.container.addEventListener(
+          "pointerdown",
+          (e2) => {
+            this.shouldSuppressFreshMenuInteraction("voice", e2);
+          },
+          { signal, capture: true }
+        );
+        this.voiceModeMenu.container.addEventListener(
+          "click",
+          (e2) => {
+            this.shouldSuppressFreshMenuInteraction("voice", e2);
+          },
+          { signal, capture: true }
+        );
         this.voiceModeMenu.container.addEventListener(
           "click",
           (e2) => {
@@ -43186,7 +43256,8 @@ selectTitle: localizationProvider.get(
         )) {
           const mode = item.dataset.mode === "lively" ? "lively" : "standard";
           const dispatchMode = () => {
-            this.events["select:voiceMode"].dispatch(mode);
+            debug.log("[voice-menu] voice menu item clicked", { mode });
+            void this.events["select:voiceMode"].dispatchAsync(mode);
             this.setVoiceModeMenuOpen(false);
           };
           item.addEventListener(
@@ -43716,21 +43787,41 @@ votSettingsView;
           return;
         }
         const previousMode = this.data.useLivelyVoice ? "lively" : "standard";
+        debug.log("[voice-menu] selected mode", {
+          previousMode,
+          mode,
+          translationActive: this.videoHandler?.hasActiveSource() ?? false,
+          translationBusy: this.isTranslationBusy()
+        });
         this.data.useLivelyVoice = livelyEnabled;
-        await votStorage.set("useLivelyVoice", livelyEnabled);
         if (this.votSettingsView.useLivelyVoiceCheckbox) {
           this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
         }
         this.votOverlayView?.syncVoiceModeUi();
         if (!this.videoHandler) {
+          this.runDetached(
+            votStorage.set("useLivelyVoice", livelyEnabled),
+            "Failed to persist voice mode selection"
+          );
           return;
         }
         try {
+          debug.log("[voice-menu] applyVoiceModeSelection called", {
+            previousMode,
+            nextMode: mode,
+            startWhenIdle: true
+          });
           await this.applyVoiceModeSelection(previousMode, mode, {
             startWhenIdle: true
           });
         } catch (err) {
+          debug.warn("[voice-menu] translation failed", err);
           debug.warn("[VOT] Failed to apply voice mode selection", err);
+        } finally {
+          this.runDetached(
+            votStorage.set("useLivelyVoice", livelyEnabled),
+            "Failed to persist voice mode selection"
+          );
         }
       }).addEventListener("input:videoVolume", (volume) => {
         if (!this.videoHandler) {
@@ -43851,14 +43942,21 @@ votSettingsView;
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
-    async delay(ms) {
-      await new Promise((resolve) => setTimeout(resolve, ms));
-    }
     async startTranslationFlow(videoHandler) {
+      debug.log("[voice-menu] startTranslationFlow called", {
+        status: this.votOverlayView?.votButton.status,
+        loading: this.votOverlayView?.votButton.loading ?? false,
+        hasActiveSource: videoHandler.hasActiveSource(),
+        activeTranslation: Boolean(videoHandler.activeTranslation)
+      });
       const sourceAudioState = videoHandler.syncSourceAudioAvailabilityUi({
         forceVisible: true
       });
       if (!sourceAudioState.ready) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "source-audio-not-ready",
+          state: sourceAudioState
+        });
         return;
       }
       if (this.votOverlayView.votButton.status === "disabled") {
@@ -43877,13 +43975,24 @@ votSettingsView;
         videoData2
       );
       debug.log("[startTranslationFlow] Run translateFunc", videoData2.videoId);
-      await videoHandler.translateFunc(
-        videoData2.videoId,
-        videoData2.isStream,
-        videoData2.detectedLanguage,
-        videoData2.responseLanguage,
-        videoData2.translationHelp
-      );
+      try {
+        await videoHandler.translateFunc(
+          videoData2.videoId,
+          videoData2.isStream,
+          videoData2.detectedLanguage,
+          videoData2.responseLanguage,
+          videoData2.translationHelp
+        );
+        debug.log("[voice-menu] translation started", {
+          videoId: videoData2.videoId,
+          hasActiveSource: videoHandler.hasActiveSource(),
+          loading: this.votOverlayView?.votButton.loading ?? false,
+          activeTranslation: Boolean(videoHandler.activeTranslation)
+        });
+      } catch (err) {
+        debug.warn("[voice-menu] translation failed", err);
+        throw err;
+      }
     }
     async applyVoiceModeSelection(previousMode, nextMode, options = {}) {
       const videoHandler = this.videoHandler;
@@ -43893,23 +44002,40 @@ votSettingsView;
       const { startWhenIdle = false } = options;
       const hasActiveSource = videoHandler.hasActiveSource();
       const isBusy = this.isTranslationBusy();
+      debug.log("[voice-menu] applyVoiceModeSelection called", {
+        previousMode,
+        nextMode,
+        startWhenIdle,
+        hasActiveSource,
+        isBusy,
+        loading: this.votOverlayView?.votButton.loading ?? false,
+        translationActionInFlight: this.translationActionInFlight
+      });
       if (!hasActiveSource && !isBusy && !startWhenIdle) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "idle-and-startWhenIdle-disabled"
+        });
         return;
       }
       if (previousMode === nextMode && hasActiveSource && !isBusy) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "same-mode-while-translation-active"
+        });
         return;
       }
       try {
         await videoHandler.primePlaybackByGesture("voice-mode-selection");
       } catch (err) {
-        debug.warn("[VOT] Failed to prime playback before voice mode switch", err);
+        debug.warn(
+          "[VOT] Failed to prime playback before voice mode switch",
+          err
+        );
       }
       if (hasActiveSource || isBusy) {
         try {
           await videoHandler.stopTranslation();
           await videoHandler.waitForPendingStopTranslate();
           await this.waitForTranslationActionSettled();
-          await this.delay(50);
         } catch (err) {
           debug.warn(
             "[VOT] Failed to stop translation before voice mode restart",
@@ -43918,31 +44044,23 @@ votSettingsView;
         }
       }
       if (videoHandler.hasActiveSource()) {
-        debug.warn(
-          "[VOT] Voice mode restart aborted because translated source is still active after stop"
-        );
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "active-source-still-present-after-stop"
+        });
         return;
       }
-      if (this.translationActionInFlight || this.votOverlayView?.votButton.loading) {
+      if (this.translationActionInFlight) {
         await this.waitForTranslationActionSettled();
       }
-      if (this.translationActionInFlight || this.votOverlayView?.votButton.loading) {
-        debug.warn(
-          "[VOT] Voice mode restart skipped because translation UI is still busy"
-        );
+      if (this.translationActionInFlight) {
+        debug.warn("[voice-menu] startTranslationFlow early return reason", {
+          reason: "translation-action-still-in-flight"
+        });
         return;
       }
       this.translationActionInFlight = true;
       try {
         await this.startTranslationFlow(videoHandler);
-        await this.delay(150);
-        const didStart = videoHandler.hasActiveSource() || this.isTranslationBusy() || Boolean(videoHandler.activeTranslation);
-        if (!didStart) {
-          debug.warn(
-            "[VOT] Voice mode start did not latch after first attempt, retrying once"
-          );
-          await this.startTranslationFlow(videoHandler);
-        }
       } finally {
         this.translationActionInFlight = false;
       }

@@ -228,23 +228,43 @@ export class UIManager {
         }
 
         const previousMode = this.data.useLivelyVoice ? "lively" : "standard";
+        debug.log("[voice-menu] selected mode", {
+          previousMode,
+          mode,
+          translationActive: this.videoHandler?.hasActiveSource() ?? false,
+          translationBusy: this.isTranslationBusy(),
+        });
         this.data.useLivelyVoice = livelyEnabled;
-        await votStorage.set("useLivelyVoice", livelyEnabled);
         if (this.votSettingsView.useLivelyVoiceCheckbox) {
           this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
         }
         this.votOverlayView?.syncVoiceModeUi();
 
         if (!this.videoHandler) {
+          this.runDetached(
+            votStorage.set("useLivelyVoice", livelyEnabled),
+            "Failed to persist voice mode selection",
+          );
           return;
         }
 
         try {
+          debug.log("[voice-menu] applyVoiceModeSelection called", {
+            previousMode,
+            nextMode: mode,
+            startWhenIdle: true,
+          });
           await this.applyVoiceModeSelection(previousMode, mode, {
             startWhenIdle: true,
           });
         } catch (err) {
+          debug.warn("[voice-menu] translation failed", err);
           debug.warn("[VOT] Failed to apply voice mode selection", err);
+        } finally {
+          this.runDetached(
+            votStorage.set("useLivelyVoice", livelyEnabled),
+            "Failed to persist voice mode selection",
+          );
         }
       })
       .addEventListener("input:videoVolume", (volume) => {
@@ -399,15 +419,21 @@ export class UIManager {
     }
   }
 
-  private async delay(ms: number) {
-    await new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   private async startTranslationFlow(videoHandler: VideoHandler) {
+    debug.log("[voice-menu] startTranslationFlow called", {
+      status: this.votOverlayView?.votButton.status,
+      loading: this.votOverlayView?.votButton.loading ?? false,
+      hasActiveSource: videoHandler.hasActiveSource(),
+      activeTranslation: Boolean(videoHandler.activeTranslation),
+    });
     const sourceAudioState = videoHandler.syncSourceAudioAvailabilityUi({
       forceVisible: true,
     });
     if (!sourceAudioState.ready) {
+      debug.warn("[voice-menu] startTranslationFlow early return reason", {
+        reason: "source-audio-not-ready",
+        state: sourceAudioState,
+      });
       return;
     }
     if (this.votOverlayView!.votButton.status === "disabled") {
@@ -436,13 +462,24 @@ export class UIManager {
 
     debug.log("[startTranslationFlow] Run translateFunc", videoData.videoId);
 
-    await videoHandler.translateFunc(
-      videoData.videoId,
-      videoData.isStream,
-      videoData.detectedLanguage,
-      videoData.responseLanguage,
-      videoData.translationHelp,
-    );
+    try {
+      await videoHandler.translateFunc(
+        videoData.videoId,
+        videoData.isStream,
+        videoData.detectedLanguage,
+        videoData.responseLanguage,
+        videoData.translationHelp,
+      );
+      debug.log("[voice-menu] translation started", {
+        videoId: videoData.videoId,
+        hasActiveSource: videoHandler.hasActiveSource(),
+        loading: this.votOverlayView?.votButton.loading ?? false,
+        activeTranslation: Boolean(videoHandler.activeTranslation),
+      });
+    } catch (err) {
+      debug.warn("[voice-menu] translation failed", err);
+      throw err;
+    }
   }
 
   private async applyVoiceModeSelection(
@@ -459,11 +496,27 @@ export class UIManager {
     const hasActiveSource = videoHandler.hasActiveSource();
     const isBusy = this.isTranslationBusy();
 
+    debug.log("[voice-menu] applyVoiceModeSelection called", {
+      previousMode,
+      nextMode,
+      startWhenIdle,
+      hasActiveSource,
+      isBusy,
+      loading: this.votOverlayView?.votButton.loading ?? false,
+      translationActionInFlight: this.translationActionInFlight,
+    });
+
     if (!hasActiveSource && !isBusy && !startWhenIdle) {
+      debug.warn("[voice-menu] startTranslationFlow early return reason", {
+        reason: "idle-and-startWhenIdle-disabled",
+      });
       return;
     }
 
     if (previousMode === nextMode && hasActiveSource && !isBusy) {
+      debug.warn("[voice-menu] startTranslationFlow early return reason", {
+        reason: "same-mode-while-translation-active",
+      });
       return;
     }
 
@@ -481,7 +534,6 @@ export class UIManager {
         await videoHandler.stopTranslation();
         await videoHandler.waitForPendingStopTranslate();
         await this.waitForTranslationActionSettled();
-        await this.delay(50);
       } catch (err) {
         debug.warn(
           "[VOT] Failed to stop translation before voice mode restart",
@@ -491,45 +543,26 @@ export class UIManager {
     }
 
     if (videoHandler.hasActiveSource()) {
-      debug.warn(
-        "[VOT] Voice mode restart aborted because translated source is still active after stop",
-      );
+      debug.warn("[voice-menu] startTranslationFlow early return reason", {
+        reason: "active-source-still-present-after-stop",
+      });
       return;
     }
 
-    if (
-      this.translationActionInFlight ||
-      this.votOverlayView?.votButton.loading
-    ) {
+    if (this.translationActionInFlight) {
       await this.waitForTranslationActionSettled();
     }
 
-    if (
-      this.translationActionInFlight ||
-      this.votOverlayView?.votButton.loading
-    ) {
-      debug.warn(
-        "[VOT] Voice mode restart skipped because translation UI is still busy",
-      );
+    if (this.translationActionInFlight) {
+      debug.warn("[voice-menu] startTranslationFlow early return reason", {
+        reason: "translation-action-still-in-flight",
+      });
       return;
     }
 
     this.translationActionInFlight = true;
     try {
       await this.startTranslationFlow(videoHandler);
-      await this.delay(150);
-
-      const didStart =
-        videoHandler.hasActiveSource() ||
-        this.isTranslationBusy() ||
-        Boolean(videoHandler.activeTranslation);
-
-      if (!didStart) {
-        debug.warn(
-          "[VOT] Voice mode start did not latch after first attempt, retrying once",
-        );
-        await this.startTranslationFlow(videoHandler);
-      }
     } finally {
       this.translationActionInFlight = false;
     }

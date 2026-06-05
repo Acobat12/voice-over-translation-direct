@@ -3,8 +3,8 @@
     "vot-extension-acobat12-local@firefox": {
       "updates": [
         {
-          "version": "1.11.5.79",
-          "update_link": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext/vot-extension-firefox-1.11.5.79.xpi"
+          "version": "1.11.5.86",
+          "update_link": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext/vot-extension-firefox-1.11.5.86.xpi"
         }
       ]
     }

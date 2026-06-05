@@ -13,6 +13,7 @@ import type {
   OverlayViewProps,
 } from "../../types/views/overlay";
 import ui from "../../ui";
+import debug from "../../utils/debug";
 import type { IntervalIdleChecker } from "../../utils/intervalIdleChecker";
 import { votStorage } from "../../utils/storage";
 import { isPiPAvailable } from "../../utils/utils";
@@ -37,12 +38,15 @@ import { didTooltipMountContextChange } from "../mount";
 export class OverlayView {
   private static readonly BIG_CONTAINER_WIDTH_PX = 550;
   private static readonly MENU_CLAMP_GAP_PX = 12;
+  private static readonly MENU_CLICK_GUARD_MS = 180;
 
   mount: OverlayMount;
   globalPortal: HTMLElement;
   private abortController: AbortController | null = null;
   private defaultVolumePersistTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly defaultVolumePersistDelayMs = 250;
+  private quickMenuOpenedAt = 0;
+  private voiceModeMenuOpenedAt = 0;
 
   private dragging = false;
   private dragCandidate = false;
@@ -659,6 +663,35 @@ export class OverlayView {
     );
   }
 
+  private shouldSuppressFreshMenuInteraction(
+    kind: "quick" | "voice",
+    event: Event,
+  ): boolean {
+    const openedAt =
+      kind === "quick" ? this.quickMenuOpenedAt : this.voiceModeMenuOpenedAt;
+    if (!openedAt) {
+      return false;
+    }
+
+    const elapsed = Date.now() - openedAt;
+    if (elapsed > OverlayView.MENU_CLICK_GUARD_MS) {
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if ("stopImmediatePropagation" in event) {
+      event.stopImmediatePropagation();
+    }
+
+    debug.log("[menu-guard] suppress fresh menu interaction", {
+      kind,
+      elapsed,
+      type: event.type,
+    });
+    return true;
+  }
+
   private syncSharedRailPlacement(): void {
     if (!this.useRailLayout || !(this.votButton instanceof VOTRail)) {
       return;
@@ -715,6 +748,7 @@ export class OverlayView {
       this.votButton.menuButton.setAttribute("aria-expanded", "false");
       this.syncVoiceModeUi();
       this.voiceModeMenu.hidden = false;
+      this.voiceModeMenuOpenedAt = Date.now();
       this.votButton.translateChevron.setAttribute("aria-expanded", "true");
       queueMicrotask(() => this.positionVoiceModeMenu());
       return;
@@ -835,6 +869,7 @@ export class OverlayView {
       }
 
       if (open) {
+        this.quickMenuOpenedAt = Date.now();
         if (this.useRailLayout) {
           queueMicrotask(() => this.positionQuickMenu());
         }
@@ -853,6 +888,7 @@ export class OverlayView {
     const handleTranslate = () => {
       if (this.useRailLayout) {
         if (this.votButton?.status === "success") {
+          debug.log("[voice-menu] translate button clicked while active");
           this.setVoiceModeMenuOpen(false);
           closeMenu();
           this.events["click:translate"].dispatch();
@@ -860,9 +896,11 @@ export class OverlayView {
         }
 
         if (this.votButton?.loading) {
+          debug.log("[voice-menu] translate button ignored because loading");
           return;
         }
 
+        debug.log("[voice-menu] translate button opens voice mode menu");
         closeMenu();
         this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
         return;
@@ -872,14 +910,27 @@ export class OverlayView {
       this.events["click:translate"].dispatch();
     };
 
-    this.votButton.translateButton.addEventListener(
-      "pointerdown",
-      (event) => {
-        if (!isPrimaryActionPointer(event)) return;
-        handleTranslate();
-      },
-      { signal },
-    );
+    if (this.useRailLayout) {
+      this.votButton.translateButton.addEventListener(
+        "click",
+        (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          handleTranslate();
+        },
+        { signal },
+      );
+    } else {
+      this.votButton.translateButton.addEventListener(
+        "pointerdown",
+        (event) => {
+          if (!isPrimaryActionPointer(event)) return;
+          event.preventDefault();
+          handleTranslate();
+        },
+        { signal },
+      );
+    }
 
     this.votButton.translateButton.addEventListener(
       "keydown",
@@ -894,10 +945,10 @@ export class OverlayView {
       };
 
       this.votButton.translateChevron.addEventListener(
-        "pointerdown",
+        "click",
         (event) => {
-          if (!isPrimaryActionPointer(event)) return;
           event.preventDefault();
+          event.stopPropagation();
           toggleVoiceModeMenu();
         },
         { signal },
@@ -931,10 +982,10 @@ export class OverlayView {
     );
 
     this.votButton.menuButton.addEventListener(
-      "pointerdown",
+      "click",
       (e) => {
-        if (!isPrimaryActionPointer(e)) return;
         e.preventDefault();
+        e.stopPropagation();
         this.setVoiceModeMenuOpen(false);
         toggleMenu();
       },
@@ -954,10 +1005,10 @@ export class OverlayView {
       };
 
       this.votButton.subtitlesButton.addEventListener(
-        "pointerdown",
+        "click",
         (event) => {
-          if (!isPrimaryActionPointer(event)) return;
           event.preventDefault();
+          event.stopPropagation();
           handleOpenSubtitles();
         },
         { signal },
@@ -1000,6 +1051,20 @@ export class OverlayView {
     // #endregion [Events] VOT Button
     // #region [Events] VOT Menu
     this.votMenu.container.addEventListener(
+      "pointerdown",
+      (e) => {
+        this.shouldSuppressFreshMenuInteraction("quick", e);
+      },
+      { signal, capture: true },
+    );
+    this.votMenu.container.addEventListener(
+      "click",
+      (e) => {
+        this.shouldSuppressFreshMenuInteraction("quick", e);
+      },
+      { signal, capture: true },
+    );
+    this.votMenu.container.addEventListener(
       "click",
       (e) => {
         e.preventDefault();
@@ -1021,6 +1086,20 @@ export class OverlayView {
     }
 
     if (this.voiceModeMenu) {
+      this.voiceModeMenu.container.addEventListener(
+        "pointerdown",
+        (e) => {
+          this.shouldSuppressFreshMenuInteraction("voice", e);
+        },
+        { signal, capture: true },
+      );
+      this.voiceModeMenu.container.addEventListener(
+        "click",
+        (e) => {
+          this.shouldSuppressFreshMenuInteraction("voice", e);
+        },
+        { signal, capture: true },
+      );
       this.voiceModeMenu.container.addEventListener(
         "click",
         (e) => {
@@ -1058,7 +1137,8 @@ export class OverlayView {
       )) {
         const mode = item.dataset.mode === "lively" ? "lively" : "standard";
         const dispatchMode = () => {
-          this.events["select:voiceMode"].dispatch(mode);
+          debug.log("[voice-menu] voice menu item clicked", { mode });
+          void this.events["select:voiceMode"].dispatchAsync(mode);
           this.setVoiceModeMenuOpen(false);
         };
 
