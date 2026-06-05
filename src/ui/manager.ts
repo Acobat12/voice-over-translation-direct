@@ -399,6 +399,52 @@ export class UIManager {
     }
   }
 
+  private async delay(ms: number) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async startTranslationFlow(videoHandler: VideoHandler) {
+    const sourceAudioState = videoHandler.syncSourceAudioAvailabilityUi({
+      forceVisible: true,
+    });
+    if (!sourceAudioState.ready) {
+      return;
+    }
+    if (this.votOverlayView!.votButton.status === "disabled") {
+      this.transformBtn("none", localizationProvider.get("translateVideo"));
+    }
+
+    if (this.votOverlayView!.votButton.status === "error") {
+      this.transformBtn("none", localizationProvider.get("translateVideo"));
+    } else if (
+      this.votOverlayView!.votButton.status !== "disabled" &&
+      this.votOverlayView!.votButton.status !== "none" &&
+      !videoHandler.hasActiveSource()
+    ) {
+      debug.log("[startTranslationFlow] reset stale button state");
+      this.transformBtn("none", localizationProvider.get("translateVideo"));
+    }
+
+    debug.log("[startTranslationFlow] trying execute translation");
+
+    await videoHandler.primePlaybackByGesture("translate-button");
+
+    const videoData = await this.getVideoDataForTranslation(videoHandler);
+    await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
+      videoData,
+    );
+
+    debug.log("[startTranslationFlow] Run translateFunc", videoData.videoId);
+
+    await videoHandler.translateFunc(
+      videoData.videoId,
+      videoData.isStream,
+      videoData.detectedLanguage,
+      videoData.responseLanguage,
+      videoData.translationHelp,
+    );
+  }
+
   private async applyVoiceModeSelection(
     previousMode: "standard" | "lively",
     nextMode: "standard" | "lively",
@@ -421,11 +467,21 @@ export class UIManager {
       return;
     }
 
+    try {
+      await videoHandler.primePlaybackByGesture("voice-mode-selection");
+    } catch (err) {
+      debug.warn(
+        "[VOT] Failed to prime playback before voice mode switch",
+        err,
+      );
+    }
+
     if (hasActiveSource || isBusy) {
       try {
         await videoHandler.stopTranslation();
         await videoHandler.waitForPendingStopTranslate();
         await this.waitForTranslationActionSettled();
+        await this.delay(50);
       } catch (err) {
         debug.warn(
           "[VOT] Failed to stop translation before voice mode restart",
@@ -434,7 +490,49 @@ export class UIManager {
       }
     }
 
-    await this.handleTranslationBtnClick();
+    if (videoHandler.hasActiveSource()) {
+      debug.warn(
+        "[VOT] Voice mode restart aborted because translated source is still active after stop",
+      );
+      return;
+    }
+
+    if (
+      this.translationActionInFlight ||
+      this.votOverlayView?.votButton.loading
+    ) {
+      await this.waitForTranslationActionSettled();
+    }
+
+    if (
+      this.translationActionInFlight ||
+      this.votOverlayView?.votButton.loading
+    ) {
+      debug.warn(
+        "[VOT] Voice mode restart skipped because translation UI is still busy",
+      );
+      return;
+    }
+
+    this.translationActionInFlight = true;
+    try {
+      await this.startTranslationFlow(videoHandler);
+      await this.delay(150);
+
+      const didStart =
+        videoHandler.hasActiveSource() ||
+        this.isTranslationBusy() ||
+        Boolean(videoHandler.activeTranslation);
+
+      if (!didStart) {
+        debug.warn(
+          "[VOT] Voice mode start did not latch after first attempt, retrying once",
+        );
+        await this.startTranslationFlow(videoHandler);
+      }
+    } finally {
+      this.translationActionInFlight = false;
+    }
   }
 
   private async restartDriveTranslationIfActive() {
@@ -1060,49 +1158,7 @@ export class UIManager {
     this.translationActionInFlight = true;
 
     try {
-      const sourceAudioState = videoHandler.syncSourceAudioAvailabilityUi({
-        forceVisible: true,
-      });
-      if (!sourceAudioState.ready) {
-        return this;
-      }
-      if (this.votOverlayView.votButton.status === "disabled") {
-        this.transformBtn("none", localizationProvider.get("translateVideo"));
-      }
-
-      // Если UI застрял в error/non-none без активного источника — просто сбрасываем состояние
-      if (this.votOverlayView.votButton.status === "error") {
-        this.transformBtn("none", localizationProvider.get("translateVideo"));
-      } else if (
-        this.votOverlayView.votButton.status !== "disabled" &&
-        this.votOverlayView.votButton.status !== "none" &&
-        !videoHandler.hasActiveSource()
-      ) {
-        debug.log("[handleTranslationBtnClick] reset stale button state");
-        this.transformBtn("none", localizationProvider.get("translateVideo"));
-      }
-
-      debug.log("[handleTranslationBtnClick] trying execute translation");
-
-      await videoHandler.primePlaybackByGesture("translate-button");
-
-      const videoData = await this.getVideoDataForTranslation(videoHandler);
-      await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
-        videoData,
-      );
-
-      debug.log(
-        "[handleTranslationBtnClick] Run translateFunc",
-        videoData.videoId,
-      );
-
-      await videoHandler.translateFunc(
-        videoData.videoId,
-        videoData.isStream,
-        videoData.detectedLanguage,
-        videoData.responseLanguage,
-        videoData.translationHelp,
-      );
+      await this.startTranslationFlow(videoHandler);
     } catch (err) {
       if (this.isAbortError(err)) {
         this.transformBtn("none", localizationProvider.get("translateVideo"));
