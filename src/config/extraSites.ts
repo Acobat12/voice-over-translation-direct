@@ -22,7 +22,7 @@ export const extraSites: ServiceConf[] = [
     host: VideoService.vk,
     url: "https://vk.com/video?z=",
     additionalData: "clips",
-    match: /^(www\.|m\.)?vk\.(com|ru)$/i,
+    match: [/^(www\.|m\.)?vk\.(com|ru)$/i, /^(.*\.)?vkvideo\.ru$/i],
     selector: VK_CLIP_SELECTOR,
     needExtraData: true,
   },

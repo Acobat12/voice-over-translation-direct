@@ -463,10 +463,15 @@ export class UIManager {
     debug.log("[startTranslationFlow] Run translateFunc", videoData.videoId);
 
     try {
+      const requestLang =
+        videoHandler.translateFromLang === "auto"
+          ? videoData.detectedLanguage
+          : videoHandler.translateFromLang;
+
       await videoHandler.translateFunc(
         videoData.videoId,
         videoData.isStream,
-        videoData.detectedLanguage,
+        requestLang,
         videoData.responseLanguage,
         videoData.translationHelp,
       );
@@ -592,6 +597,7 @@ export class UIManager {
     if (!this.videoHandler) {
       return;
     }
+    this.videoHandler.translateFromLang = value as any;
 
     if (this.videoHandler.videoData) {
       this.videoHandler.videoManager.rememberUserLanguageSelection(

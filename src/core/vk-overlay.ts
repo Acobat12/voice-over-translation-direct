@@ -1,3 +1,5 @@
+import mainStylesInline from "../styles/main.scss?inline";
+
 function isVkLikeHost(): boolean {
   return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
     String(globalThis.location?.hostname || ""),
@@ -5,6 +7,45 @@ function isVkLikeHost(): boolean {
 }
 
 let vkOverlayPatchInstalled = false;
+
+export const VK_OVERLAY_BUTTON_SELECTOR =
+  "vot-block.vot-segmented-button, .vot-segmented-button, vot-block.vot-rail, .vot-rail";
+
+export const VK_OVERLAY_SUBTITLE_SELECTOR =
+  ".vot-subtitles-widget, .vot-subtitles-layer";
+
+function adaptStylesForShadowRoot(cssText: string): string {
+  return cssText.replace(/(^|\n):root\s*\{/g, "$1:host, :root {");
+}
+
+export const VK_OVERLAY_PATCH_TEXT = `
+  .vot-segmented-button,
+  .vot-rail {
+    display: flex !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    z-index: 2147483647 !important;
+    visibility: visible !important;
+  }
+
+  .vot-segmented-button.vot-segmented-button--hidden,
+  .vot-rail.vot-rail--hidden {
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+
+  .vot-subtitles-layer,
+  .vot-subtitles-widget {
+    display: block !important;
+    opacity: 1 !important;
+    z-index: 2147483647 !important;
+    visibility: visible !important;
+  }
+`;
+
+export const VK_OVERLAY_SHADOW_STYLE_TEXT = `${adaptStylesForShadowRoot(mainStylesInline)}
+
+${VK_OVERLAY_PATCH_TEXT}`;
 
 function collectQueryScopes(): ParentNode[] {
   const scopes: ParentNode[] = [document];
@@ -57,13 +98,14 @@ function queryAllAcrossShadowRoots<T extends Element>(selector: string): T[] {
 
 function refreshVkOverlayProbe(): number {
   const buttons = queryAllAcrossShadowRoots<HTMLElement>(
-    "vot-block.vot-segmented-button, .vot-segmented-button",
+    VK_OVERLAY_BUTTON_SELECTOR,
   );
   for (const button of buttons) {
     button.hidden = false;
     button.removeAttribute("hidden");
     button.removeAttribute("inert");
     button.classList.remove("vot-segmented-button--hidden");
+    button.classList.remove("vot-rail--hidden");
     button.style.setProperty("display", "flex", "important");
     button.style.setProperty("opacity", "1", "important");
     button.style.setProperty("pointer-events", "auto", "important");
@@ -71,7 +113,7 @@ function refreshVkOverlayProbe(): number {
     button.style.setProperty("visibility", "visible", "important");
   }
   const subtitles = queryAllAcrossShadowRoots<HTMLElement>(
-    ".vot-subtitles-widget, .vot-subtitles-layer",
+    VK_OVERLAY_SUBTITLE_SELECTOR,
   );
   for (const subtitle of subtitles) {
     subtitle.hidden = false;
@@ -129,28 +171,10 @@ function ensureVkOverlayStyle(): void {
     try {
       const style = document.createElement("style");
       style.id = "vot-vk-overlay-fix-style";
-      style.textContent = `
-        .vot-segmented-button {
-          display: flex !important;
-          opacity: 1 !important;
-          pointer-events: auto !important;
-          z-index: 2147483647 !important;
-          visibility: visible !important;
-        }
-
-        .vot-segmented-button.vot-segmented-button--hidden {
-          opacity: 1 !important;
-          pointer-events: auto !important;
-        }
-
-        .vot-subtitles-layer,
-        .vot-subtitles-widget {
-          display: block !important;
-          opacity: 1 !important;
-          z-index: 2147483647 !important;
-          visibility: visible !important;
-        }
-      `;
+      style.textContent =
+        scope instanceof ShadowRoot
+          ? VK_OVERLAY_SHADOW_STYLE_TEXT
+          : VK_OVERLAY_PATCH_TEXT;
       styleHost.appendChild(style);
     } catch {
       // ignore

@@ -215,8 +215,8 @@ export async function init(this: VideoHandler) {
         })();
       },
       onFromLanguageChange: (value) => {
+        this.translateFromLang = value as any;
         if (this.videoData) {
-          this.videoData.detectedLanguage = value as any;
           this.videoManager.rememberUserLanguageSelection(
             this.videoData.videoId,
             value as any,

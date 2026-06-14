@@ -22,6 +22,10 @@ import type { VideoData as RuntimeVideoData } from "../videoHandler/shared";
 import { resolveCustomSiteVideo } from "./customSiteResolvers";
 import { isExternalVolumeHost } from "./hostPolicies";
 import { getSourceAudioAvailability } from "./sourceAudioAvailability";
+import {
+  buildCanonicalVkFallbackTarget,
+  isVkSupportedPageHost,
+} from "./vkVideoTarget";
 import YoutubeHelper, { isMobileYouTubeAdditionalData } from "./youtubeHelper";
 
 const FORCED_DETECTED_LANGUAGE_BY_HOST: Record<string, RequestLang> = {
@@ -613,7 +617,6 @@ export class VOTVideoManager {
 
     const sharedLanguageState = getSharedLanguageState(videoId);
     sharedLanguageState.userLanguageOverride = normalizedLanguage;
-    sharedLanguageState.detectedLanguage = normalizedLanguage;
   }
 
   rememberDetectedLanguage(videoId: string, language: RequestLang): void {
@@ -687,9 +690,6 @@ export class VOTVideoManager {
     }
 
     videoData.detectedLanguage = detectedLanguage;
-    if (this.videoHandler.translateFromLang === "auto") {
-      this.videoHandler.translateFromLang = detectedLanguage;
-    }
   }
 
   private shouldUseRuntimeYouTubeHelper(): boolean {
@@ -824,6 +824,16 @@ export class VOTVideoManager {
       );
     }
 
+    const canonicalVkTarget =
+      this.videoHandler.site.host === "vk"
+        ? buildCanonicalVkFallbackTarget(pageUrl, videoId, url)
+        : null;
+    if (canonicalVkTarget) {
+      url = canonicalVkTarget.url;
+      videoId = canonicalVkTarget.videoId;
+      host = "vk";
+    }
+
     const resolvedFallback = await resolveCustomSiteVideo(hostname, pageUrl);
     const youtubeFallbackVideoId =
       this.videoHandler.site.host === "youtube"
@@ -839,6 +849,8 @@ export class VOTVideoManager {
       isUsefulResolvedFallback(url, videoId, resolvedFallback);
 
     if (shouldUseDomFallback) {
+      const shouldPreserveVkSiteRoute =
+        this.videoHandler.site.host === "vk" && isVkSupportedPageHost(hostname);
       const shouldPreserveBilibiliSiteRoute =
         this.videoHandler.site.host === "bilibili" &&
         isBilibiliSupportedPageHost(hostname);
@@ -850,8 +862,23 @@ export class VOTVideoManager {
         youtubeFallbackUrl,
         pageUrl,
       );
+      const fallbackCanonicalVkTarget = shouldPreserveVkSiteRoute
+        ? buildCanonicalVkFallbackTarget(
+            pageUrl,
+            videoId,
+            url,
+            fallbackUrl,
+            resolvedFallback?.videoId,
+            resolvedFallback?.url,
+          )
+        : null;
 
-      if (fallbackUrl && !shouldPreserveBilibiliSiteRoute) {
+      if (
+        fallbackCanonicalVkTarget &&
+        !isBadGenericMediaUrl(fallbackCanonicalVkTarget.url)
+      ) {
+        url = fallbackCanonicalVkTarget.url;
+      } else if (fallbackUrl && !shouldPreserveBilibiliSiteRoute) {
         url = fallbackUrl;
       }
 
@@ -882,7 +909,11 @@ export class VOTVideoManager {
           pageUrl;
       }
 
-      if (shouldPreserveBilibiliSiteRoute) {
+      if (shouldPreserveVkSiteRoute && fallbackCanonicalVkTarget) {
+        url = fallbackCanonicalVkTarget.url;
+        host = "vk";
+        videoId = fallbackCanonicalVkTarget.videoId;
+      } else if (shouldPreserveBilibiliSiteRoute) {
         // Bilibili is a first-class supported site. When helper extraction
         // falls back to DOM/media state, keep the request on the stable page
         // URL instead of switching to the generic custom/upload workflow.
@@ -919,7 +950,8 @@ export class VOTVideoManager {
         finalUrl: url,
         finalVideoId: videoId,
         finalHost: host,
-        preservedSiteRoute: shouldPreserveBilibiliSiteRoute,
+        preservedSiteRoute:
+          shouldPreserveVkSiteRoute || shouldPreserveBilibiliSiteRoute,
       });
     }
 
@@ -1050,11 +1082,14 @@ export class VOTVideoManager {
     }
 
     debug.log("VideoValidator videoData: ", this.videoHandler.videoData);
+    const sourceLanguage =
+      this.videoHandler.translateFromLang === "auto"
+        ? this.videoHandler.videoData.detectedLanguage
+        : this.videoHandler.translateFromLang;
+
     if (
       this.videoHandler.data.enabledDontTranslateLanguages &&
-      this.videoHandler.data.dontTranslateLanguages?.includes(
-        this.videoHandler.videoData.detectedLanguage,
-      )
+      this.videoHandler.data.dontTranslateLanguages?.includes(sourceLanguage)
     ) {
       throw new VOTLocalizedError("VOTDisableFromYourLang");
     }
@@ -1174,9 +1209,10 @@ export class VOTVideoManager {
       console.log(`[VOT] Set translation from ${normalizedFrom} to ${to}`);
       sharedLanguageState.lastLoggedLangPair = langPairLogKey;
     }
-    videoData.detectedLanguage = normalizedFrom;
     videoData.responseLanguage = to;
-    this.videoHandler.translateFromLang = normalizedFrom;
+    if (this.videoHandler.translateFromLang === "auto") {
+      this.videoHandler.translateFromLang = "auto";
+    }
     this.videoHandler.translateToLang = to;
 
     const overlayView = this.videoHandler.uiManager.votOverlayView;

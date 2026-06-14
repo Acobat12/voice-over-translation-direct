@@ -1,12 +1,11 @@
 {
   "name": "[FORK] - Voice Over Translation",
   "description": "A small extension that adds a Yandex Browser video translation to other browsers",
-  "version": "1.11.5.88",
+  "version": "1.11.5.89",
   "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12",
   "namespace": "vot-direct",
   "icon": "https://translate.yandex.ru/icons/favicon.ico",
   "match": [
-    "*://*/*",
     "*://*.kodik.info/*",
     "*://*.kodik.biz/*",
     "*://*.kodik.cc/*",
@@ -163,9 +162,6 @@
     "*://*/*.mkv*",
     "*://*/*.avi*",
     "*://*/*.ogv*",
-    "file://*/*",
-    "*://localhost/*",
-    "*://127.0.0.1/*",
     "*://*.trycloudflare.com/*",
     "*://*.ngrok-free.app/*",
     "*://*.ngrok-free.dev/*",

@@ -1286,8 +1286,11 @@ export class OverlayView {
     this.languagePairSelect.fromSelect.addEventListener(
       "selectItem",
       (language) => {
+        if (this.videoHandler) {
+          this.videoHandler.translateFromLang = language;
+        }
+
         if (this.videoHandler?.videoData) {
-          this.videoHandler.videoData.detectedLanguage = language;
           this.videoHandler.videoManager.rememberUserLanguageSelection(
             this.videoHandler.videoData.videoId,
             language,

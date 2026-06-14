@@ -48,7 +48,15 @@
   position: absolute;
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto !important;
+  align-self: auto !important;
   gap: var(--vot-space-2);
+  width: fit-content !important;
+  height: fit-content !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: none !important;
   padding: var(--vot-space-2);
   background:
     linear-gradient(
@@ -80,8 +88,14 @@
 
   & .vot-rail-button {
     position: relative;
-    width: 42px;
-    height: 42px;
+    flex: 0 0 auto !important;
+    align-self: auto !important;
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
     display: flex;
     justify-content: center;
     align-items: center;
@@ -117,6 +131,8 @@
 
   & .vot-rail-translate-group {
     display: flex;
+    flex: 0 0 auto !important;
+    align-self: auto !important;
     align-items: stretch;
     border-radius: 18px !important;
     overflow: hidden;
@@ -125,8 +141,11 @@
   }
 
   & .vot-rail-button-primary {
-    width: 46px;
-    height: 46px;
+    width: 46px !important;
+    min-width: 46px !important;
+    max-width: none !important;
+    height: 46px !important;
+    min-height: 46px !important;
     border-radius: 18px !important;
     gap: var(--vot-space-2);
   }
@@ -137,9 +156,11 @@
   }
 
   & .vot-rail-button-chevron {
-    width: 38px;
-    min-width: 38px;
-    height: 46px;
+    width: 38px !important;
+    min-width: 38px !important;
+    max-width: 38px !important;
+    height: 46px !important;
+    min-height: 46px !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -202,14 +223,15 @@
   &[data-position="top"] {
     flex-direction: row;
     align-items: center;
-    min-height: 52px;
+    min-height: 52px !important;
     border-radius: 22px !important;
     padding: 6px;
 
     & .vot-rail-button-primary {
-      width: auto;
-      min-width: 0;
-      height: 40px;
+      width: auto !important;
+      min-width: 0 !important;
+      height: 40px !important;
+      min-height: 40px !important;
       padding: 0 12px !important;
       border-radius: 0 !important;
     }
@@ -221,9 +243,11 @@
     }
 
     & .vot-rail-button-chevron {
-      width: 36px;
-      min-width: 36px;
-      height: 40px;
+      width: 36px !important;
+      min-width: 36px !important;
+      max-width: 36px !important;
+      height: 40px !important;
+      min-height: 40px !important;
       padding: 0 !important;
       justify-content: center;
     }
@@ -242,15 +266,20 @@
     }
 
     & .vot-rail-button-primary {
-      width: 46px;
-      height: 46px;
+      width: 46px !important;
+      min-width: 46px !important;
+      max-width: 46px !important;
+      height: 46px !important;
+      min-height: 46px !important;
       padding: 0 !important;
     }
 
     & .vot-rail-button-chevron {
-      width: 46px;
-      min-width: 46px;
-      height: 24px;
+      width: 46px !important;
+      min-width: 46px !important;
+      max-width: 46px !important;
+      height: 24px !important;
+      min-height: 24px !important;
       border-left: none;
       border-top: 1px solid rgba(var(--vot-helper-theme-rgb), 0.12);
     }

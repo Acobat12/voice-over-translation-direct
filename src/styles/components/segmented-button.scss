@@ -17,14 +17,20 @@
   touch-action: none !important;
   overflow: hidden;
   position: absolute;
+  flex: 0 0 auto !important;
+  align-self: auto !important;
   left: 50%;
   top: 5rem;
   transform: translate(-50%);
   user-select: none;
   display: flex;
   align-items: center;
-  height: 36px;
-  max-width: 100vw;
+  width: fit-content !important;
+  height: 36px !important;
+  min-width: 0 !important;
+  min-height: 36px !important;
+  max-width: calc(100vw - 24px) !important;
+  max-height: none !important;
   background: rgb(var(--vot-surface-rgb, 255, 255, 255));
   color: var(--vot-helper-theme);
   fill: var(--vot-helper-theme);
@@ -57,9 +63,11 @@
     position: relative;
     overflow: hidden;
     display: flex;
+    flex: 0 0 auto !important;
+    align-self: auto !important;
     justify-content: center;
     align-items: center;
-    height: 100%;
+    height: 100% !important;
     padding: 0 var(--vot-space-2) !important;
     background-color: transparent;
     color: inherit;
@@ -126,7 +134,8 @@
 
   &[data-direction="column"] {
     flex-direction: column;
-    height: fit-content;
+    height: fit-content !important;
+    min-height: 0 !important;
 
     & .vot-segment-label {
       display: none;

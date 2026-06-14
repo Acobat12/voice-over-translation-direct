@@ -50,3 +50,7 @@ interface Window {
 
 // Allow side-effect style imports for styles in TS files (e.g. `import "./styles/main.scss"`).
 declare module "*.scss";
+declare module "*.scss?inline" {
+  const css: string;
+  export default css;
+}
