@@ -63,7 +63,11 @@
 
 > All rights to the original software belong to their respective owners. This extension is not affiliated with the original rights holders.
 
-Voice-over translation is now available beyond [Yandex Browser][yabrowser-link]. Thanks to the **[Yandex.Translate][yatranslate-link]** team and all [contributors][contributors-link] helping improve this project.
+Voice-over translation is now available beyond [Yandex Browser][yabrowser-link].
+
+This fork contains its own modifications and is developed independently from the main VOT project. Some features, settings, and behavior may differ from the original project.
+
+The project uses **[Yandex.Translate][yatranslate-link]** technologies and is developed as an independent VOT fork.
 
 ## Known extension conflicts
 
@@ -72,14 +76,11 @@ Voice-over translation is now available beyond [Yandex Browser][yabrowser-link].
 
 ## Publishing local videos
 
-This fork provides two ways to expose local videos through a temporary public link:
-
-1. **`PublicVideoLauncher`** — a cross-platform desktop app for Windows, macOS, and Linux
-2. **`start_public_video.ps1` / `start_public_video.bat`** — helper scripts for manual launching directly from a video folder
+This fork allows local videos to be exposed through a temporary public link using **`PublicVideoLauncher`**.
 
 > [!IMPORTANT]
 > **`vot.user.js` is required** for local video translation.  
-> Without it, `PublicVideoLauncher` and the helper scripts can expose a local video through a temporary public link, but translation itself will not work.
+> Without it, `PublicVideoLauncher` can expose a local video through a temporary public link, but translation itself will not work.
 
 ### PublicVideoLauncher
 
@@ -379,6 +380,9 @@ If the app or local publishing flow has already downloaded the portable helper t
 
 ## List of features:
 
+- Local video translation through PublicVideoLauncher
+- Publishing local videos through temporary public links
+- Support for multiple tunnel providers (Cloudflare Tunnel, Cloudflare Name, localhost.run, Tailscale Funnel, zrok, xTunnel)
 - Translate videos into Russian, English, or Kazakh from [supported source languages][vot-langs]
 - Auto-translate videos on open
 - Auto-enable subtitles on open
@@ -413,7 +417,7 @@ If the app or local publishing flow has already downloaded the portable helper t
 
 - **Yandex Disk:** if a video is stored inside a public folder, it is more reliable to open the **file itself** and click **Share** for that file specifically. Public links to an individual file usually work better than links to a file inside a shared public folder.
 - **Translation persistence:** after a successful translation, the result is usually kept in the service cache, so repeated runs for the same video may finish faster.
-- **Google Drive:** on Google Drive, translation may open through a **popup window** with the player. If your browser blocks popups, allow them for Google Drive.
+- **Google Drive:** translation can be started directly from the Google Drive player using the VOT button.
 
 ## List of supported sites:
 
