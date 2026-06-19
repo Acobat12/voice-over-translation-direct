@@ -4,6 +4,7 @@ import {
   maxAudioVolume,
   repositoryUrl,
 } from "../config/config";
+import { dispatchGoogleDriveBridgeSync } from "../core/google-drive-bridge";
 import { localizationProvider } from "../localization/localizationProvider";
 import { serializeProcessedSubtitles } from "../subtitles/standards";
 import type { Status } from "../types/components/votButton";
@@ -70,6 +71,85 @@ export class UIManager {
 
   get tooltipLayoutRoot(): HTMLElement | undefined {
     return this.mount.tooltipLayoutRoot;
+  }
+
+  private isOverlayButtonVisible(button: HTMLElement): boolean {
+    if (!button.isConnected || button.hidden) {
+      return false;
+    }
+
+    const style = globalThis.getComputedStyle(button);
+    if (style.display === "none" || style.visibility === "hidden") {
+      return false;
+    }
+
+    return button.getClientRects().length > 0;
+  }
+
+  getOverlayVerificationState(options: { requireVisible?: boolean } = {}) {
+    const requireVisible = options.requireVisible !== false;
+    const overlayView = this.votOverlayView;
+    const button = overlayView?.votButton;
+    const buttonContainer = button?.container;
+    const root = this.mount.root;
+
+    const initialized = this.isInitialized();
+    const rootConnected = Boolean(root?.isConnected);
+    const portalConnected = Boolean(this.votGlobalPortal?.isConnected);
+    const overlayViewInitialized = Boolean(overlayView?.isInitialized());
+    const buttonConnected = Boolean(buttonContainer?.isConnected);
+    const buttonVisible = buttonContainer
+      ? this.isOverlayButtonVisible(buttonContainer)
+      : false;
+
+    const verified =
+      initialized &&
+      rootConnected &&
+      portalConnected &&
+      overlayViewInitialized &&
+      buttonConnected &&
+      (!requireVisible || buttonVisible);
+
+    return {
+      initialized,
+      rootConnected,
+      portalConnected,
+      overlayViewInitialized,
+      buttonConnected,
+      buttonVisible,
+      verified,
+    };
+  }
+
+  ensureOverlayMounted(options: { forceVisible?: boolean } = {}) {
+    if (!this.isInitialized()) {
+      this.initUI();
+      this.initUIEvents();
+    }
+
+    const overlayView = this.votOverlayView;
+    if (!overlayView?.isInitialized()) {
+      return this.getOverlayVerificationState({
+        requireVisible: options.forceVisible,
+      });
+    }
+
+    const globalPortalHost = this.getGlobalPortalHost(this.mount);
+    if (this.votGlobalPortal?.parentElement !== globalPortalHost) {
+      globalPortalHost.appendChild(this.votGlobalPortal);
+    }
+
+    overlayView.updateMount(this.mount);
+    overlayView.ensureMountedNodes();
+
+    if (options.forceVisible) {
+      overlayView.votButton.hidden = false;
+      overlayView.updateButtonOpacity(1);
+    }
+
+    return this.getOverlayVerificationState({
+      requireVisible: options.forceVisible,
+    });
   }
 
   private getSubtitlesMountContainer(): HTMLElement {
@@ -364,9 +444,11 @@ export class UIManager {
         ? actualMode
         : configuredMode;
     const buttonStatus = this.votOverlayView?.votButton?.status ?? "none";
+    const hasSuccessfulStatus = buttonStatus === "success";
     const isLoading =
-      this.votOverlayView?.votButton?.loading === true ||
-      Boolean(this.videoHandler?.hadAsyncWait);
+      !hasSuccessfulStatus &&
+      (this.votOverlayView?.votButton?.loading === true ||
+        Boolean(this.videoHandler?.hadAsyncWait));
 
     if (isLoading) {
       return {
@@ -1273,6 +1355,7 @@ export class UIManager {
     this.votOverlayView.votButton.setText(text);
     this.votOverlayView.votButtonTooltip.setContent(text);
     this.votOverlayView.syncVoiceModeUi();
+    dispatchGoogleDriveBridgeSync();
     return this;
   }
 

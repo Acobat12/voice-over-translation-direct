@@ -220,12 +220,14 @@ async function buildEntry({
   fileName,
   emptyOutDir,
   define,
+  diagnostic,
 }: {
   entry: string;
   format: "iife" | "es";
   fileName: string;
   emptyOutDir: boolean;
   define: Record<string, string>;
+  diagnostic: boolean;
 }): Promise<void> {
   await viteBuild({
     root: rootDir,
@@ -241,8 +243,8 @@ async function buildEntry({
       target: "es2020",
       outDir: outTmp,
       emptyOutDir,
-      sourcemap: false,
-      minify: "esbuild",
+      sourcemap: diagnostic,
+      minify: diagnostic ? false : "esbuild",
       lib: {
         entry: path.join(rootDir, entry),
         name: "VOT",
@@ -265,12 +267,14 @@ async function buildEntry({
 export async function buildExtensionBundles({
   context,
   headers,
+  diagnostic = false,
 }: {
   context: ExtensionBuildContext;
   headers: ExtensionHeaders;
+  diagnostic?: boolean;
 }): Promise<void> {
   const defineMeta = {
-    DEBUG_MODE: "false",
+    DEBUG_MODE: diagnostic ? "true" : "false",
     IS_EXTENSION: "true",
     AVAILABLE_LOCALES: JSON.stringify(context.availableLocales),
     REPO_BRANCH: JSON.stringify(context.repoBranch),
@@ -283,6 +287,7 @@ export async function buildExtensionBundles({
     await buildEntry({
       ...entry,
       define: defineMeta,
+      diagnostic,
     });
   }
 }
@@ -371,6 +376,55 @@ function normalizeHostPermissions(list: string[] = []): string[] {
     .filter((value): value is string => Boolean(value));
 
   return [...new Set(normalized)];
+}
+
+function normalizeExtensionMatchPattern(
+  pattern: string | undefined | null,
+): string | null {
+  if (!pattern) return null;
+  const value = String(pattern).trim();
+  if (!value) return null;
+  if (value === "<all_urls>") return "*://*/*";
+
+  const match = /^([^:]+):\/\/([^/]+)(\/.*)?$/.exec(value);
+  if (!match) {
+    return value;
+  }
+
+  const scheme = match[1];
+  let host = match[2];
+  const pathPart = match[3] || "/*";
+
+  while (host.startsWith("*.*.")) {
+    host = `*.${host.slice(4)}`;
+  }
+  if (host === "*.*") {
+    host = "*";
+  }
+
+  return `${scheme}://${host}${pathPart}`;
+}
+
+function normalizeExtensionMatchPatterns(list: string[] = []): string[] {
+  const expanded: string[] = [];
+
+  for (const item of list) {
+    const normalized = normalizeExtensionMatchPattern(item);
+    if (!normalized) continue;
+
+    expanded.push(normalized);
+
+    const wildcardHostMatch = /^([^:]+):\/\/\*\.([^/]+)(\/.*)$/.exec(
+      normalized,
+    );
+    if (wildcardHostMatch) {
+      expanded.push(
+        `${wildcardHostMatch[1]}://${wildcardHostMatch[2]}${wildcardHostMatch[3]}`,
+      );
+    }
+  }
+
+  return [...new Set(expanded)];
 }
 
 function splitMatchesForOriginFallback(matches: string[] = []): {
@@ -498,10 +552,17 @@ function buildManifestChrome({
   const name = headers.name || DEFAULT_EXTENSION_NAME;
   const description = headers.description || DEFAULT_EXTENSION_DESCRIPTION;
   const version = headers.version || DEFAULT_EXTENSION_VERSION;
-  const matches = headers.match || [];
-  const excludeMatches = headers.exclude || [];
-  const { originFallbackMatches, directMatches } =
-    splitMatchesForOriginFallback(matches);
+  const rawMatches = headers.match || [];
+  const matches = normalizeExtensionMatchPatterns(rawMatches);
+  const excludeMatches = normalizeExtensionMatchPatterns(headers.exclude || []);
+  const {
+    originFallbackMatches: rawOriginFallbackMatches,
+    directMatches: rawDirectMatches,
+  } = splitMatchesForOriginFallback(rawMatches);
+  const originFallbackMatches = normalizeExtensionMatchPatterns(
+    rawOriginFallbackMatches,
+  );
+  const directMatches = normalizeExtensionMatchPatterns(rawDirectMatches);
   const hostPermissions = normalizeHostPermissions(headers.connect || []);
   const contentScripts = [
     ...createContentScriptEntries({

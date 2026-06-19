@@ -5,6 +5,7 @@ import {
   PIP_ICON_SVG,
   TRANSLATE_ICON_SVG,
 } from "../ui/icons";
+import { GOOGLE_DRIVE_BRIDGE_SYNC_EVENT } from "./google-drive-bridge";
 
 const GOOGLE_DRIVE_OVERLAY_ROOT_ATTR = "data-vot-google-drive-overlay-root";
 const GOOGLE_DRIVE_POSITION_PATCH_ATTR =
@@ -1107,6 +1108,7 @@ function observeCurrentButton(): void {
       "data-voice-mode",
       "data-voice-playback-state",
     ],
+    characterData: true,
     childList: true,
     subtree: true,
   });
@@ -1119,6 +1121,9 @@ export function installGoogleDriveOverlayPatch(): void {
 
   installed = true;
   globalThis.addEventListener("message", handleTopFrameBridgeMessage);
+  globalThis.addEventListener(GOOGLE_DRIVE_BRIDGE_SYNC_EVENT, () => {
+    scheduleSyncAndShow();
+  });
 
   const activityHandler = (event: Event) => {
     if (!isActivityInsidePlayer(event.target)) {

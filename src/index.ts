@@ -1,7 +1,7 @@
 import VOTClient, { VOTWorkerClient } from "@vot.js/ext/client";
 import type { ServiceConf } from "@vot.js/ext/types/service";
 import { getService } from "@vot.js/ext/utils/videoData";
-import { availableLangs, availableTTS } from "@vot.js/shared/consts";
+import { availableTTS } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { ClientSession, SessionModule } from "@vot.js/shared/types/secure";
 import { initAudioContext } from "chaimu/player";
@@ -29,7 +29,6 @@ import {
   isCustomPlaybackTarget,
   shouldUsePlainAudioPlayback,
 } from "./core/playbackPolicy";
-import { shouldUsePopupOverlayWindow } from "./core/popupOverlayPolicy";
 import {
   getSourceAudioAvailability,
   type SourceAudioAvailabilityState,
@@ -39,7 +38,6 @@ import { TranslationOrchestrator } from "./core/translationOrchestrator";
 import { VideoLifecycleController } from "./core/videoLifecycleController";
 import { VOTVideoManager } from "./core/videoManager";
 import { localizationProvider } from "./localization/localizationProvider";
-import type { PopupOverlayBridge } from "./popup/popupOverlayBridge";
 import type { ProcessedSubtitles } from "./subtitles/processor";
 import type { SubtitleFontFamily } from "./subtitles/types";
 import { SubtitlesWidget } from "./subtitles/widget";
@@ -270,8 +268,6 @@ export class VideoHandler {
   interactionChecker!: IntervalIdleChecker;
   uiManager!: UIManager;
   overlayVisibility!: OverlayVisibilityController;
-  popupOverlayBridge?: PopupOverlayBridge;
-  private readonly popupOwnerId = Math.random().toString(36).slice(2);
   overlayVisibilityTargetsAbortController?: AbortController;
   translationOrchestrator!: TranslationOrchestrator;
   lifecycleController!: VideoLifecycleController;
@@ -290,6 +286,7 @@ export class VideoHandler {
   // Init guard
   initialized = false;
   onPrimaryAttachReady?: () => void;
+  private overlayVerificationGeneration = 0;
 
   /**
    * Cached overlay mount points (root/portal). Recomputed when container changes.
@@ -1064,110 +1061,7 @@ export class VideoHandler {
    */
   transformBtn(status: Status, text: string): this {
     this.uiManager.transformBtn(status, text);
-    this.syncPopupOverlayState({
-      status: status === "disabled" ? "none" : status,
-      label: text,
-      hint:
-        this.site.host === "youtube" ||
-        globalThis.location.hostname === "youtube.googleapis.com"
-          ? "Google embedded player popup mode."
-          : "Google-hosted player popup mode.",
-    });
     return this;
-  }
-
-  syncPopupOverlayState(
-    overrides: Partial<
-      import("./popup/popupMessages").MainToPopupMessage["payload"]
-    > = {},
-  ): void {
-    if (!shouldUsePopupOverlayWindow()) {
-      return;
-    }
-
-    if (!this.popupOverlayBridge?.isOwner(this.popupOwnerId)) {
-      return;
-    }
-
-    if (!this.popupOverlayBridge.isOpen()) {
-      try {
-        this.popupOverlayBridge.open();
-      } catch (error) {
-        console.warn("[VOT] popup open skipped", error);
-        return;
-      }
-    }
-
-    const overlayView = this.uiManager.votOverlayView;
-    const fromLangValue =
-      this.videoData?.detectedLanguage ?? this.translateFromLang ?? "auto";
-    const toLangValue =
-      this.videoData?.responseLanguage ?? this.translateToLang ?? "ru";
-    const fromLangLabel =
-      localizationProvider.getLangLabel(fromLangValue) || fromLangValue;
-    const toLangLabel =
-      localizationProvider.getLangLabel(toLangValue) || toLangValue;
-    const videoVolume = Number(
-      overlayView?.videoVolumeSlider?.value ??
-        Math.round(this.getVideoVolume() * 100),
-    );
-    const translationVolume = Number(
-      overlayView?.translationVolumeSlider?.value ??
-        this.data?.defaultVolume ??
-        100,
-    );
-    const selectedSubtitlesValue = overlayView?.subtitlesSelect
-      ? Array.from(overlayView.subtitlesSelect.selectedValues)[0]
-      : undefined;
-
-    const subtitlesEnabled = Boolean(
-      this.yandexSubtitles &&
-        selectedSubtitlesValue &&
-        selectedSubtitlesValue !== "disabled",
-    );
-    const fromLangOptions = ["auto", ...availableLangs].map((value) => ({
-      value,
-      label:
-        value === "auto"
-          ? localizationProvider.get("langs.auto" as any)
-          : localizationProvider.getLangLabel(value),
-    }));
-    const toLangOptions = availableTTS.map((value) => ({
-      value,
-      label: localizationProvider.getLangLabel(value),
-    }));
-
-    this.popupOverlayBridge?.updateState({
-      visible: true,
-      status:
-        overlayView?.votButton?.status === "disabled"
-          ? "none"
-          : (overlayView?.votButton?.status ?? "none"),
-      label:
-        overlayView?.votButton?.label?.textContent ??
-        localizationProvider.get("translateVideo"),
-      canDownload: Boolean(this.downloadTranslationUrl),
-      canDownloadSubtitles: Boolean(this.yandexSubtitles),
-      hint: "Popup mode for Google-hosted players.",
-      fromLangLabel,
-      toLangLabel,
-      fromLangValue,
-      toLangValue,
-      fromLangOptions,
-      toLangOptions,
-      subtitlesEnabled,
-      videoVolume,
-      translationVolume,
-      canAdjustTranslationVolume: Boolean(this.hasActiveSource()),
-      autoTranslateEnabled: Boolean(this.data?.autoTranslate),
-      autoSubtitlesEnabled: Boolean(this.data?.autoSubtitles),
-      syncVolumeEnabled: Boolean(this.data?.syncVolume),
-      showVideoSliderEnabled: this.data?.showVideoSlider !== false,
-      audioBoosterEnabled: Boolean(this.data?.audioBooster),
-      autoVolumeEnabled: this.data?.enabledAutoVolume !== false,
-      smartDuckingEnabled: this.data?.enabledSmartDucking !== false,
-      ...overrides,
-    });
   }
 
   /**
@@ -1261,6 +1155,87 @@ export class VideoHandler {
       return;
     }
     this.rebindOverlayVisibilityTargets();
+  }
+
+  async ensureOverlayVerified(reason = "attach"): Promise<boolean> {
+    const verificationGeneration = ++this.overlayVerificationGeneration;
+    const retryDelaysMs = [0, 500, 1000, 1500];
+
+    debug.log("[VOT][observer] overlay mount requested", {
+      reason,
+      siteHost: this.site.host,
+      videoId: this.videoData?.videoId,
+      src: this.video.currentSrc || this.video.src || "",
+    });
+
+    for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
+      if (
+        this.abortController.signal.aborted ||
+        verificationGeneration !== this.overlayVerificationGeneration
+      ) {
+        return false;
+      }
+
+      const delayMs = retryDelaysMs[attempt];
+      if (delayMs > 0) {
+        await new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, delayMs);
+        });
+      }
+
+      if (
+        this.abortController.signal.aborted ||
+        verificationGeneration !== this.overlayVerificationGeneration
+      ) {
+        return false;
+      }
+
+      const before = this.uiManager.getOverlayVerificationState({
+        requireVisible: true,
+      });
+      if (before.verified) {
+        debug.log("[VOT][observer] overlay verified", {
+          reason,
+          attempt,
+          ...before,
+        });
+        return true;
+      }
+
+      this.refreshOverlayMount();
+      const after = this.uiManager.ensureOverlayMounted({ forceVisible: true });
+
+      try {
+        this.rebindOverlayVisibilityTargets();
+      } catch (error) {
+        debug.warn(
+          "[VOT][observer] failed to rebind overlay visibility",
+          error,
+        );
+      }
+
+      this.syncSourceAudioAvailabilityUi({ forceVisible: true });
+
+      if (after.verified) {
+        debug.log("[VOT][observer] overlay verified", {
+          reason,
+          attempt,
+          ...after,
+        });
+        return true;
+      }
+
+      if (attempt < retryDelaysMs.length - 1) {
+        debug.log("[VOT][observer] overlay missing after attach, retrying", {
+          reason,
+          attempt,
+          nextDelayMs: retryDelaysMs[attempt + 1],
+          ...after,
+        });
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -1484,7 +1459,6 @@ export class VideoHandler {
    */
   syncVideoVolumeSlider() {
     this.videoManager.syncVideoVolumeSlider();
-    this.syncPopupOverlayState();
   }
 
   /**
@@ -1497,7 +1471,6 @@ export class VideoHandler {
       from as RequestLang,
       to as ResponseLang,
     );
-    this.syncPopupOverlayState();
   }
 
   /**
@@ -1635,22 +1608,7 @@ export class VideoHandler {
       this.longWaitingResCount = 0;
       this.hadAsyncWait = false;
       this.transformBtn("none", localizationProvider.get("translateVideo"));
-      const sourceAudioState = this.syncSourceAudioAvailabilityUi();
-      const buttonStatus = this.uiManager.votOverlayView?.votButton?.status;
-      const buttonLabel =
-        this.uiManager.votOverlayView?.votButton?.label?.textContent ||
-        localizationProvider.get("translateVideo");
-      this.syncPopupOverlayState({
-        status:
-          buttonStatus === "success" || buttonStatus === "error"
-            ? buttonStatus
-            : "none",
-        label: buttonLabel,
-        canDownload: false,
-        hint: sourceAudioState.ready
-          ? "Translation audio is not available yet."
-          : buttonLabel,
-      });
+      this.syncSourceAudioAvailabilityUi();
       debug.log(`Volume on start: ${this.volumeOnStart}`);
 
       // Restore the original video volume. If the user adjusted volume while
@@ -1816,17 +1774,6 @@ export class VideoHandler {
       this.downloadTranslationUrl,
     );
     this.syncTranslationPlaybackVolume();
-    this.syncPopupOverlayState({
-      status: isSuccess ? "success" : "none",
-      label: isSuccess
-        ? "Turn off"
-        : localizationProvider.get("translateVideo"),
-      canDownload: Boolean(this.downloadTranslationUrl),
-      canDownloadSubtitles: Boolean(this.yandexSubtitles),
-      hint: this.downloadTranslationUrl
-        ? "Translated audio is ready for download."
-        : "Waiting for translated audio.",
-    });
 
     if (isSuccess && this.site.host === "vk" && this.videoData?.videoId) {
       const vkSubtitlesCacheKey = this.getSubtitlesCacheKey(
@@ -2043,6 +1990,7 @@ export class VideoHandler {
       });
     }
     this.initialized = false;
+    this.overlayVerificationGeneration += 1;
     try {
       await this.stopTranslation();
     } catch (err) {
@@ -2069,15 +2017,6 @@ export class VideoHandler {
         GOOGLE_DRIVE_ACTIVE_HANDLER_KEY,
       );
     }
-
-    if (
-      shouldUsePopupOverlayWindow() &&
-      this.popupOverlayBridge?.isOwner(this.popupOwnerId)
-    ) {
-      this.popupOverlayBridge.close();
-    }
-
-    this.popupOverlayBridge = undefined;
   }
 
   /**

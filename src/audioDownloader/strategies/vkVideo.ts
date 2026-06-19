@@ -96,7 +96,9 @@ function scoreVkMediaUrl(url: string): number {
   if (/\.mp4(?:$|[?#])/i.test(normalized)) score += 50;
   if (/\.m3u8(?:$|[?#])/i.test(normalized)) score += 45;
   if (/master\.m3u8/i.test(normalized)) score += 35;
-  if (/\.mpd(?:$|[?#])/i.test(normalized)) score += 30;
+  if (/\.mpd(?:$|[?#])/i.test(normalized)) {
+    return Number.NEGATIVE_INFINITY;
+  }
   if (/manifest/i.test(normalized)) score += 15;
   if (/dashplaylist/i.test(normalized)) score += 15;
   if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(normalized))
@@ -147,7 +149,10 @@ function getPerformanceMediaUrl(): string {
         return /[?&]bytes=\d+-\d+/i.test(raw) ? stripBytesParam(raw) : raw;
       })
       .filter((candidate) =>
-        /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru|vk\.(?:com|ru)/i.test(
+        /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(candidate),
+      )
+      .filter((candidate) =>
+        /\.mp4(?:$|[?#])|\.m3u8(?:$|[?#])|[?&]type=1(?:[&#]|$)/i.test(
           candidate,
         ),
       )
@@ -163,6 +168,26 @@ async function fetchVkMedia(
   src: string,
   signal: AbortSignal,
 ): Promise<Response> {
+  const isVkCdn =
+    /(?:^|\.)okcdn\.ru/i.test(src) ||
+    /vkvd\d+\.okcdn\.ru/i.test(src) ||
+    /vkvideo\.ru/i.test(src);
+
+  if (isVkCdn) {
+    const gmRes = await GM_fetch(src, {
+      signal,
+      timeout: 0,
+    });
+
+    if (!gmRes.ok) {
+      throw new Error(
+        `[VOT] VK: failed to fetch media source via GM_fetch: ${gmRes.status}`,
+      );
+    }
+
+    return gmRes;
+  }
+
   try {
     const res = await fetch(src, {
       signal,

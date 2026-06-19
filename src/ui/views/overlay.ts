@@ -260,6 +260,27 @@ export class OverlayView {
     return this;
   }
 
+  ensureMountedNodes(): this {
+    if (!this.isInitialized()) {
+      return this;
+    }
+
+    if (this.votButton.container.parentElement !== this.root) {
+      this.root.appendChild(this.votButton.container);
+    }
+
+    const menuHost = this.menuHost;
+    if (this.votMenu.container.parentElement !== menuHost) {
+      menuHost.appendChild(this.votMenu.container);
+    }
+
+    if (this.voiceModeMenu.container.parentElement !== menuHost) {
+      menuHost.appendChild(this.voiceModeMenu.container);
+    }
+
+    return this;
+  }
+
   isInitialized(): this is {
     // #region Button type
     votButton: VOTButton | VOTRail;

@@ -20,7 +20,10 @@ import type {
 import { NEVER_ABORTED_SIGNAL, throwIfAborted } from "../utils/abort";
 import debug from "../utils/debug";
 import { getErrorMessage, isAbortError, makeAbortError } from "../utils/errors";
-import { formatTranslationEta } from "../utils/timeFormatting";
+import {
+  adjustTranslationEtaForDisplay,
+  formatTranslationEta,
+} from "../utils/timeFormatting";
 import VOTLocalizedError from "../utils/VOTLocalizedError";
 import { notifyTranslationFailureIfNeeded } from "../videoHandler/modules/translationShared";
 
@@ -60,6 +63,21 @@ function getServerErrorMessage(value: unknown): string | undefined {
   return typeof message === "string" && message.length > 0
     ? message
     : undefined;
+}
+
+export function isCompletedTranslationResponse(
+  response: Pick<
+    VideoTranslationResponse,
+    "translated" | "status" | "url" | "remainingTime"
+  >,
+): response is TranslatedVideoTranslationResponse {
+  return Boolean(
+    response.translated &&
+      (response.status === VideoTranslationStatus.FINISHED ||
+        response.status === VideoTranslationStatus.PART_CONTENT) &&
+      typeof response.url === "string" &&
+      response.url.length > 0,
+  );
 }
 
 /**
@@ -1585,22 +1603,23 @@ export class VOTTranslationHandler {
         message: res.message,
       });
 
-      if (
-        res.translated &&
-        (res.status === VideoTranslationStatus.FINISHED ||
-          res.status === VideoTranslationStatus.PART_CONTENT) &&
-        typeof res.url === "string" &&
-        res.url.length > 0
-      ) {
+      if (isCompletedTranslationResponse(res)) {
         return { ...res, usedLivelyVoice: useLivelyVoice };
       }
 
       const message =
         res.message ?? localizationProvider.get("translationTakeFewMinutes");
 
+      const displayRemainingTime = adjustTranslationEtaForDisplay(
+        res.remainingTime,
+        {
+          optimisticLocalUpload: canUseLocalFileWorkflow,
+        },
+      );
+
       await this.videoHandler.updateTranslationErrorMsg(
-        res.remainingTime > 0
-          ? formatTranslationEta(res.remainingTime, (key) =>
+        displayRemainingTime > 0
+          ? formatTranslationEta(displayRemainingTime, (key) =>
               localizationProvider.get(key),
             )
           : message,
@@ -1852,6 +1871,8 @@ export class VOTTranslationHandler {
 
       if (
         this.videoHandler.site.host === "vk" &&
+        !res.translated &&
+        res.status === VideoTranslationStatus.AUDIO_REQUESTED &&
         this.videoHandler.canUploadAudioForCurrentSite() &&
         res.translationId &&
         videoData.videoId
@@ -1870,7 +1891,7 @@ export class VOTTranslationHandler {
             signal,
             this.videoHandler.video,
           );
-          await this.waitForAudioDownloadCompletion(signal, 15000);
+          await this.waitForAudioDownloadCompletion(signal, 20000);
         } catch (error) {
           debug.log(
             "[VOT][VK subtitles] force audio upload failed after successful translation",
@@ -1887,7 +1908,7 @@ export class VOTTranslationHandler {
 
       throwIfAborted(signal);
 
-      if (res.translated && res.remainingTime < 1) {
+      if (isCompletedTranslationResponse(res)) {
         debug.log("Video translation finished with this data: ", res);
         return { ...res, usedLivelyVoice: useLivelyVoice };
       }

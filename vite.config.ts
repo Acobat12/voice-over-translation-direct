@@ -167,14 +167,16 @@ function buildUserscriptMeta(
 
 export default defineConfig(async ({ command, mode }) => {
   const isDevCommand = command === "serve";
-  const buildMinified = mode === "minify";
-  const debugMode = isDevCommand || mode === "development";
+  const diagnosticMode = mode === "diagnostic";
+  const debugMode = isDevCommand || mode === "development" || diagnosticMode;
+  const explicitMinifiedVariant = mode === "minify";
+  const productionOptimize = !debugMode;
   const mainHeaders = getHeaders();
   const isBetaVersion = String(mainHeaders.version).includes("beta");
   const repoBranch: UserscriptBranch =
     debugMode || isBetaVersion ? "dev" : "master";
   const repoUpdateBranch: UserscriptBranch = isBetaVersion ? "dev" : "master";
-  const filename = buildMinified ? "vot-min" : "vot";
+  const filename = explicitMinifiedVariant ? "vot-min" : "vot";
   const availableLocales = await getAvailableLocales();
 
   const config: UserConfig = {
@@ -199,7 +201,7 @@ export default defineConfig(async ({ command, mode }) => {
     build: {
       outDir: distDir,
       emptyOutDir: false,
-      minify: buildMinified ? "esbuild" : false,
+      minify: productionOptimize ? "esbuild" : false,
       sourcemap: debugMode,
       rollupOptions: {
         onwarn(warning, warn) {
@@ -208,6 +210,11 @@ export default defineConfig(async ({ command, mode }) => {
         },
       },
     },
+    esbuild: productionOptimize
+      ? {
+          pure: ["debug.log", "debug.warn", "console.log", "console.warn"],
+        }
+      : undefined,
     plugins: [
       ...monkey({
         entry: path.resolve(srcDir, "index.ts"),

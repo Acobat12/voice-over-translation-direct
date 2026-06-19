@@ -338,6 +338,47 @@ function bindOverlayLayoutEvents(ctx: ExtraEventsContext): void {
     self.refreshOverlayMount();
     applyOverlayLayout(self, overlayView);
   };
+  let recoveryQueued = false;
+  const queueOverlayRecovery = (reason: string) => {
+    if (recoveryQueued) {
+      return;
+    }
+
+    recoveryQueued = true;
+    queueMicrotask(() => {
+      recoveryQueued = false;
+      if (self.abortController.signal.aborted) {
+        return;
+      }
+
+      const containerStale =
+        !self.container.isConnected ||
+        !self.video.isConnected ||
+        (self.video.isConnected &&
+          !containsCrossShadow(self.container, self.video));
+      const overlayState = self.uiManager.getOverlayVerificationState({
+        requireVisible: false,
+      });
+
+      if (!containerStale && overlayState.verified) {
+        return;
+      }
+
+      if (containerStale) {
+        debug.log("[VOT][observer] overlay/container stale, resyncing", {
+          reason,
+          containerConnected: self.container.isConnected,
+          videoConnected: self.video.isConnected,
+          src: self.video.currentSrc || self.video.src || "",
+        });
+        syncMountAndLayout();
+      }
+
+      if (!overlayState.verified) {
+        void self.ensureOverlayVerified(`observer:${reason}`);
+      }
+    });
+  };
   self.resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
       applyOverlayLayout(self, overlayView, entry.contentRect.height);
@@ -351,6 +392,30 @@ function bindOverlayLayoutEvents(ctx: ExtraEventsContext): void {
   addMany(self.video, ["webkitbeginfullscreen", "webkitendfullscreen"], () =>
     syncMountAndLayout(),
   );
+
+  self.overlayMountObserver = new MutationObserver(() => {
+    queueOverlayRecovery("dom-mutation");
+  });
+
+  const observedOverlayHosts = new Set<Node>();
+  const observeOverlayHost = (node: Node | null | undefined) => {
+    if (!node || observedOverlayHosts.has(node)) {
+      return;
+    }
+
+    observedOverlayHosts.add(node);
+    self.overlayMountObserver?.observe(node, {
+      childList: true,
+      subtree: false,
+    });
+  };
+
+  observeOverlayHost(self.uiManager.root.parentElement ?? self.uiManager.root);
+  observeOverlayHost(
+    self.uiManager.votGlobalPortal?.parentElement ??
+      self.uiManager.votGlobalPortal,
+  );
+  observeOverlayHost(self.container.parentElement ?? self.container);
 
   if (isMobileYouTubeLikeSite(self.site)) {
     let syncQueued = false;
@@ -383,14 +448,6 @@ function bindOverlayLayoutEvents(ctx: ExtraEventsContext): void {
         syncMountAndLayout();
       });
     };
-
-    self.overlayMountObserver = new MutationObserver(() => {
-      queueSyncMountAndLayout();
-    });
-    self.overlayMountObserver.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-    });
 
     addMany(document, ["yt-page-data-updated", "yt-navigate-finish"], () =>
       queueSyncMountAndLayout(),

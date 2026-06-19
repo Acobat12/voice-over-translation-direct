@@ -8,6 +8,21 @@ type TranslationEtaMessageKey =
 type TranslationEtaMessageGetter = (key: TranslationEtaMessageKey) => string;
 
 const MAX_SECS_FRACTION = 0.66;
+const LOCAL_UPLOAD_DISPLAY_ETA_MULTIPLIER = 2.3;
+
+export function adjustTranslationEtaForDisplay(
+  secs: number,
+  options: { optimisticLocalUpload?: boolean } = {},
+) {
+  const safeSecs = Number.isFinite(secs) ? Math.max(0, secs) : 0;
+  if (!options.optimisticLocalUpload) {
+    return safeSecs;
+  }
+
+  // Public/local uploads often get an optimistic initial ETA from Yandex.
+  // Stretch the display-only timer so the UI does not enter a false delayed state.
+  return Math.ceil(safeSecs * LOCAL_UPLOAD_DISPLAY_ETA_MULTIPLIER);
+}
 
 export function formatTranslationEta(
   secs: number,

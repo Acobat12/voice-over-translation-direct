@@ -8,6 +8,7 @@ type VideoHandlerLike = {
   videoData?: unknown;
   release(): Promise<void> | void;
   onPrimaryAttachReady?: () => void;
+  ensureOverlayVerified?(reason?: string): Promise<boolean>;
 };
 
 type BindObserverListenersOptions = {
@@ -594,7 +595,31 @@ export function bindObserverListeners(
           return;
         }
 
-        stopYouTubeVideoDiscovery(site);
+        console.log("[VOT][observer] video attached", {
+          host: site.host,
+          path: globalThis.location.pathname,
+          src: video.currentSrc || video.src || "",
+        });
+
+        void (async () => {
+          const verified =
+            (await videoHandler.ensureOverlayVerified?.("primary-attach")) ??
+            false;
+          if (videosWrappers.get(video) !== videoHandler) {
+            return;
+          }
+
+          if (verified) {
+            console.log(
+              "[VOT][observer] discovery disabled only after verified overlay",
+              {
+                host: site.host,
+                path: globalThis.location.pathname,
+              },
+            );
+            stopYouTubeVideoDiscovery(site);
+          }
+        })();
       };
 
       try {
@@ -604,9 +629,6 @@ export function bindObserverListeners(
         }
         try {
           await videoHandler.setCanPlay();
-          if (videosWrappers.get(video) === videoHandler) {
-            stopYouTubeVideoDiscovery(site);
-          }
         } catch (err) {
           console.error("[VOT] Failed to get video data", err);
         }

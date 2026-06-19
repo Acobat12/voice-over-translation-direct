@@ -32,25 +32,9 @@ const BUNDLED_LOCALE_BY_LANG: Record<string, FlatPhrases> = (() => {
   for (const [path, locale] of Object.entries(modules)) {
     const match = path.match(/\/([^/]+)\.json$/i);
     if (!match) continue;
-    map[match[1].toLowerCase()] = toFlatObj(locale);
-  }
-
-  return map;
-})();
-const BUNDLED_LOCALE_JSON_BY_LANG: Record<string, string> = (() => {
-  const modules = import.meta.glob<Record<string, unknown>>(
-    "./locales/*.json",
-    {
-      eager: true,
-      import: "default",
-    },
-  );
-  const map: Record<string, string> = {};
-
-  for (const [path, locale] of Object.entries(modules)) {
-    const match = path.match(/\/([^/]+)\.json$/i);
-    if (!match) continue;
-    map[match[1].toLowerCase()] = JSON.stringify(locale);
+    const localeCode = match[1].toLowerCase();
+    if (localeCode === "en") continue;
+    map[localeCode] = toFlatObj(locale);
   }
 
   return map;
@@ -152,12 +136,10 @@ class LocalizationProvider {
     return `${baseUrl}${path}${query}`;
   }
 
-  private getBundledLocaleJsonString(lang: string) {
-    return BUNDLED_LOCALE_JSON_BY_LANG[lang.toLowerCase()] || "";
-  }
-
   private getBundledLocale(lang: string) {
-    return BUNDLED_LOCALE_BY_LANG[lang.toLowerCase()] || null;
+    return lang.toLowerCase() === "en"
+      ? DEFAULT_LOCALE
+      : (BUNDLED_LOCALE_BY_LANG[lang.toLowerCase()] ?? null);
   }
 
   private applyBundledLocale(lang: string) {

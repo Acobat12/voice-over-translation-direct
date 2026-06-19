@@ -129,6 +129,7 @@ let currentState: BridgeStatePayload | null = null;
 let observedIframe: HTMLIFrameElement | null = null;
 let iframeResizeObserver: ResizeObserver | null = null;
 let domObserver: MutationObserver | null = null;
+let bridgePollTimer: number | null = null;
 let dialogLayerCounter = 10;
 const DRIVE_TOP_FRAME_BUTTON_LAYER_Z = "10";
 const DRIVE_TOP_FRAME_POPUP_LAYER_Z = "20";
@@ -245,20 +246,33 @@ function extractLoadingEtaValue(
     return null;
   }
 
-  if (text === localizationProvider.get("translationTakeAboutMinute")) {
+  if (
+    text === localizationProvider.get("translationTakeAboutMinute") ||
+    text === "The translation will take about a minute"
+  ) {
     return 1;
   }
 
-  if (text === localizationProvider.get("translationTakeFewMinutes")) {
+  if (
+    text === localizationProvider.get("translationTakeFewMinutes") ||
+    text === "The translation will take a few minutes"
+  ) {
     return 5;
   }
 
-  if (text === localizationProvider.get("translationTakeMoreThanHour")) {
+  if (
+    text === localizationProvider.get("translationTakeMoreThanHour") ||
+    text === "The translation will take more than an hour"
+  ) {
     return "more-than-hour";
   }
 
   const translationTakePrefix = localizationProvider.get("translationTake");
-  if (!text.includes(translationTakePrefix)) {
+  const englishTranslationTakePrefix = "The translation will take";
+  if (
+    !text.includes(translationTakePrefix) &&
+    !text.includes(englishTranslationTakePrefix)
+  ) {
     return null;
   }
 
@@ -324,8 +338,28 @@ function getVoiceModeEtaLabel(mode: "standard" | "lively"): string {
 }
 
 function getLoadingButtonText(state: BridgeStatePayload | null): string {
-  const eta = getEstimatedEtaLabel(state?.labelText ?? "");
+  const rawText = state?.labelText?.trim() ?? "";
+  const eta = getEstimatedEtaLabel(rawText);
   if (!eta) {
+    const localizedKnownText = localizeKnownBridgeText(rawText);
+    if (localizedKnownText) {
+      return localizedKnownText;
+    }
+
+    if (isBridgeLoadingLabel(rawText)) {
+      return rawText;
+    }
+
+    if (
+      rawText &&
+      rawText !== getDefaultButtonText() &&
+      rawText !== getDisableButtonText() &&
+      rawText !== getVoiceModeLabel("standard") &&
+      rawText !== getVoiceModeLabel("lively")
+    ) {
+      return rawText;
+    }
+
     return localizationProvider.get("videoBeingTranslated");
   }
 
@@ -354,6 +388,11 @@ function localizeBridgeButtonText(
     return getDisableButtonText();
   }
 
+  const localizedKnownText = localizeKnownBridgeText(text);
+  if (localizedKnownText) {
+    return localizedKnownText;
+  }
+
   return text;
 }
 
@@ -362,7 +401,7 @@ function normalizeStatus(state: BridgeStatePayload | null): BridgeStatus {
     return "none";
   }
 
-  if (state.loading) {
+  if (state.loading || isBridgeLoadingLabel(state.labelText ?? "")) {
     return "loading";
   }
 
@@ -375,6 +414,65 @@ function normalizeStatus(state: BridgeStatePayload | null): BridgeStatus {
       return state.status;
     default:
       return "none";
+  }
+}
+
+function isBridgeLoadingLabel(rawText: string): boolean {
+  const text = rawText.trim();
+  if (!text) {
+    return false;
+  }
+
+  if (
+    text.includes(localizationProvider.get("translationTake")) ||
+    text.includes("The translation will take")
+  ) {
+    return true;
+  }
+
+  const delayed = localizationProvider.get("TranslationDelayed");
+  if (delayed && text.includes(delayed)) {
+    return true;
+  }
+
+  return [
+    localizationProvider.get("videoBeingTranslated"),
+    "The video is being translated",
+    "Подготавливаем перевод",
+    "Preparing translation",
+    "Видео передано в обработку",
+    "Video sent for processing",
+    "Ожидаем перевод видео",
+    "Waiting for video translation",
+    "Загружаем переведенное аудио",
+    "Uploading translated audio",
+  ].includes(text);
+}
+
+function localizeKnownBridgeText(rawText: string): string | null {
+  const text = rawText.trim();
+  if (!text) {
+    return null;
+  }
+
+  switch (text) {
+    case "The video is being translated":
+      return localizationProvider.get("videoBeingTranslated");
+    case "Failed to request video translation":
+    case "Yandex couldn't translate video":
+      return localizationProvider.get("requestTranslationFailed");
+    case "Audio link not received":
+      return localizationProvider.get("audioNotReceived");
+    case "Failed to download audio":
+      return localizationProvider.get("VOTFailedDownloadAudio");
+    case "Preparing translation":
+      return localizationProvider.get("videoBeingTranslated");
+    case "Video sent for processing":
+    case "Waiting for video translation":
+    case "Uploading translated audio":
+      return localizationProvider.get("videoBeingTranslated");
+    default:
+      return null;
   }
 }
 
@@ -1642,6 +1740,24 @@ function syncBridge(): void {
   postBridgeCommand("request-state");
 }
 
+function ensureBridgePolling(): void {
+  if (bridgePollTimer !== null) {
+    return;
+  }
+
+  bridgePollTimer = globalThis.setInterval(() => {
+    if (document.visibilityState === "hidden") {
+      return;
+    }
+
+    if (!getDrivePlayerIframe()) {
+      return;
+    }
+
+    syncBridge();
+  }, 1500);
+}
+
 function observePlayerIframe(): void {
   const nextIframe = getDrivePlayerIframe();
   if (observedIframe === nextIframe) {
@@ -1715,6 +1831,7 @@ export function installGoogleDriveTopFramePatch(): void {
   void ensureSettingsData().then(() => scheduleLayoutSync());
   scheduleLayoutSync();
   syncBridge();
+  ensureBridgePolling();
 
   globalThis.addEventListener("message", handleBridgeMessage);
   globalThis.addEventListener("resize", scheduleLayoutSync, { passive: true });

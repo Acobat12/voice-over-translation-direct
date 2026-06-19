@@ -21,6 +21,10 @@ import {
 import type { VideoData as RuntimeVideoData } from "../videoHandler/shared";
 import { resolveCustomSiteVideo } from "./customSiteResolvers";
 import { isExternalVolumeHost } from "./hostPolicies";
+import {
+  buildCanonicalRutubeFallbackTarget,
+  isRutubeSupportedPageHost,
+} from "./rutubeVideoTarget";
 import { getSourceAudioAvailability } from "./sourceAudioAvailability";
 import {
   buildCanonicalVkFallbackTarget,
@@ -828,10 +832,26 @@ export class VOTVideoManager {
       this.videoHandler.site.host === "vk"
         ? buildCanonicalVkFallbackTarget(pageUrl, videoId, url)
         : null;
+    const canonicalRutubeTarget =
+      this.videoHandler.site.host === "rutube"
+        ? buildCanonicalRutubeFallbackTarget(pageUrl, videoId, url)
+        : null;
     if (canonicalVkTarget) {
       url = canonicalVkTarget.url;
       videoId = canonicalVkTarget.videoId;
       host = "vk";
+    }
+    if (
+      canonicalRutubeTarget &&
+      (host === "custom" ||
+        /(?:^|\.)bl\.rutube\.ru$/i.test(
+          String(new URL(url || pageUrl, pageUrl).hostname || ""),
+        ) ||
+        /\.m3u8([?#]|$)/i.test(String(url || "")))
+    ) {
+      url = canonicalRutubeTarget.url;
+      videoId = canonicalRutubeTarget.videoId;
+      host = "rutube";
     }
 
     const resolvedFallback = await resolveCustomSiteVideo(hostname, pageUrl);
@@ -851,6 +871,9 @@ export class VOTVideoManager {
     if (shouldUseDomFallback) {
       const shouldPreserveVkSiteRoute =
         this.videoHandler.site.host === "vk" && isVkSupportedPageHost(hostname);
+      const shouldPreserveRutubeSiteRoute =
+        this.videoHandler.site.host === "rutube" &&
+        isRutubeSupportedPageHost(hostname);
       const shouldPreserveBilibiliSiteRoute =
         this.videoHandler.site.host === "bilibili" &&
         isBilibiliSupportedPageHost(hostname);
@@ -872,12 +895,27 @@ export class VOTVideoManager {
             resolvedFallback?.url,
           )
         : null;
+      const fallbackCanonicalRutubeTarget = shouldPreserveRutubeSiteRoute
+        ? buildCanonicalRutubeFallbackTarget(
+            pageUrl,
+            videoId,
+            url,
+            fallbackUrl,
+            resolvedFallback?.videoId,
+            resolvedFallback?.url,
+          )
+        : null;
 
       if (
         fallbackCanonicalVkTarget &&
         !isBadGenericMediaUrl(fallbackCanonicalVkTarget.url)
       ) {
         url = fallbackCanonicalVkTarget.url;
+      } else if (
+        fallbackCanonicalRutubeTarget &&
+        !isBadGenericMediaUrl(fallbackCanonicalRutubeTarget.url)
+      ) {
+        url = fallbackCanonicalRutubeTarget.url;
       } else if (fallbackUrl && !shouldPreserveBilibiliSiteRoute) {
         url = fallbackUrl;
       }
@@ -913,6 +951,13 @@ export class VOTVideoManager {
         url = fallbackCanonicalVkTarget.url;
         host = "vk";
         videoId = fallbackCanonicalVkTarget.videoId;
+      } else if (
+        shouldPreserveRutubeSiteRoute &&
+        fallbackCanonicalRutubeTarget
+      ) {
+        url = fallbackCanonicalRutubeTarget.url;
+        host = "rutube";
+        videoId = fallbackCanonicalRutubeTarget.videoId;
       } else if (shouldPreserveBilibiliSiteRoute) {
         // Bilibili is a first-class supported site. When helper extraction
         // falls back to DOM/media state, keep the request on the stable page
@@ -951,7 +996,9 @@ export class VOTVideoManager {
         finalVideoId: videoId,
         finalHost: host,
         preservedSiteRoute:
-          shouldPreserveVkSiteRoute || shouldPreserveBilibiliSiteRoute,
+          shouldPreserveVkSiteRoute ||
+          shouldPreserveRutubeSiteRoute ||
+          shouldPreserveBilibiliSiteRoute,
       });
     }
 

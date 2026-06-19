@@ -1,6 +1,5 @@
 const manifestPatterns = [
   /\.m3u8(?:$|[?#])/i,
-  /\.mpd(?:$|[?#])/i,
   /master\.m3u8/i,
   /manifest/i,
   /dashplaylist/i,
@@ -30,7 +29,6 @@ function normalizeUrl(input: string): string {
 function isDirectMediaCandidate(url: string): boolean {
   return (
     /\.m3u8(?:$|[?#])/i.test(url) ||
-    /\.mpd(?:$|[?#])/i.test(url) ||
     /master\.m3u8/i.test(url) ||
     /dashplaylist/i.test(url) ||
     /\.mp4(?:$|[?#])/i.test(url)
@@ -82,7 +80,9 @@ function scoreManifestUrl(url: string): number {
   if (/\.mp4(?:$|[?#])/i.test(url)) score += 5;
   if (/\.m3u8(?:$|[?#])/i.test(url)) score += 4;
   if (/master\.m3u8/i.test(url)) score += 3;
-  if (/\.mpd(?:$|[?#])/i.test(url)) score += 2;
+  if (/\.mpd(?:$|[?#])/i.test(url)) {
+    return Number.NEGATIVE_INFINITY;
+  }
   if (/manifest/i.test(url)) score += 1;
   if (/dashplaylist/i.test(url)) score += 1;
 

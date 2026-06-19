@@ -17,12 +17,19 @@ const verifyVirtualEntry = "virtual:vot-extension-verify";
 const verifyVirtualEntryResolved = "\0virtual:vot-extension-verify";
 
 function resolveBuildTarget(mode: string): ExtensionBuildTarget {
-  if (mode === "chrome") return "chrome";
-  if (mode === "firefox") return "firefox";
+  if (mode.startsWith("chrome")) return "chrome";
+  if (mode.startsWith("firefox")) return "firefox";
   return "all";
 }
 
-function extensionPipelinePlugin(target: ExtensionBuildTarget): Plugin {
+function isDiagnosticMode(mode: string): boolean {
+  return mode.endsWith("-diag");
+}
+
+function extensionPipelinePlugin(
+  target: ExtensionBuildTarget,
+  diagnostic: boolean,
+): Plugin {
   return {
     name: "vot-extension-build-pipeline",
     apply: "build",
@@ -33,6 +40,7 @@ function extensionPipelinePlugin(target: ExtensionBuildTarget): Plugin {
         await buildExtensionBundles({
           context,
           headers,
+          diagnostic,
         });
         await finalizeExtensionBuildArtifacts(target);
       } finally {
@@ -68,13 +76,14 @@ function verifyVirtualEntryPlugin(): Plugin {
 
 export default defineConfig(async ({ mode }) => {
   const target = resolveBuildTarget(mode);
+  const diagnostic = isDiagnosticMode(mode);
   const config: UserConfig = {
     root: rootDir,
     plugins: [
       verifyVirtualEntryPlugin(),
       mode === "verify"
         ? verifyOnlyPlugin("all")
-        : extensionPipelinePlugin(target),
+        : extensionPipelinePlugin(target, diagnostic),
     ],
     build: {
       outDir: outBase,

@@ -3,7 +3,6 @@ import { defaultAutoVolume } from "../../config/config";
 import { YANDEX_TTL_MS } from "../../core/cacheManager";
 import { isTranslationDownloadHost } from "../../core/hostPolicies";
 import { isCustomPlaybackTarget } from "../../core/playbackPolicy";
-import { getTunnelPlayerContext } from "../../core/tunnelPlayer";
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
 import debug from "../../utils/debug";
@@ -50,15 +49,6 @@ type AutoVolumeMode = "off" | "classic" | "smart";
 type PendingAutoplayRecovery = ActionContext & {
   sourceUrl: string;
   createdAt: number;
-};
-
-type PvlTranslationReadyPayload = {
-  url: string;
-  videoSrc: string;
-  videoTitle: string;
-  suggestedFileName: string;
-  subtitlesUrl: string | null;
-  suggestedSubtitlesFileName: string | null;
 };
 
 type ApplyTranslationSourceResult =
@@ -238,143 +228,6 @@ function getAutoplayRecoveryButtonText(): string {
   return localizationProvider.lang === "ru"
     ? "Запустить звук перевода"
     : "Start translated audio";
-}
-
-function getExternalTunnelContext(handler: VideoHandler) {
-  if (handler.site.host !== "custom") {
-    return null;
-  }
-
-  const context = getTunnelPlayerContext();
-  if (!context?.hasTranslationReadyCallback) {
-    return null;
-  }
-
-  return context;
-}
-
-function getPvlVideoSourceUrl(handler: VideoHandler): string {
-  const tunnelContext = getTunnelPlayerContext();
-  const candidates = [
-    String(tunnelContext?.sourceUrl || "").trim(),
-    String((globalThis as Record<string, unknown>).__PVL_VOT_SRC ?? "").trim(),
-    String(handler.video?.dataset?.votSrc || "").trim(),
-    String(handler.video?.currentSrc || handler.video?.src || "").trim(),
-    String(handler.videoData?.url || "").trim(),
-  ].filter(Boolean);
-
-  return candidates[0] || globalThis.location.href;
-}
-
-function getPvlTranslatedSubtitlesUrl(): string | null {
-  const scope = globalThis as Record<string, unknown>;
-  const generic = String(scope.__VOT_LAST_EXTERNAL_SUBTITLE_URL__ ?? "").trim();
-  if (generic) {
-    return generic;
-  }
-
-  const direct = String(scope.__PVL_LAST_TRANSLATED_SUBTITLES_URL ?? "").trim();
-  if (direct) {
-    return direct;
-  }
-
-  const lastTrack = scope.__VOT_LAST_SUBTITLE_TRACK__;
-  if (lastTrack && typeof lastTrack === "object") {
-    const effectiveUrl = String(
-      (lastTrack as Record<string, unknown>).effectiveUrl ?? "",
-    ).trim();
-    if (effectiveUrl) {
-      return effectiveUrl;
-    }
-  }
-
-  return null;
-}
-
-function buildPvlTranslationReadyPayload(
-  handler: VideoHandler,
-  audioUrl: string,
-): PvlTranslationReadyPayload {
-  const baseName = handler.getDownloadBaseName() || "translation";
-  const subtitlesUrl = getPvlTranslatedSubtitlesUrl();
-
-  return {
-    url: audioUrl,
-    videoSrc: getPvlVideoSourceUrl(handler),
-    videoTitle:
-      String(
-        handler.videoData?.downloadTitle || handler.videoData?.title || "",
-      ).trim() || baseName,
-    suggestedFileName: `${baseName}.translated.mp3`,
-    subtitlesUrl,
-    suggestedSubtitlesFileName: subtitlesUrl
-      ? `${baseName}.translated.vtt`
-      : null,
-  };
-}
-
-async function _notifyPvlTranslationReady(
-  handler: VideoHandler,
-  audioUrl: string,
-): Promise<boolean> {
-  const tunnelContext = getExternalTunnelContext(handler);
-  if (!tunnelContext) {
-    return false;
-  }
-
-  const payload = buildPvlTranslationReadyPayload(handler, audioUrl);
-
-  try {
-    const state = globalThis as Record<string, unknown>;
-    const dedupeKey = `${handler.videoData?.videoId || ""}|${audioUrl}`;
-
-    if (state.__PVL_LAST_TRANSLATION_READY_KEY__ === dedupeKey) {
-      debug.log("[VOT][tunnel] skip duplicate translation-ready", {
-        dedupeKey,
-      });
-      return true;
-    }
-
-    state.__PVL_LAST_TRANSLATION_READY_KEY__ = dedupeKey;
-    const response = await fetch("/translation-ready", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      mode: "same-origin",
-      credentials: "same-origin",
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      debug.log("[VOT][tunnel] translation-ready callback failed", {
-        kind: tunnelContext.kind,
-        status: response.status,
-        statusText: response.statusText,
-        payload,
-      });
-      return false;
-    }
-
-    debug.log("[VOT][tunnel] translation-ready callback sent", {
-      kind: tunnelContext.kind,
-      payload,
-    });
-    return true;
-  } catch (error) {
-    debug.log("[VOT][tunnel] translation-ready callback error", {
-      kind: tunnelContext.kind,
-      error,
-    });
-    return false;
-  }
-}
-
-function getAutoplayRecoveryHintText(): string {
-  return localizationProvider.lang === "ru"
-    ? "Браузер заблокировал автозапуск перевода. Нажмите на страницу или на кнопку ещё раз."
-    : "Browser autoplay blocked translated audio. Click the page or the button again.";
 }
 
 function setPendingAutoplayDebugValue(
@@ -567,11 +420,6 @@ async function resumePendingAutoplayRecoveryInternal(
 
   clearPendingAutoplayRecoveryState(handler);
   handler.transformBtn("success", localizationProvider.get("disableTranslate"));
-  handler.syncPopupOverlayState({
-    hint: handler.downloadTranslationUrl
-      ? "Translated audio is ready for download."
-      : "Waiting for translated audio.",
-  });
   return true;
 }
 
@@ -1972,9 +1820,6 @@ export async function updateTranslation(
             void this.enableSubtitlesForCurrentLangPair();
           }, 5000);
         }
-        this.syncPopupOverlayState({
-          hint: getAutoplayRecoveryHintText(),
-        });
         return;
       }
 
