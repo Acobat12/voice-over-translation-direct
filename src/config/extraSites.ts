@@ -34,6 +34,15 @@ export const extraSites: ServiceConf[] = [
     needExtraData: true,
   },
   {
+    host: "douyin",
+    url: "https://www.douyin.com/",
+    match: /(^|\.)douyin\.com$/i,
+    selector: "video",
+    eventSelector: "video",
+    needExtraData: true,
+    needBypassCSP: true,
+  },
+  {
     host: VideoService.custom,
     url: "stub",
     match: (url: URL) => isTunnelPlayerUrl(url),

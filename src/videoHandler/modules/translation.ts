@@ -5,9 +5,11 @@ import { isTranslationDownloadHost } from "../../core/hostPolicies";
 import { isCustomPlaybackTarget } from "../../core/playbackPolicy";
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
+import type { CacheTranslationSuccess } from "../../types/core/cacheManager";
 import debug from "../../utils/debug";
 import { toErrorMessage } from "../../utils/errors";
 import { GM_fetch } from "../../utils/gm";
+import { votStorage } from "../../utils/storage";
 import { clamp } from "../../utils/utils";
 import VOTLocalizedError from "../../utils/VOTLocalizedError";
 import type { VideoData } from "../shared";
@@ -31,6 +33,55 @@ import {
   type TranslationAudioResult,
   updateTranslationAndSchedule,
 } from "./translationShared";
+
+const DOUYIN_TRANSLATION_CACHE_KEY = "VOTDouyinTranslationCache";
+
+type StoredDouyinTranslation = {
+  value: CacheTranslationSuccess;
+  expiresAt: number;
+};
+
+type StoredDouyinTranslations = Record<string, StoredDouyinTranslation>;
+
+async function getStoredDouyinTranslation(
+  cacheKey: string,
+): Promise<CacheTranslationSuccess | undefined> {
+  const cache = await votStorage.getRaw<StoredDouyinTranslations>(
+    DOUYIN_TRANSLATION_CACHE_KEY,
+    {},
+  );
+
+  const item = cache[cacheKey];
+
+  if (!item) {
+    return undefined;
+  }
+
+  if (item.expiresAt <= Date.now()) {
+    delete cache[cacheKey];
+    await votStorage.setRaw(DOUYIN_TRANSLATION_CACHE_KEY, cache);
+    return undefined;
+  }
+
+  return item.value;
+}
+
+async function setStoredDouyinTranslation(
+  cacheKey: string,
+  value: CacheTranslationSuccess,
+): Promise<void> {
+  const cache = await votStorage.getRaw<StoredDouyinTranslations>(
+    DOUYIN_TRANSLATION_CACHE_KEY,
+    {},
+  );
+
+  cache[cacheKey] = {
+    value,
+    expiresAt: Date.now() + YANDEX_TTL_MS,
+  };
+
+  await votStorage.setRaw(DOUYIN_TRANSLATION_CACHE_KEY, cache);
+}
 
 type StopSmartVolumeDuckingOptions = {
   /**
@@ -1256,6 +1307,19 @@ async function requestApplyAndCacheTranslation(
     usedLivelyVoice: translateRes.usedLivelyVoice,
   });
 
+  if (options.videoData.host === "douyin") {
+    const cachedValue = self.cacheManager.getTranslation(options.cacheKey);
+
+    if (cachedValue) {
+      await setStoredDouyinTranslation(options.cacheKey, cachedValue);
+
+      debug.log("[VOT][douyin] persistent translation cache saved", {
+        cacheKey: options.cacheKey,
+        videoId: options.cacheVideoId,
+      });
+    }
+  }
+
   return translateRes;
 }
 
@@ -2003,7 +2067,19 @@ export async function translateFunc(
           this.updateTranslation(nextUrl, ctx),
         scheduleTranslationRefresh: () => this.scheduleTranslationRefresh(),
       });
-    const cachedEntry = this.cacheManager.getTranslation(cacheKey);
+    let cachedEntry = this.cacheManager.getTranslation(cacheKey);
+
+    if (!cachedEntry && videoData.host === "douyin") {
+      cachedEntry = await getStoredDouyinTranslation(cacheKey);
+
+      if (cachedEntry) {
+        this.cacheManager.setTranslation(cacheKey, cachedEntry);
+        debug.log("[VOT][douyin] persistent cached translation was found", {
+          cacheKey,
+          videoId: VIDEO_ID,
+        });
+      }
+    }
     if (cachedEntry?.url) {
       try {
         const updated = await applyTranslationUrl(cachedEntry.url);

@@ -877,6 +877,9 @@ export class VOTVideoManager {
       const shouldPreserveBilibiliSiteRoute =
         this.videoHandler.site.host === "bilibili" &&
         isBilibiliSupportedPageHost(hostname);
+      const shouldPreserveDouyinSiteRoute =
+        this.videoHandler.site.host === "douyin" &&
+        /(^|\.)douyin\.com$/i.test(hostname);
       const fallbackUrl = pickPreferredVideoUrl(
         resolvedFallback?.url,
         sniffedManifestUrl,
@@ -965,6 +968,9 @@ export class VOTVideoManager {
         url = pageUrl;
         host = "bilibili";
         videoId = !isBadGenericVideoId(videoId) ? videoId : pageUrl;
+      } else if (shouldPreserveDouyinSiteRoute) {
+        host = "douyin";
+        videoId = videoId || pageUrl;
       } else {
         host =
           this.videoHandler.site.host === "youtube" && youtubeFallbackVideoId
