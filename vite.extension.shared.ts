@@ -239,6 +239,11 @@ async function buildEntry({
     resolve: {
       alias: getBrowserSafeAliases(rootDir),
     },
+    esbuild: diagnostic
+      ? {}
+      : {
+          drop: ["console", "debugger"],
+        },
     build: {
       target: "es2020",
       outDir: outTmp,
