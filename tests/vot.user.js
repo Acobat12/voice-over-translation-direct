@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.5.92
+// @version         1.11.5.93
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -4805,20 +4805,297 @@ string() {
     }
   }
   class BilibiliHelper extends BaseHelper {
-    async getVideoId(url) {
+    sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    getCurrentVideo() {
+      return document.querySelector("video");
+    }
+    getPlayer() {
+      return window.player;
+    }
+    isValidBilibiliMp4Url(url) {
+      if (typeof url !== "string") return false;
+      if (url.startsWith("blob:")) return false;
+      if (url.includes(".m3u8")) return false;
+      try {
+        const parsed = new URL(url);
+        return /\.mp4$/i.test(parsed.pathname) && (parsed.hostname.includes("bilivideo.com") || parsed.hostname.includes("akamaized.net") || parsed.hostname.includes("hdslb.com"));
+      } catch {
+        return false;
+      }
+    }
+    getCheesePlayurlApiFromPerformance() {
+      try {
+        return performance.getEntriesByType("resource").map((entry) => entry.name).reverse().find((url) => url.includes("/pugv/player/web/playurl"));
+      } catch {
+        return void 0;
+      }
+    }
+    async getCheeseVideoUrlFromApi() {
+      const apiUrl = this.getCheesePlayurlApiFromPerformance();
+      if (!apiUrl) return void 0;
+      try {
+        const url = new URL(apiUrl);
+        url.searchParams.set("qn", "16");
+        url.searchParams.set("type", "mp4");
+        url.searchParams.set("platform", "html5");
+        url.searchParams.set("high_quality", "0");
+        url.searchParams.set("fnver", "0");
+        url.searchParams.delete("fnval");
+        url.searchParams.delete("fourk");
+        url.searchParams.delete("drm_tech_type");
+        const response = await fetch(url.href, {
+          credentials: "include",
+          redirect: "follow"
+        });
+        const data = await response.json();
+        const urls = [];
+        for (const item of data?.result?.durl || data?.data?.durl || []) {
+          urls.push(item?.url, ...item?.backup_url || []);
+        }
+        const mp4 = urls.find((url2) => this.isValidBilibiliMp4Url(url2));
+        if (mp4) {
+          console.log("[VOT][bilibili] selected cheese api mp4 url", mp4);
+        } else {
+          console.warn("[VOT][bilibili] cheese api has no mp4", {
+            apiUrl: url.href,
+            data
+          });
+        }
+        return mp4;
+      } catch (error2) {
+        console.warn("[VOT][bilibili] cheese api failed", {
+          apiUrl,
+          error: error2
+        });
+        return void 0;
+      }
+    }
+    async fetchText(url, timeout2 = 1e4) {
+      if (typeof this.fetchFn === "function") {
+        const response = await this.fetchFn(url, {
+          method: "GET",
+          redirect: "follow",
+          timeout: timeout2,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/12.0 Mobile/15E148 Safari/604.1",
+            Referer: "https://m.bilibili.com/"
+          }
+        });
+        return await response.text();
+      }
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout2);
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          credentials: "omit",
+          signal: controller.signal
+        });
+        return await response.text();
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    }
+    getBilibiliVideoId(url) {
       const bangumiId = /bangumi\/play\/([^/]+)/.exec(url.pathname)?.[0];
-      if (bangumiId) {
-        return bangumiId;
-      }
+      if (bangumiId) return bangumiId;
+      const cheeseId = /\/cheese\/play\/([^/?#]+)/.exec(url.pathname)?.[1];
+      if (cheeseId) return `cheese/play/${cheeseId}`;
       const bvid = url.searchParams.get("bvid");
-      if (bvid) {
-        return `video/${bvid}`;
-      }
-      let vid = /video\/([^/]+)/.exec(url.pathname)?.[0];
-      if (vid && url.searchParams.get("p") !== null) {
-        vid += `/?p=${url.searchParams.get("p")}`;
+      if (bvid) return `video/${bvid}`;
+      let vid = /\/video\/([^/?#]+)/.exec(url.pathname)?.[1];
+      if (vid) {
+        vid = `video/${vid}`;
+        if (url.searchParams.get("p") !== null) {
+          vid += `/?p=${url.searchParams.get("p")}`;
+        }
       }
       return vid;
+    }
+    getBvidAndCid(currentUrl) {
+      const bvid = window.__INITIAL_STATE__?.bvid || window.__INITIAL_STATE__?.videoData?.bvid || /\/video\/(BV[^/?#]+)/.exec(currentUrl.pathname)?.[1];
+      const cid = window.__INITIAL_STATE__?.cid || window.__INITIAL_STATE__?.videoData?.cid || window.__INITIAL_STATE__?.videoData?.pages?.[0]?.cid;
+      return { bvid, cid };
+    }
+    async getCidByBvid(bvid) {
+      if (!bvid) return void 0;
+      try {
+        const response = await fetch(
+          `https://api.bilibili.com/x/web-interface/view?bvid=${encodeURIComponent(bvid)}`,
+          {
+            credentials: "include",
+            redirect: "follow"
+          }
+        );
+        const data = await response.json();
+        return data?.data?.pages?.[0]?.cid;
+      } catch (error2) {
+        console.warn("[VOT][bilibili] failed to get cid by bvid", {
+          bvid,
+          error: error2
+        });
+        return void 0;
+      }
+    }
+    async getVideoUrlFromApi(bvid, cid) {
+      if (!bvid || !cid) return void 0;
+      try {
+        const response = await fetch(
+          `https://api.bilibili.com/x/player/playurl?bvid=${encodeURIComponent(bvid)}&cid=${encodeURIComponent(cid)}&qn=16&type=mp4&platform=html5&high_quality=0`,
+          {
+            credentials: "include",
+            redirect: "follow"
+          }
+        );
+        const data = await response.json();
+        const urls = [];
+        for (const item of data?.data?.durl || []) {
+          urls.push(item?.url, ...item?.backup_url || []);
+        }
+        const mp4 = urls.find((url) => this.isValidBilibiliMp4Url(url));
+        if (mp4) {
+          console.log("[VOT][bilibili] selected api mp4 url", mp4);
+        } else {
+          console.warn("[VOT][bilibili] playurl api has no mp4", {
+            bvid,
+            cid,
+            data
+          });
+        }
+        return mp4;
+      } catch (error2) {
+        console.warn("[VOT][bilibili] playurl api failed", {
+          bvid,
+          cid,
+          error: error2
+        });
+        return void 0;
+      }
+    }
+    getMobileUrl(url) {
+      const id = this.getBilibiliVideoId(url);
+      return id ? `https://m.bilibili.com/${id}` : void 0;
+    }
+    extractMp4FromText(text) {
+      if (typeof text !== "string") return void 0;
+      const decoded = text.replace(/\\u002F/g, "/").replace(/\\\//g, "/").replace(/&amp;/g, "&").replace(/%2F/gi, "/").replace(/%3A/gi, ":").replace(/%3F/gi, "?").replace(/%26/gi, "&").replace(/%3D/gi, "=");
+      const matches = decoded.match(/https?:\/\/[^"'<>\\\s|{}]+\.mp4[^"'<>\\\s|{}]*/gi) || [];
+      return matches.find((url) => this.isValidBilibiliMp4Url(url));
+    }
+    async getVideoUrlFromMobilePage(pageUrl) {
+      if (!pageUrl) return void 0;
+      try {
+        console.log("[VOT][bilibili] fetching mobile page", pageUrl);
+        const html = await this.fetchText(pageUrl, 1e4);
+        const mp4 = this.extractMp4FromText(html);
+        if (this.isValidBilibiliMp4Url(mp4)) {
+          console.log("[VOT][bilibili] selected mobile mp4 url", mp4);
+          return mp4;
+        }
+        console.warn("[VOT][bilibili] mobile page has no mp4", pageUrl);
+      } catch (error2) {
+        console.warn("[VOT][bilibili] failed to fetch mobile page", {
+          pageUrl,
+          error: error2
+        });
+      }
+      return void 0;
+    }
+    findMp4Deep(value, seen = new WeakSet()) {
+      if (!value) return void 0;
+      if (typeof value === "string") {
+        const found = this.extractMp4FromText(value);
+        return found ?? (this.isValidBilibiliMp4Url(value) ? value : void 0);
+      }
+      if (typeof value !== "object") return void 0;
+      if (seen.has(value)) return void 0;
+      seen.add(value);
+      for (const item of Array.isArray(value) ? value : Object.values(value)) {
+        const found = this.findMp4Deep(item, seen);
+        if (found) return found;
+      }
+      return void 0;
+    }
+    getVideoUrlFromPlayerConfig() {
+      return this.findMp4Deep(this.getPlayer()?.config);
+    }
+    getVideoUrlFromPerformance() {
+      try {
+        const entries = performance.getEntriesByType("resource").map((entry) => entry.name).reverse();
+        for (const url of entries) {
+          if (this.isValidBilibiliMp4Url(url)) {
+            return url;
+          }
+          const extracted = this.extractMp4FromText(url);
+          if (this.isValidBilibiliMp4Url(extracted)) {
+            return extracted;
+          }
+        }
+        return void 0;
+      } catch {
+        return void 0;
+      }
+    }
+    async waitForVideoUrl(timeout2 = 5e3) {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeout2) {
+        const video = this.getCurrentVideo();
+        const candidates = [
+          this.getVideoUrlFromPlayerConfig(),
+          this.getVideoUrlFromPerformance(),
+          video?.src,
+          video?.currentSrc,
+          video?.querySelector("source")?.src
+        ];
+        for (const src of candidates) {
+          if (this.isValidBilibiliMp4Url(src)) {
+            console.log("[VOT][bilibili] selected current page mp4 url", src);
+            return src;
+          }
+        }
+        await this.sleep(300);
+      }
+      return void 0;
+    }
+    async getVideoData(_videoId) {
+      console.log("[VOT][bilibili] getVideoData called", _videoId);
+      const currentUrl = new URL(window.location.href);
+      const video = this.getCurrentVideo();
+      const bilibiliId = this.getBilibiliVideoId(currentUrl) ?? currentUrl.pathname.replace(/^\/+/, "");
+      const { bvid, cid: initialCid } = this.getBvidAndCid(currentUrl);
+      const cid = initialCid ?? await this.getCidByBvid(bvid);
+      const mobileUrl = this.getMobileUrl(currentUrl);
+      const isCheese = /\/cheese\/play\//.test(currentUrl.pathname);
+      const videoUrl = isCheese ? await this.getCheeseVideoUrlFromApi() ?? await this.getVideoUrlFromMobilePage(mobileUrl) ?? this.getVideoUrlFromPerformance() ?? await this.waitForVideoUrl(5e3) : await this.getVideoUrlFromApi(bvid, cid) ?? await this.getVideoUrlFromMobilePage(mobileUrl) ?? this.getVideoUrlFromPerformance() ?? await this.waitForVideoUrl(5e3);
+      if (!videoUrl) {
+        console.warn("[VOT][bilibili] no mp4 url found", {
+          pageUrl: window.location.href,
+          mobileUrl,
+          bvid,
+          cid,
+          videoSrc: video?.src,
+          videoCurrentSrc: video?.currentSrc,
+          playerConfig: this.getPlayer()?.config
+        });
+        return void 0;
+      }
+      return {
+        url: videoUrl,
+        videoId: `bilibili:${bvid ?? bilibiliId}`,
+        host: "bilibili",
+        duration: video?.duration,
+        isStream: false
+      };
+    }
+    async getVideoId(url) {
+      console.log("[VOT][bilibili] getVideoId called", url.href);
+      const { bvid } = this.getBvidAndCid(url);
+      if (bvid) return `bilibili:${bvid}`;
+      const id = this.getBilibiliVideoId(url);
+      return id ? `bilibili:${id}` : void 0;
     }
   }
   class BitchuteHelper extends BaseHelper {
@@ -24032,7 +24309,7 @@ get isSupportOnlyLS() {
     return buildVersion || scriptVersion || "unknown";
   }
   function getRuntimeLocaleVersion() {
-    const buildVersion = String("1.11.5.92");
+    const buildVersion = String("1.11.5.93");
     const scriptVersion = typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "";
     return resolveRuntimeLocaleVersion(buildVersion, scriptVersion);
   }
@@ -33121,6 +33398,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
       needBypassCSP: true
     },
     {
+      host: "bilibili",
+      url: "https://www.bilibili.com/video/",
+      match: /(^|\.)bilibili\.com$/i,
+      selector: "video",
+      eventSelector: "video",
+      needExtraData: true
+    },
+    {
       host: VideoService.custom,
       url: "stub",
       match: (url) => isTunnelPlayerUrl(url),
@@ -39212,7 +39497,7 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
         const shouldPreserveVkSiteRoute = this.videoHandler.site.host === "vk" && isVkSupportedPageHost(hostname);
         const shouldPreserveRutubeSiteRoute = this.videoHandler.site.host === "rutube" && isRutubeSupportedPageHost(hostname);
         const shouldPreserveBilibiliSiteRoute = this.videoHandler.site.host === "bilibili" && isBilibiliSupportedPageHost(hostname);
-        const shouldPreserveDouyinSiteRoute = this.videoHandler.site.host === "douyin" && /(^|\.)douyin\.com$/i.test(hostname);
+        this.videoHandler.site.host === "douyin" && /(^|\.)douyin\.com$/i.test(hostname);
         const fallbackUrl = pickPreferredVideoUrl(
           resolvedFallback?.url,
           sniffedManifestUrl,
@@ -39259,12 +39544,8 @@ String.raw`\b(?:-1|0):[a-f0-9]{64}\b`
           host = "rutube";
           videoId = fallbackCanonicalRutubeTarget.videoId;
         } else if (shouldPreserveBilibiliSiteRoute) {
-          url = pageUrl;
           host = "bilibili";
           videoId = !isBadGenericVideoId(videoId) ? videoId : pageUrl;
-        } else if (shouldPreserveDouyinSiteRoute) {
-          host = "douyin";
-          videoId = videoId || pageUrl;
         } else {
           host = this.videoHandler.site.host === "youtube" && youtubeFallbackVideoId ? "youtube" : "custom";
         }

@@ -962,15 +962,8 @@ export class VOTVideoManager {
         host = "rutube";
         videoId = fallbackCanonicalRutubeTarget.videoId;
       } else if (shouldPreserveBilibiliSiteRoute) {
-        // Bilibili is a first-class supported site. When helper extraction
-        // falls back to DOM/media state, keep the request on the stable page
-        // URL instead of switching to the generic custom/upload workflow.
-        url = pageUrl;
         host = "bilibili";
         videoId = !isBadGenericVideoId(videoId) ? videoId : pageUrl;
-      } else if (shouldPreserveDouyinSiteRoute) {
-        host = "douyin";
-        videoId = videoId || pageUrl;
       } else {
         host =
           this.videoHandler.site.host === "youtube" && youtubeFallbackVideoId

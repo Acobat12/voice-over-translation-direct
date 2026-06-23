@@ -43,6 +43,14 @@ export const extraSites: ServiceConf[] = [
     needBypassCSP: true,
   },
   {
+    host: "bilibili",
+    url: "https://www.bilibili.com/video/",
+    match: /(^|\.)bilibili\.com$/i,
+    selector: "video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+  {
     host: VideoService.custom,
     url: "stub",
     match: (url: URL) => isTunnelPlayerUrl(url),
