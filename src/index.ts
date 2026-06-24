@@ -1938,6 +1938,7 @@ export class VideoHandler {
       host === "invidious" ||
       host === "piped" ||
       host === "yandexdisk" ||
+      host === "douyin" ||
       host === "custom" ||
       host === "vk"
     );

@@ -5353,18 +5353,18 @@ string() {
       return /courses\/(([^/]+)\/lesson\/([^/]+)\/([^/]+))/.exec(url.pathname)?.[1];
     }
   }
+  const DOUYIN_HOST = "douyin";
+  const PLAYWM_TIMEOUT = 3500;
+  const TEST_SPEED_TIMEOUT = 2500;
   class DouyinHelper extends BaseHelper {
     static getPlayer() {
-      if (typeof player === "undefined") {
-        return void 0;
-      }
-      return player;
+      return typeof player === "undefined" ? void 0 : player;
     }
     sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
     isValidDouyinMp4Url(url) {
-      return typeof url === "string" && !url.startsWith("blob:") && !url.includes(".m3u8") && !url.includes("/third/stream-") && url.includes("zjcdn.com") && url.includes("/video/tos/") && url.includes("mime_type=video_mp4");
+      return typeof url === "string" && !url.startsWith("blob:") && !url.includes(".m3u8") && !url.includes("/third/stream-") && url.includes("/video/tos/") && url.includes("mime_type=video_mp4");
     }
     cleanDouyinUrl(url) {
       return url.split("?")[0];
@@ -5386,6 +5386,19 @@ string() {
       const video = this.getCurrentVideo();
       return video?.currentSrc || video?.src || void 0;
     }
+    getPlayerConfig() {
+      return DouyinHelper.getPlayer()?.config;
+    }
+    getVidFromPlayer() {
+      return this.getPlayerConfig()?.vid ?? void 0;
+    }
+    getDouyinIdFromPage() {
+      const currentUrl = new URL(window.location.href);
+      return this.getAwemeIdFromUrl(currentUrl) ?? this.getVidFromPlayer() ?? this.getMediaVideoIdFromUrl(this.getCurrentVideoSrc());
+    }
+    buildPlaywmUrl(videoId) {
+      return `https://m.douyin.com/aweme/v1/playwm/?video_id=${videoId}&ratio=720p&line=0`;
+    }
     async fetchWithTimeout(url, timeout2 = 3e3) {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout2);
@@ -5400,7 +5413,7 @@ string() {
         clearTimeout(timeoutId);
       }
     }
-    async resolvePlaywmUrl(playwmUrl, timeout2 = 3e3) {
+    async resolvePlaywmUrl(playwmUrl, timeout2 = PLAYWM_TIMEOUT) {
       if (!playwmUrl?.includes("/aweme/v1/playwm/")) {
         return void 0;
       }
@@ -5422,84 +5435,76 @@ string() {
       }
       return void 0;
     }
-    async getMobileVideoUrl(timeout2 = 5e3) {
+    async getVideoUrlByVid(vid) {
+      if (!vid) {
+        return void 0;
+      }
+      return this.resolvePlaywmUrl(this.buildPlaywmUrl(vid));
+    }
+    async waitForTestSpeedUrl(timeout2 = TEST_SPEED_TIMEOUT) {
       const startedAt = Date.now();
-      let lastSrc;
       while (Date.now() - startedAt < timeout2) {
-        const src = this.getCurrentVideoSrc();
-        if (src && src !== lastSrc) {
-          lastSrc = src;
-          if (this.isValidDouyinMp4Url(src)) {
-            return src;
-          }
-          const resolvedUrl = await this.resolvePlaywmUrl(src, 2500);
-          if (resolvedUrl) {
-            return resolvedUrl;
-          }
+        const testSpeedUrl = this.getPlayerConfig()?.TestSpeed?.url;
+        if (this.isValidDouyinMp4Url(testSpeedUrl)) {
+          return testSpeedUrl;
         }
         await this.sleep(200);
       }
       return void 0;
     }
-    async getVideoUrlByMediaVideoId(mediaVideoId) {
-      if (!mediaVideoId) {
-        return void 0;
+    async getVideoUrlFromCurrentSrc() {
+      const src = this.getCurrentVideoSrc();
+      if (this.isValidDouyinMp4Url(src)) {
+        return src;
       }
-      const playwmUrl = `https://m.douyin.com/aweme/v1/playwm/?video_id=${mediaVideoId}&ratio=720p&line=0`;
-      return this.resolvePlaywmUrl(playwmUrl, 3e3);
-    }
-    async waitForTestSpeedUrl(timeout2 = 5e3) {
-      const startedAt = Date.now();
-      while (Date.now() - startedAt < timeout2) {
-        const testSpeedUrl = DouyinHelper.getPlayer()?.config?.TestSpeed?.url;
-        if (this.isValidDouyinMp4Url(testSpeedUrl)) {
-          return testSpeedUrl;
-        }
-        await this.sleep(300);
+      if (src?.includes("/aweme/v1/playwm/")) {
+        return this.resolvePlaywmUrl(src);
+      }
+      const mediaVideoId = this.getMediaVideoIdFromUrl(src);
+      if (mediaVideoId) {
+        return this.getVideoUrlByVid(mediaVideoId);
       }
       return void 0;
     }
-    async getVideoData(_videoId) {
-      const xgPlayer = DouyinHelper.getPlayer();
-      const currentUrl = new URL(window.location.href);
-      const video = this.getCurrentVideo();
-      const awemeId = this.getAwemeIdFromUrl(currentUrl);
-      const currentVideoSrc = this.getCurrentVideoSrc();
-      const mediaVideoId = this.getMediaVideoIdFromUrl(currentVideoSrc) ?? xgPlayer?.config?.vid;
-      let videoUrl;
-      if (currentVideoSrc?.includes("/aweme/v1/playwm/")) {
-        videoUrl = await this.getMobileVideoUrl();
+    async getBestVideoUrl() {
+      const vid = this.getVidFromPlayer();
+      let videoUrl = await this.getVideoUrlByVid(vid);
+      if (!videoUrl) {
+        videoUrl = await this.getVideoUrlFromCurrentSrc();
       }
       if (!videoUrl) {
         videoUrl = await this.waitForTestSpeedUrl();
       }
-      if (!videoUrl && mediaVideoId) {
-        videoUrl = await this.getVideoUrlByMediaVideoId(mediaVideoId);
-      }
+      return videoUrl;
+    }
+    async getVideoData(_videoId) {
+      const config2 = this.getPlayerConfig();
+      const video = this.getCurrentVideo();
+      const douyinId = this.getDouyinIdFromPage();
+      const videoUrl = await this.getBestVideoUrl();
       if (!videoUrl) {
         console.warn("[VOT][douyin] no valid video url found", {
-          awemeId,
-          mediaVideoId,
-          testSpeed: xgPlayer?.config?.TestSpeed,
-          currentVideoSrc
+          pageUrl: window.location.href,
+          douyinId,
+          vid: config2?.vid,
+          testSpeed: config2?.TestSpeed,
+          currentVideoSrc: this.getCurrentVideoSrc()
         });
         return void 0;
       }
       const cleanVideoUrl = this.cleanDouyinUrl(videoUrl);
-      const douyinId = awemeId ?? mediaVideoId ?? xgPlayer?.config?.vid ?? cleanVideoUrl;
-      const duration = xgPlayer?.config?.duration ?? video?.duration;
-      const lang2 = xgPlayer?.config?.lang;
-      const isStream = xgPlayer?.config?.isLive ?? false;
+      const duration = config2?.duration ?? video?.duration;
+      const lang2 = config2?.lang;
+      const isStream = config2?.isLive ?? false;
       console.log("[VOT][douyin] selected video url", {
         douyinId,
         videoUrl,
-        cleanVideoUrl,
-        currentVideoSrc
+        cleanVideoUrl
       });
       return {
         url: cleanVideoUrl,
         videoId: `douyin:${douyinId}`,
-        host: "douyin",
+        host: DOUYIN_HOST,
         duration,
         isStream,
         ...availableLangs.includes(lang2) ? { detectedLanguage: lang2 } : {}
@@ -5507,12 +5512,10 @@ string() {
     }
     async getVideoId(url) {
       const awemeId = this.getAwemeIdFromUrl(url);
-      if (awemeId) {
-        return `douyin:${awemeId}`;
-      }
-      const currentVideoSrc = this.getCurrentVideoSrc();
-      const mediaVideoId = this.getMediaVideoIdFromUrl(currentVideoSrc) ?? DouyinHelper.getPlayer()?.config?.vid;
-      return mediaVideoId ? `douyin:${mediaVideoId}` : void 0;
+      const vid = this.getVidFromPlayer();
+      const currentSrcVid = this.getMediaVideoIdFromUrl(this.getCurrentVideoSrc());
+      const id = awemeId ?? vid ?? currentSrcVid;
+      return id ? `douyin:${id}` : void 0;
     }
   }
   class DzenHelper extends BaseHelper {
@@ -35466,11 +35469,66 @@ ${VK_OVERLAY_PATCH_TEXT}`;
       }
     };
   }
+  function makeDouyinFileId(videoId, size, chunkSize) {
+    return `douyin_${videoId}_${size}_${chunkSize}`;
+  }
+  async function fetchDouyinMedia(src, signal) {
+    try {
+      const res = await fetch(src, { signal });
+      if (res.ok) return res;
+    } catch {
+    }
+    const gmRes = await GM_fetch(src, {
+      signal,
+      timeout: 0,
+      forceGmXhr: true
+    });
+    if (!gmRes.ok) {
+      throw new Error(`[VOT] Douyin: failed to fetch media: ${gmRes.status}`);
+    }
+    return gmRes;
+  }
+  async function getAudioFromDouyin({
+    videoId,
+    signal,
+    preferredVideo
+  }) {
+    const video = preferredVideo instanceof HTMLVideoElement ? preferredVideo : document.querySelector("video");
+    if (!(video instanceof HTMLVideoElement)) {
+      throw new Error("[VOT] Douyin: video element not found");
+    }
+    const src = video.currentSrc || video.src;
+    debug.log("[VOT] Douyin strategy src:", src);
+    debug.log("[VOT] Douyin strategy videoId:", videoId);
+    if (!src) {
+      throw new Error("[VOT] Douyin: empty video src");
+    }
+    const response = await fetchDouyinMedia(src, signal);
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (!bytes.byteLength) {
+      throw new Error("[VOT] Douyin: empty media bytes");
+    }
+    const chunkSize = 256 * 1024;
+    const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+    const fileId = makeDouyinFileId(videoId, bytes.byteLength, chunkSize);
+    return {
+      fileId,
+      mediaPartsLength,
+      async *getMediaBuffers() {
+        for (let start = 0; start < bytes.byteLength; start += chunkSize) {
+          yield bytes.subarray(start, Math.min(start + chunkSize, bytes.byteLength));
+        }
+      }
+    };
+  }
   const YT_AUDIO_STRATEGY = "ytAudio";
   const VK_AUDIO_STRATEGY = "vkAudio";
+  const DOUYIN_AUDIO_STRATEGY = "douyin";
   const strategies = {
     [YT_AUDIO_STRATEGY]: getAudioFromYtAudio,
     [VK_AUDIO_STRATEGY]: getAudioFromVkVideo,
+    [DOUYIN_AUDIO_STRATEGY]: getAudioFromDouyin,
     yandexDisk: getAudioFromYandexDisk,
     localFile: getAudioFromLocalFile
   };
@@ -35800,7 +35858,7 @@ localizedMessage;
     activeYandexDiskResolvedVideoData;
     constructor(videoHandler) {
       this.videoHandler = videoHandler;
-      const strategy = this.videoHandler.site.host === "vk" ? VK_AUDIO_STRATEGY : this.videoHandler.site.host === "youtube" ? YT_AUDIO_STRATEGY : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : this.videoHandler.site.host === "custom" ? "localFile" : YT_AUDIO_STRATEGY;
+      const strategy = this.videoHandler.site.host === "vk" ? VK_AUDIO_STRATEGY : this.videoHandler.site.host === "youtube" ? YT_AUDIO_STRATEGY : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : this.videoHandler.site.host === "douyin" ? DOUYIN_AUDIO_STRATEGY : this.videoHandler.site.host === "custom" ? "localFile" : YT_AUDIO_STRATEGY;
       this.audioDownloader = new AudioDownloader2(strategy);
       this.downloading = false;
       this.audioDownloader.addEventListener("downloadedAudio", this.onDownloadedAudio).addEventListener("downloadedPartialAudio", this.onDownloadedPartialAudio).addEventListener("downloadAudioError", this.onDownloadAudioError);
@@ -35972,7 +36030,7 @@ localizedMessage;
       const isLocalFileCompatibleCustom = (this.videoHandler.site.host === "custom" || videoData2?.host === "custom") && !this.isHlsManifestUrl(url) && this.isDirectMediaUrlCandidate(url);
       const useLocalFileWorkflow = isLocalFileCompatibleCustom || this.shouldUseLocalFileWorkflow(videoData2);
       const isVkCdnContext = this.videoHandler.site.host === "vk" || this.videoHandler.site.host === "okru" || /^player\.cdnvideohub\.com$/i.test(globalThis.location.hostname) || /(?:^|\.)okcdn\.ru$/i.test(globalThis.location.hostname) || /(?:^|\.)okcdn\.ru/i.test(url);
-      const nextStrategy = useLocalFileWorkflow ? "localFile" : isVkCdnContext ? VK_AUDIO_STRATEGY : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : YT_AUDIO_STRATEGY;
+      const nextStrategy = useLocalFileWorkflow ? "localFile" : isVkCdnContext ? VK_AUDIO_STRATEGY : this.videoHandler.site.host === "yandexdisk" ? "yandexDisk" : this.videoHandler.site.host === "douyin" ? DOUYIN_AUDIO_STRATEGY : YT_AUDIO_STRATEGY;
       if (this.audioDownloader.strategy === nextStrategy) {
         return;
       }
@@ -36048,6 +36106,30 @@ localizedMessage;
           pathname: fallback.split("?")[0].split("#")[0]
         };
       }
+    }
+    normalizeDouyinPublicUrl(rawUrl, videoId) {
+      const id = String(videoId || "").replace(/^douyin:/, "");
+      if (id) {
+        return `douyin:${id}`;
+      }
+      const fallback = String(rawUrl || globalThis.location.href || "");
+      try {
+        const parsed = new URL(fallback, globalThis.location.href);
+        const modalId = parsed.searchParams.get("modal_id");
+        if (modalId) {
+          return `douyin:${modalId}`;
+        }
+        const mediaVideoId = parsed.searchParams.get("video_id");
+        if (mediaVideoId) {
+          return `douyin:${mediaVideoId}`;
+        }
+        const pathId = /\/share\/video\/(\d+)/.exec(parsed.pathname)?.[1] || /\/video\/(\d+)/.exec(parsed.pathname)?.[1];
+        if (pathId) {
+          return `douyin:${pathId}`;
+        }
+      } catch {
+      }
+      return fallback.split("?")[0].split("#")[0];
     }
     normalizeYandexDiskPublicUrl(rawUrl) {
       const parsed = this.parseYandexDiskUrl(rawUrl);
@@ -36729,6 +36811,12 @@ localizedMessage;
       if (this.videoHandler.site.host === "yandexdisk") {
         return this.activeTranslationUrl || this.normalizeYandexDiskPublicUrl(
           this.videoHandler.videoData?.url || globalThis.location.href
+        );
+      }
+      if (this.videoHandler.site.host === "douyin") {
+        return this.normalizeDouyinPublicUrl(
+          this.videoHandler.videoData?.url || globalThis.location.href,
+          videoId
         );
       }
       if (this.videoHandler.site.host === "custom") {
@@ -51848,7 +51936,7 @@ isYouTubeHosts() {
       if (!this.data?.useAudioDownload) {
         return false;
       }
-      return host === "youtube" || host === "invidious" || host === "piped" || host === "yandexdisk" || host === "custom" || host === "vk";
+      return host === "youtube" || host === "invidious" || host === "piped" || host === "yandexdisk" || host === "douyin" || host === "custom" || host === "vk";
     }
 setupAudioSettings() {
       return this.callModule(setupAudioSettings);

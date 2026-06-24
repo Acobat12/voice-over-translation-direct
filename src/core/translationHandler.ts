@@ -9,6 +9,7 @@ import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { VideoData, VideoHandler } from "..";
 import { AudioDownloader } from "../audioDownloader";
 import {
+  DOUYIN_AUDIO_STRATEGY,
   VK_AUDIO_STRATEGY,
   YT_AUDIO_STRATEGY,
 } from "../audioDownloader/strategies";
@@ -164,9 +165,11 @@ export class VOTTranslationHandler {
           ? YT_AUDIO_STRATEGY
           : this.videoHandler.site.host === "yandexdisk"
             ? "yandexDisk"
-            : this.videoHandler.site.host === "custom"
-              ? "localFile"
-              : YT_AUDIO_STRATEGY;
+            : this.videoHandler.site.host === "douyin"
+              ? DOUYIN_AUDIO_STRATEGY
+              : this.videoHandler.site.host === "custom"
+                ? "localFile"
+                : YT_AUDIO_STRATEGY;
 
     this.audioDownloader = new AudioDownloader(strategy as any);
     this.downloading = false;
@@ -433,7 +436,9 @@ export class VOTTranslationHandler {
         ? VK_AUDIO_STRATEGY
         : this.videoHandler.site.host === "yandexdisk"
           ? "yandexDisk"
-          : YT_AUDIO_STRATEGY;
+          : this.videoHandler.site.host === "douyin"
+            ? DOUYIN_AUDIO_STRATEGY
+            : YT_AUDIO_STRATEGY;
 
     if (this.audioDownloader.strategy === nextStrategy) {
       return;
@@ -531,7 +536,41 @@ export class VOTTranslationHandler {
       };
     }
   }
+  private normalizeDouyinPublicUrl(rawUrl: string, videoId?: string): string {
+    const id = String(videoId || "").replace(/^douyin:/, "");
 
+    if (id) {
+      return `douyin:${id}`;
+    }
+
+    const fallback = String(rawUrl || globalThis.location.href || "");
+
+    try {
+      const parsed = new URL(fallback, globalThis.location.href);
+
+      const modalId = parsed.searchParams.get("modal_id");
+      if (modalId) {
+        return `douyin:${modalId}`;
+      }
+
+      const mediaVideoId = parsed.searchParams.get("video_id");
+      if (mediaVideoId) {
+        return `douyin:${mediaVideoId}`;
+      }
+
+      const pathId =
+        /\/share\/video\/(\d+)/.exec(parsed.pathname)?.[1] ||
+        /\/video\/(\d+)/.exec(parsed.pathname)?.[1];
+
+      if (pathId) {
+        return `douyin:${pathId}`;
+      }
+    } catch {
+      // ignore
+    }
+
+    return fallback.split("?")[0].split("#")[0];
+  }
   private normalizeYandexDiskPublicUrl(rawUrl: string): string {
     const parsed = this.parseYandexDiskUrl(rawUrl);
 
@@ -1404,7 +1443,12 @@ export class VOTTranslationHandler {
         )
       );
     }
-
+    if (this.videoHandler.site.host === "douyin") {
+      return this.normalizeDouyinPublicUrl(
+        this.videoHandler.videoData?.url || globalThis.location.href,
+        videoId,
+      );
+    }
     if (this.videoHandler.site.host === "custom") {
       return (
         this.activeTranslationUrl ||
