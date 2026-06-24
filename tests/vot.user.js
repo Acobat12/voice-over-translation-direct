@@ -33839,9 +33839,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
     }
     return null;
   }
-  const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive"]);
+  const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive", "vkvideo", "yandexdisk", "bilibili", "douyin"]);
   const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
-  const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok"]);
+  const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok", "bilibili", "douyin"]);
   const TRANSLATION_DOWNLOAD_HOSTS = new Set([
     "youtube",
     "invidious",
@@ -34931,6 +34931,62 @@ ${VK_OVERLAY_PATCH_TEXT}`;
       }
     };
   }
+  function makeDouyinFileId(videoId, size, chunkSize) {
+    return `douyin_${videoId}_${size}_${chunkSize}`;
+  }
+  async function fetchDouyinMedia(src, signal) {
+    try {
+      const res = await fetch(src, { signal });
+      if (res.ok) return res;
+    } catch {
+    }
+    const gmRes = await GM_fetch(src, {
+      signal,
+      timeout: 0,
+      forceGmXhr: true
+    });
+    if (!gmRes.ok) {
+      throw new Error(`[VOT] Douyin: failed to fetch media: ${gmRes.status}`);
+    }
+    return gmRes;
+  }
+  async function getAudioFromDouyin({
+    videoId,
+    signal,
+    preferredVideo
+  }) {
+    const video = preferredVideo instanceof HTMLVideoElement ? preferredVideo : document.querySelector("video");
+    if (!(video instanceof HTMLVideoElement)) {
+      throw new Error("[VOT] Douyin: video element not found");
+    }
+    const src = video.currentSrc || video.src;
+    debug.log("[VOT] Douyin strategy src:", src);
+    debug.log("[VOT] Douyin strategy videoId:", videoId);
+    if (!src) {
+      throw new Error("[VOT] Douyin: empty video src");
+    }
+    const response = await fetchDouyinMedia(src, signal);
+    const buffer = await response.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (!bytes.byteLength) {
+      throw new Error("[VOT] Douyin: empty media bytes");
+    }
+    const chunkSize = 256 * 1024;
+    const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+    const fileId = makeDouyinFileId(videoId, bytes.byteLength, chunkSize);
+    return {
+      fileId,
+      mediaPartsLength,
+      async *getMediaBuffers() {
+        for (let start = 0; start < bytes.byteLength; start += chunkSize) {
+          yield bytes.subarray(
+            start,
+            Math.min(start + chunkSize, bytes.byteLength)
+          );
+        }
+      }
+    };
+  }
   function makeSimpleFileId$2(size, chunkSize) {
     return `local_${size}_${chunkSize}_${Date.now()}`;
   }
@@ -35465,59 +35521,6 @@ ${VK_OVERLAY_PATCH_TEXT}`;
         for (let start = 0; start < bytes.byteLength; start += chunkSize) {
           const end = Math.min(start + chunkSize, bytes.byteLength);
           yield bytes.subarray(start, end);
-        }
-      }
-    };
-  }
-  function makeDouyinFileId(videoId, size, chunkSize) {
-    return `douyin_${videoId}_${size}_${chunkSize}`;
-  }
-  async function fetchDouyinMedia(src, signal) {
-    try {
-      const res = await fetch(src, { signal });
-      if (res.ok) return res;
-    } catch {
-    }
-    const gmRes = await GM_fetch(src, {
-      signal,
-      timeout: 0,
-      forceGmXhr: true
-    });
-    if (!gmRes.ok) {
-      throw new Error(`[VOT] Douyin: failed to fetch media: ${gmRes.status}`);
-    }
-    return gmRes;
-  }
-  async function getAudioFromDouyin({
-    videoId,
-    signal,
-    preferredVideo
-  }) {
-    const video = preferredVideo instanceof HTMLVideoElement ? preferredVideo : document.querySelector("video");
-    if (!(video instanceof HTMLVideoElement)) {
-      throw new Error("[VOT] Douyin: video element not found");
-    }
-    const src = video.currentSrc || video.src;
-    debug.log("[VOT] Douyin strategy src:", src);
-    debug.log("[VOT] Douyin strategy videoId:", videoId);
-    if (!src) {
-      throw new Error("[VOT] Douyin: empty video src");
-    }
-    const response = await fetchDouyinMedia(src, signal);
-    const buffer = await response.arrayBuffer();
-    const bytes = new Uint8Array(buffer);
-    if (!bytes.byteLength) {
-      throw new Error("[VOT] Douyin: empty media bytes");
-    }
-    const chunkSize = 256 * 1024;
-    const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-    const fileId = makeDouyinFileId(videoId, bytes.byteLength, chunkSize);
-    return {
-      fileId,
-      mediaPartsLength,
-      async *getMediaBuffers() {
-        for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-          yield bytes.subarray(start, Math.min(start + chunkSize, bytes.byteLength));
         }
       }
     };

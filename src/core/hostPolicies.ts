@@ -1,8 +1,20 @@
-export const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive"]);
+export const EXTERNAL_VOLUME_HOSTS = new Set([
+  "youtube",
+  "googledrive",
+  "vkvideo",
+  "yandexdisk",
+  "bilibili",
+  "douyin",
+]);
 
 export const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
 
-export const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok"]);
+export const MUTE_SYNC_DISABLED_HOSTS = new Set([
+  "rutube",
+  "ok",
+  "bilibili",
+  "douyin",
+]);
 export const TRANSLATION_DOWNLOAD_HOSTS = new Set([
   "youtube",
   "invidious",
