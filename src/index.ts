@@ -907,7 +907,7 @@ export class VideoHandler {
 
     const hasAudioContext = Boolean(this.getAudioContext());
     if (hasAudioContext && (siteHost === "bilibili" || siteHost === "douyin")) {
-      return false;
+      return true;
     }
     const data = this.data;
     return shouldUsePlainAudioPlayback({
