@@ -2,12 +2,7 @@ export const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive"]);
 
 export const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
 
-export const MUTE_SYNC_DISABLED_HOSTS = new Set([
-  "rutube",
-  "ok",
-  "bilibili",
-  "douyin",
-]);
+export const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok"]);
 export const TRANSLATION_DOWNLOAD_HOSTS = new Set([
   "youtube",
   "invidious",
