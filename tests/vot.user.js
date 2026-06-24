@@ -33839,9 +33839,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
     }
     return null;
   }
-  const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive", "vkvideo", "yandexdisk", "bilibili", "douyin"]);
+  const EXTERNAL_VOLUME_HOSTS = new Set([
+    "youtube",
+    "googledrive"
+  ]);
   const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
-  const MUTE_SYNC_DISABLED_HOSTS = new Set(["rutube", "ok", "bilibili", "douyin"]);
+  const MUTE_SYNC_DISABLED_HOSTS = new Set([
+    "rutube",
+    "ok",
+    "bilibili",
+    "douyin"
+  ]);
   const TRANSLATION_DOWNLOAD_HOSTS = new Set([
     "youtube",
     "invidious",
@@ -51319,6 +51327,9 @@ getPreferAudio() {
         return true;
       }
       const hasAudioContext = Boolean(this.getAudioContext());
+      if (hasAudioContext && (siteHost === "bilibili" || siteHost === "douyin")) {
+        return false;
+      }
       const data = this.data;
       return shouldUsePlainAudioPlayback({
         siteHost,

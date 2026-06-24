@@ -1,11 +1,4 @@
-export const EXTERNAL_VOLUME_HOSTS = new Set([
-  "youtube",
-  "googledrive",
-  "vkvideo",
-  "yandexdisk",
-  "bilibili",
-  "douyin",
-]);
+export const EXTERNAL_VOLUME_HOSTS = new Set(["youtube", "googledrive"]);
 
 export const YOUTUBE_LIKE_HOSTS = EXTERNAL_VOLUME_HOSTS;
 
