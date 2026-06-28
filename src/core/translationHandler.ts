@@ -121,6 +121,9 @@ function mapVotClientErrorForUi(error: unknown, siteHost?: string): unknown {
     }
     return error;
   }
+  if (serverMessage) {
+    return new Error(serverMessage);
+  }
 
   if (message === "Failed to request video translation") {
     return new VOTLocalizedError("requestTranslationFailed");
@@ -374,6 +377,12 @@ export class VOTTranslationHandler {
 
     const url = this.getCurrentMediaRequestUrl(videoData);
     if (!this.isDirectMediaUrlCandidate(url)) {
+      return false;
+    }
+    if (
+      this.videoHandler.site.host === "douyin" ||
+      videoData.host === "douyin"
+    ) {
       return false;
     }
 
