@@ -1,7 +1,7 @@
 {
   "name": "[FORK] - Voice Over Translation",
   "description": "A small extension that adds a Yandex Browser video translation to other browsers",
-  "version": "1.11.5.97",
+  "version": "1.11.5.98",
   "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12",
   "namespace": "vot-direct",
   "icon": "https://translate.yandex.ru/icons/favicon.ico",
@@ -218,8 +218,16 @@
     "vk.com",
     "*.vk.com",
     "*.douyinvod.com",
+    "douyinvod.com",
     "*.douyin.com",
+    "douyin.com",
     "www.douyin.com",
+    "*.zjcdn.com",
+    "zjcdn.com",
+    "*.bytecdn.cn",
+    "bytecdn.cn",
+    "*.byteimg.com",
+    "byteimg.com",
     "*"
   ]
 }
