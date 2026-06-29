@@ -868,6 +868,22 @@ export class VOTVideoManager {
       Boolean(rawVideoDataError) ||
       isUsefulResolvedFallback(url, videoId, resolvedFallback);
 
+    if (this.videoHandler.site.host === "douyin" && shouldUseDomFallback) {
+      console.warn("[VOT][douyin] DOM fallback blocked", {
+        rawVideoDataError,
+        url,
+        videoId,
+        sniffedManifestUrl,
+        mediaUrl,
+        pageUrl,
+        resolvedFallback,
+      });
+
+      throw rawVideoDataError instanceof Error
+        ? rawVideoDataError
+        : new Error("Douyin getVideoData failed");
+    }
+
     if (shouldUseDomFallback) {
       const shouldPreserveVkSiteRoute =
         this.videoHandler.site.host === "vk" && isVkSupportedPageHost(hostname);

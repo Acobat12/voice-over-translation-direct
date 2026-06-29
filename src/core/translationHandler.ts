@@ -545,41 +545,7 @@ export class VOTTranslationHandler {
       };
     }
   }
-  private normalizeDouyinPublicUrl(rawUrl: string, videoId?: string): string {
-    const id = String(videoId || "").replace(/^douyin:/, "");
 
-    if (id) {
-      return `douyin:${id}`;
-    }
-
-    const fallback = String(rawUrl || globalThis.location.href || "");
-
-    try {
-      const parsed = new URL(fallback, globalThis.location.href);
-
-      const modalId = parsed.searchParams.get("modal_id");
-      if (modalId) {
-        return `douyin:${modalId}`;
-      }
-
-      const mediaVideoId = parsed.searchParams.get("video_id");
-      if (mediaVideoId) {
-        return `douyin:${mediaVideoId}`;
-      }
-
-      const pathId =
-        /\/share\/video\/(\d+)/.exec(parsed.pathname)?.[1] ||
-        /\/video\/(\d+)/.exec(parsed.pathname)?.[1];
-
-      if (pathId) {
-        return `douyin:${pathId}`;
-      }
-    } catch {
-      // ignore
-    }
-
-    return fallback.split("?")[0].split("#")[0];
-  }
   private normalizeYandexDiskPublicUrl(rawUrl: string): string {
     const parsed = this.parseYandexDiskUrl(rawUrl);
 
@@ -1452,12 +1418,7 @@ export class VOTTranslationHandler {
         )
       );
     }
-    if (this.videoHandler.site.host === "douyin") {
-      return this.normalizeDouyinPublicUrl(
-        this.videoHandler.videoData?.url || globalThis.location.href,
-        videoId,
-      );
-    }
+
     if (this.videoHandler.site.host === "custom") {
       return (
         this.activeTranslationUrl ||
@@ -1793,10 +1754,11 @@ export class VOTTranslationHandler {
     this.updateAudioDownloaderStrategy(videoData);
 
     if (
-      this.videoHandler.site.host === "yandexdisk" ||
-      this.videoHandler.site.host === "custom" ||
-      videoData.host === "custom" ||
-      useLocalFileWorkflow
+      this.videoHandler.site.host !== "douyin" &&
+      (this.videoHandler.site.host === "yandexdisk" ||
+        this.videoHandler.site.host === "custom" ||
+        videoData.host === "custom" ||
+        useLocalFileWorkflow)
     ) {
       return await this.translateVideoYDImpl(
         videoData,
@@ -1808,6 +1770,15 @@ export class VOTTranslationHandler {
     }
 
     let requestVideoData = videoData;
+    if (this.videoHandler.site.host === "douyin") {
+      const fresh = await this.videoHandler.site.getVideoData?.();
+
+      if (fresh?.host === "douyin") {
+        requestVideoData = fresh;
+      } else if (requestVideoData.host !== "douyin") {
+        return null;
+      }
+    }
 
     if (
       this.videoHandler.site.host === "odysee" &&

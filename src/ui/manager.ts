@@ -1324,9 +1324,8 @@ export class UIManager {
 
   private shouldRefreshVideoDataBeforeTranslation(videoHandler: VideoHandler) {
     return (
-      (videoHandler.site.host === "vk" &&
-        videoHandler.site.additionalData === "clips") ||
-      videoHandler.site.host === "douyin"
+      videoHandler.site.host === "vk" &&
+      videoHandler.site.additionalData === "clips"
     );
   }
 
