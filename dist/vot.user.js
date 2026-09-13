@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.9
+// @version         1.11.6.10
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -23290,7 +23290,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.9"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.10"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -46965,7 +46965,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	var POST_AUDIO_TRANSLATE_RETRY_DELAY_MS = 5e3;
 	var MAX_POST_AUDIO_TRANSLATE_RETRIES = 12;
 	var YOUTUBE_AUDIO_STREAM_TIMEOUT_MS = 1800 * 1e3;
-	var YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS = 1e4;
+	var YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS = 3e4;
 	var MAX_YOUTUBE_SERVER_POLL_ERROR_RETRIES = 60;
 	var VOTTranslationHandler = class VOTTranslationHandler {
 		videoHandler;
@@ -48046,18 +48046,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					remainingTime: res.remainingTime,
 					message: res.message
 				});
-				if (isCompletedTranslationResponse(res)) {
-					this.videoHandler.hadAsyncWait = false;
-					try {
-						this.videoHandler.transformBtn("none", localizationProvider.get("translateVideo"));
-					} catch (error) {
-						debug.log("[VOT][translate] failed to clear completed waiting UI", error);
-					}
-					return {
-						...res,
-						usedLivelyVoice: useLivelyVoice
-					};
-				}
+				if (isCompletedTranslationResponse(res)) return {
+					...res,
+					usedLivelyVoice: useLivelyVoice
+				};
 				const message = res.message ?? localizationProvider.get("translationTakeFewMinutes");
 				const displayRemainingTime = adjustTranslationEtaForDisplay(res.remainingTime, { optimisticLocalUpload: canUseLocalFileWorkflow });
 				await this.videoHandler.updateTranslationErrorMsg(displayRemainingTime > 0 ? formatTranslationEta(displayRemainingTime, (key) => localizationProvider.get(key)) : message, signal);
@@ -48229,12 +48221,6 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				throwIfAborted(signal);
 				if (isCompletedTranslationResponse(res)) {
 					debug.log("Video translation finished with this data: ", res);
-					this.videoHandler.hadAsyncWait = false;
-					try {
-						this.videoHandler.transformBtn("none", localizationProvider.get("translateVideo"));
-					} catch (error) {
-						debug.log("[VOT][translate] failed to clear completed waiting UI", error);
-					}
 					this.resetTranslationRequestState("translation completed");
 					return {
 						...res,
@@ -54117,7 +54103,6 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		mount;
 		translationActionInFlight = false;
 		translationActionGeneration = 0;
-		syncingVoiceModeUi = false;
 		overlayEventsBound = false;
 		settingsEventsBound = false;
 		initialized = false;
@@ -54276,7 +54261,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}).addEventListener("click:downloadSubtitles", async () => {
 				await this.handleDownloadSubtitlesClick();
 			}).addEventListener("select:voiceMode", async (mode) => {
-				if (mode === "lively" && !this.data.account?.token) {
+				const livelyEnabled = mode === "lively";
+				if (livelyEnabled && !this.data.account?.token) {
 					this.videoHandler?.subtitlesWidget?.releaseTooltip();
 					this.videoHandler?.overlayVisibility?.cancel();
 					this.videoHandler?.overlayVisibility?.show();
@@ -54291,9 +54277,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					translationBusy: this.isTranslationBusy()
 				});
 				if (this.deferVoiceModeChangeDuringSourceAudioUpload(previousMode, mode, "rail-menu")) return;
-				this.restoreVoiceModeUi(mode);
+				this.data.useLivelyVoice = livelyEnabled;
+				if (this.votSettingsView.useLivelyVoiceCheckbox) this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
+				this.votOverlayView?.syncVoiceModeUi();
 				if (!this.videoHandler) {
-					this.runDetached(votStorage.set("useLivelyVoice", Boolean(this.data.useLivelyVoice)), "Failed to persist voice mode selection");
+					this.runDetached(votStorage.set("useLivelyVoice", livelyEnabled), "Failed to persist voice mode selection");
 					return;
 				}
 				try {
@@ -54307,7 +54295,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					debug.warn("[voice-menu] translation failed", err);
 					debug.warn("[VOT] Failed to apply voice mode selection", err);
 				} finally {
-					this.runDetached(votStorage.set("useLivelyVoice", Boolean(this.data.useLivelyVoice)), "Failed to persist voice mode selection");
+					this.runDetached(votStorage.set("useLivelyVoice", livelyEnabled), "Failed to persist voice mode selection");
 				}
 			}).addEventListener("input:videoVolume", (volume) => {
 				if (!this.videoHandler) return;
@@ -54392,14 +54380,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 		restoreVoiceModeUi(mode) {
 			const livelyEnabled = mode === "lively";
-			this.syncingVoiceModeUi = true;
-			try {
-				this.data.useLivelyVoice = livelyEnabled;
-				if (this.votSettingsView?.useLivelyVoiceCheckbox && this.votSettingsView.useLivelyVoiceCheckbox.checked !== livelyEnabled) this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
-				this.votOverlayView?.syncVoiceModeUi();
-			} finally {
-				this.syncingVoiceModeUi = false;
-			}
+			this.data.useLivelyVoice = livelyEnabled;
+			if (this.votSettingsView?.useLivelyVoiceCheckbox && this.votSettingsView.useLivelyVoiceCheckbox.checked !== livelyEnabled) this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
+			this.votOverlayView?.syncVoiceModeUi();
 		}
 		deferVoiceModeChangeDuringSourceAudioUpload(previousMode, nextMode, source) {
 			if (previousMode === nextMode || !this.isSourceAudioUploadInProgress()) return false;
@@ -54477,27 +54460,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				debug.warn("[voice-menu] startTranslationFlow early return reason", { reason: "idle-and-startWhenIdle-disabled" });
 				return;
 			}
-			if (previousMode === nextMode) {
-				if (startWhenIdle && !hasActiveSource && !isBusy) {
-					debug.log("[voice-menu] same idle mode selected; starting translation", { mode: nextMode });
-					const actionGeneration = ++this.translationActionGeneration;
-					this.translationActionInFlight = true;
-					try {
-						await this.startTranslationFlow(videoHandler);
-					} finally {
-						if (this.translationActionGeneration === actionGeneration) this.translationActionInFlight = false;
-					}
-					return;
-				}
-				debug.warn("[voice-menu] startTranslationFlow early return reason", { reason: isBusy ? "same-mode-while-translation-pending" : "same-mode-selection" });
-				return;
-			}
-			if (isBusy && !hasActiveSource) {
-				debug.warn("[voice-menu] voice mode change deferred during pending translation", {
-					previousMode,
-					nextMode
-				});
-				this.restoreVoiceModeUi(previousMode);
+			if (previousMode === nextMode && hasActiveSource && !isBusy) {
+				debug.warn("[voice-menu] startTranslationFlow early return reason", { reason: "same-mode-while-translation-active" });
 				return;
 			}
 			try {
@@ -54681,10 +54645,6 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					this.videoHandler.resetVolumeLinkState(Number(videoSlider.value), Number(translationSlider.value));
 				});
 			}).addEventListener("change:useLivelyVoice", (checked) => {
-				if (this.syncingVoiceModeUi) {
-					debug.log("[voice-menu] ignored programmatic voice-mode UI sync", { checked });
-					return;
-				}
 				if (!this.videoHandler) return;
 				this.votOverlayView?.syncVoiceModeUi();
 				const nextMode = checked ? "lively" : "standard";
@@ -54693,10 +54653,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					this.runDetached(votStorage.set("useLivelyVoice", previousMode === "lively"), "Failed to restore voice mode selection");
 					return;
 				}
-				this.runDetached((async () => {
-					await this.applyVoiceModeSelection(previousMode, nextMode);
-					await votStorage.set("useLivelyVoice", Boolean(this.data.useLivelyVoice));
-				})(), "Failed to apply voice mode change");
+				this.runDetached(this.applyVoiceModeSelection(previousMode, nextMode), "Failed to apply voice mode change");
 			}).addEventListener("change:subtitlesHighlightWords", (checked) => {
 				this.updateSubtitlesWidgetSetting(checked, this.data.highlightWords, (widget, value) => {
 					widget.setHighlightWords(value);
