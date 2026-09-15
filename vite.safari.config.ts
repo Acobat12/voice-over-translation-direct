@@ -13,7 +13,7 @@ import { defineConfig } from "vite";
 import type { MonkeyUserScript } from "vite-plugin-monkey";
 import monkey from "vite-plugin-monkey";
 import { contentUrl, repositoryUrl } from "./src/config/config";
-import { getBrowserSecureAliases } from "./vite.browser.alias";
+import { getSafariUserscriptAliases } from "./vite.browser.alias";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,15 +26,14 @@ const metaHeadersPath = path.resolve(srcDir, "headers.json");
 const priorityLocales = ["auto", "en", "ru"] as const;
 
 type PriorityLocale = (typeof priorityLocales)[number];
-
 type HashesJSON = Record<string, unknown>;
-
 type UserscriptBranch = "dev" | "master";
 
 interface LocaleHeadersFile {
   name: string;
   description: string;
 }
+
 const USERSCRIPT_ALWAYS_EXCLUDED_MATCHES = new Set<string>();
 const USERSCRIPT_PROD_EXCLUDED_MATCHES = new Set([
   "file://*/*",
@@ -49,7 +48,7 @@ function readJsonFile<T>(filePath: string): T {
   return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
 }
 
-function getHeaders<T = MonkeyUserScript>(lang?: string) {
+function getHeaders<T = MonkeyUserScript>(lang?: string): T {
   const headersPath = lang
     ? path.resolve(localeHeadersDir, `${lang}.json`)
     : metaHeadersPath;
@@ -86,14 +85,10 @@ function filterUserscriptBaseMatches(
   repoBranch: UserscriptBranch,
 ): string[] {
   return matches.filter((pattern) => {
-    if (USERSCRIPT_ALWAYS_EXCLUDED_MATCHES.has(pattern)) {
-      return false;
-    }
-
+    if (USERSCRIPT_ALWAYS_EXCLUDED_MATCHES.has(pattern)) return false;
     if (repoBranch !== "dev" && USERSCRIPT_PROD_EXCLUDED_MATCHES.has(pattern)) {
       return false;
     }
-
     return true;
   });
 }
@@ -105,16 +100,18 @@ function buildUserscriptMeta(
 ): MonkeyUserScript {
   const baseMeta = getHeaders<MonkeyUserScript>();
   const files = fs.readdirSync(localeHeadersDir);
-  const baseName =
-    typeof baseMeta.name === "string"
-      ? baseMeta.name
-      : (baseMeta.name?.default ?? "");
-  const baseDescription =
-    typeof baseMeta.description === "string"
-      ? baseMeta.description
-      : (baseMeta.description?.default ?? "");
-  const nameLocales: Record<string, string> = { "": baseName };
-  const descriptionLocales: Record<string, string> = { "": baseDescription };
+  const nameLocales: Record<string, string> = {
+    "":
+      typeof baseMeta.name === "string"
+        ? baseMeta.name
+        : (baseMeta.name?.default ?? ""),
+  };
+  const descriptionLocales: Record<string, string> = {
+    "":
+      typeof baseMeta.description === "string"
+        ? baseMeta.description
+        : (baseMeta.description?.default ?? ""),
+  };
 
   for (const file of files) {
     const localeHeaders = readJsonFile<LocaleHeadersFile>(
@@ -127,7 +124,7 @@ function buildUserscriptMeta(
 
   const finalUrl = `${contentUrl}/${repoUpdateBranch}/dist/${filename}.user.js`;
   const baseMatch = filterUserscriptBaseMatches(
-    Array.isArray(baseMeta.match) ? baseMeta.match : [],
+    Array.isArray(baseMeta.match) ? (baseMeta.match as string[]) : [],
     repoBranch,
   );
   const match = Array.from(new Set([...baseMatch, ...altUrlsToMatch()]));
@@ -153,14 +150,12 @@ function buildUserscriptMeta(
     localeProps[`description:${locale}`] = value;
   }
 
-  if (repoBranch === "dev") {
-    const baseConnect = Array.isArray(userscript.connect)
-      ? userscript.connect
-      : [];
-    userscript.connect = Array.from(
-      new Set([...baseConnect, "raw.githubusercontent.com"]),
-    );
-  }
+  const baseConnect = Array.isArray(userscript.connect)
+    ? userscript.connect
+    : [];
+  userscript.connect = Array.from(
+    new Set([...baseConnect, "raw.githubusercontent.com"]),
+  );
 
   return userscript;
 }
@@ -168,16 +163,14 @@ function buildUserscriptMeta(
 export default defineConfig(async ({ command, mode }) => {
   const buildMarker = new Date().toISOString();
   const isDevCommand = command === "serve";
-  const diagnosticMode = mode === "diagnostic";
+  const diagnosticMode = mode === "diagnostic" || mode === "safari-diag";
   const debugMode = isDevCommand || mode === "development" || diagnosticMode;
-  const explicitMinifiedVariant = mode === "minify";
   const productionOptimize = !debugMode;
-  const mainHeaders = getHeaders();
+  const mainHeaders = getHeaders<Record<string, unknown>>();
   const isBetaVersion = String(mainHeaders.version).includes("beta");
   const repoBranch: UserscriptBranch =
     debugMode || isBetaVersion ? "dev" : "master";
   const repoUpdateBranch: UserscriptBranch = isBetaVersion ? "dev" : "master";
-  const filename = explicitMinifiedVariant ? "vot-min" : "vot";
   const availableLocales = await getAvailableLocales();
 
   const config: UserConfig = {
@@ -186,17 +179,14 @@ export default defineConfig(async ({ command, mode }) => {
       IS_EXTENSION: JSON.stringify(false),
       AVAILABLE_LOCALES: JSON.stringify(availableLocales),
       REPO_BRANCH: JSON.stringify(repoBranch),
-      VOT_VERSION: JSON.stringify(String((mainHeaders as any).version || "")),
+      VOT_VERSION: JSON.stringify(String(mainHeaders.version || "")),
       VOT_BUILD: JSON.stringify(buildMarker),
-      VOT_BUNDLE: JSON.stringify(`${filename}.user.js`),
-      // Expose a tiny piece of metadata to runtime UI (Settings → About).
-      // This avoids relying on GM_info.script.author which isn't present in
-      // the extension build.
-      VOT_AUTHORS: JSON.stringify(String((mainHeaders as any).author || "")),
+      VOT_BUNDLE: JSON.stringify("vot-safari.user.js"),
+      VOT_AUTHORS: JSON.stringify(String(mainHeaders.author || "")),
     },
     resolve: {
+      alias: getSafariUserscriptAliases(__dirname),
       extensions: [".js", ".ts"],
-      alias: getBrowserSecureAliases(__dirname),
     },
     css: {
       transformer: "lightningcss",
@@ -216,9 +206,13 @@ export default defineConfig(async ({ command, mode }) => {
     plugins: [
       ...monkey({
         entry: path.resolve(srcDir, "index.ts"),
-        userscript: buildUserscriptMeta(filename, repoBranch, repoUpdateBranch),
+        userscript: buildUserscriptMeta(
+          "vot-safari",
+          repoBranch,
+          repoUpdateBranch,
+        ),
         build: {
-          fileName: `${filename}.user.js`,
+          fileName: "vot-safari.user.js",
           metaFileName: false,
           cssSideEffects: "(css)=>GM_addStyle(css)",
           autoGrant: true,
@@ -227,5 +221,6 @@ export default defineConfig(async ({ command, mode }) => {
       }),
     ],
   };
+
   return config;
 });

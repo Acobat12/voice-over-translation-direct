@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { build as viteBuild } from "vite";
 import { COMPRESSION_LEVEL, zip } from "zip-a-folder";
-import { getBrowserSafeAliases } from "./vite.browser.alias";
+import { getBrowserSecureAliases } from "./vite.browser.alias";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -237,19 +237,14 @@ async function buildEntry({
       transformer: "lightningcss",
     },
     resolve: {
-      alias: getBrowserSafeAliases(rootDir),
+      alias: getBrowserSecureAliases(rootDir),
     },
-    esbuild: diagnostic
-      ? {}
-      : {
-          drop: ["console", "debugger"],
-        },
     build: {
       target: "es2020",
       outDir: outTmp,
       emptyOutDir,
       sourcemap: diagnostic,
-      minify: diagnostic ? false : "esbuild",
+      minify: diagnostic ? false : "oxc",
       lib: {
         entry: path.join(rootDir, entry),
         name: "VOT",

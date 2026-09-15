@@ -1,4 +1,8 @@
-import config from "@vot.js/shared/config";
+import config, {
+  chromiumFullVersion,
+  chromiumMajorVersion,
+  yandexBrowserMajorMinorVersion,
+} from "@vot.js/shared/config";
 import Logger from "@vot.js/shared/utils/logger";
 
 const { componentVersion } = config;
@@ -93,7 +97,9 @@ export async function getHmacSha1(
 }
 
 export const browserSecHeaders = {
-  "sec-ch-ua": `"Chromium";v="134", "YaBrowser";v="${componentVersion.slice(0, 5)}", "Not?A_Brand";v="24", "Yowser";v="2.5"`,
-  "sec-ch-ua-full-version-list": `"Chromium";v="134.0.6998.543", "YaBrowser";v="${componentVersion}", "Not?A_Brand";v="24.0.0.0", "Yowser";v="2.5"`,
+  "sec-ch-ua": `"Not;A=Brand";v="8", "Chromium";v="${chromiumMajorVersion}", "YaBrowser";v="${yandexBrowserMajorMinorVersion}", "Yowser";v="2.5"`,
+  "sec-ch-ua-full-version-list": `"Not;A=Brand";v="8.0.0.0", "Chromium";v="${chromiumFullVersion}", "YaBrowser";v="${componentVersion}", "Yowser";v="2.5"`,
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": `"Windows"`,
   "Sec-Fetch-Mode": "no-cors",
 };

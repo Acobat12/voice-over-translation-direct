@@ -11,8 +11,6 @@ import { AudioDownloader } from "../audioDownloader";
 import {
   DOUYIN_AUDIO_STRATEGY,
   VK_AUDIO_STRATEGY,
-  WEB_ABR_STRATEGY,
-  WEB_MSE_PROXY_STRATEGY,
   YT_AUDIO_STRATEGY,
 } from "../audioDownloader/strategies";
 import { localizationProvider } from "../localization/localizationProvider";
@@ -150,37 +148,9 @@ type YandexDiskResolvedTarget = {
   title?: string;
 };
 
-type CachedAudioUpload =
-  | {
-      key: string;
-      kind: "full";
-      translationId: string;
-      videoId: string;
-      videoUrl: string;
-      fileId: string;
-      audioData: Uint8Array;
-    }
-  | {
-      key: string;
-      kind: "partial";
-      translationId: string;
-      videoId: string;
-      videoUrl: string;
-      fileId: string;
-      chunks: Array<{
-        audioData: Uint8Array;
-        index: number;
-        amount: number;
-        version: number;
-      }>;
-    };
-
 const POST_AUDIO_TRANSLATE_RETRY_DELAY_MS = 5000;
 const MAX_POST_AUDIO_TRANSLATE_RETRIES = 12;
-const _YOUTUBE_SERVER_POLL_MAX_INITIAL_WAIT_SEC = 180;
-const _YOUTUBE_SERVER_POLL_LONG_WAIT_MS = 120000;
-const YOUTUBE_AUDIO_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
-const YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS = 30000;
+const YOUTUBE_SERVER_POLL_RETRY_DELAY_MS = 5000;
 const MAX_YOUTUBE_SERVER_POLL_ERROR_RETRIES = 60;
 
 export class VOTTranslationHandler {
@@ -196,19 +166,12 @@ export class VOTTranslationHandler {
   private translationRequestStarted = false;
   private activeTranslationVoiceMode?: boolean;
   private handledAudioRequestKey?: string;
-  private currentAudioRequestKey?: string;
-  private cachedAudioUpload?: CachedAudioUpload;
-  private repeatedAudioRequestCount = 0;
-  private samePayloadReplayDone = false;
-  private alternateTransportRetryDone = false;
-  private webAbrTransportStartIndex = 0;
   private postAudioTranslateRetryCount = 0;
   private youtubeServerPollActive = false;
   private youtubeServerPollErrorCount = 0;
   private youtubeServerPollLastStatus?: number;
   private youtubeServerPollLastRemainingTime?: number;
   private youtubeServerPollLastTranslationId?: string;
-  private youtubeServerPollRetryAttempt = 0;
   private youtubeFailedAudioSignalUrl?: string;
   private activeYandexDiskResolvedVideoData?: VideoData;
 
@@ -219,7 +182,7 @@ export class VOTTranslationHandler {
       this.videoHandler.site.host === "vk"
         ? VK_AUDIO_STRATEGY
         : this.videoHandler.site.host === "youtube"
-          ? WEB_ABR_STRATEGY
+          ? YT_AUDIO_STRATEGY
           : this.videoHandler.site.host === "yandexdisk"
             ? "yandexDisk"
             : this.videoHandler.site.host === "douyin"
@@ -248,77 +211,28 @@ export class VOTTranslationHandler {
     this.translationRequestStarted = false;
     this.activeTranslationVoiceMode = undefined;
     this.handledAudioRequestKey = undefined;
-    this.currentAudioRequestKey = undefined;
-    this.cachedAudioUpload = undefined;
-    this.repeatedAudioRequestCount = 0;
-    this.samePayloadReplayDone = false;
-    this.alternateTransportRetryDone = false;
-    this.webAbrTransportStartIndex = 0;
     this.postAudioTranslateRetryCount = 0;
     this.youtubeServerPollActive = false;
     this.youtubeServerPollErrorCount = 0;
     this.youtubeServerPollLastStatus = undefined;
     this.youtubeServerPollLastRemainingTime = undefined;
     this.youtubeServerPollLastTranslationId = undefined;
-    this.youtubeServerPollRetryAttempt = 0;
     this.youtubeFailedAudioSignalUrl = undefined;
   }
 
   private async prepareSourceAudioUpload(signal: AbortSignal): Promise<void> {
     if (
       this.videoHandler.site.host !== "youtube" ||
-      this.audioDownloader.strategy !== WEB_MSE_PROXY_STRATEGY
+      this.audioDownloader.strategy !== YT_AUDIO_STRATEGY ||
+      !this.videoHandler.video?.paused
     ) {
       return;
     }
 
-    const handlerVideo = this.videoHandler.video;
-    if (!handlerVideo?.paused) {
-      return;
-    }
-
-    const activeYouTubeVideo = Array.from(
-      document.querySelectorAll<HTMLVideoElement>(
-        "video.html5-main-video, .html5-video-container video, video",
-      ),
-    )
-      .filter((candidate) => {
-        if (candidate.paused || candidate.ended) return false;
-        if (candidate.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
-          return false;
-        const rect = candidate.getBoundingClientRect();
-        return (
-          rect.width > 80 &&
-          rect.height > 80 &&
-          rect.bottom > 0 &&
-          rect.top < globalThis.innerHeight
-        );
-      })
-      .sort((a, b) => {
-        const ar = a.getBoundingClientRect();
-        const br = b.getBoundingClientRect();
-        return br.width * br.height - ar.width * ar.height;
-      })[0];
-
-    if (activeYouTubeVideo) {
-      console.log(
-        "[VOT][source-audio-upload] handler video is stale/paused; active YouTube video is playing",
-        {
-          videoId: this.videoHandler.videoData?.videoId,
-          handlerCurrentTime: Number(handlerVideo.currentTime.toFixed(3)),
-          activeCurrentTime: Number(activeYouTubeVideo.currentTime.toFixed(3)),
-          activeReadyState: activeYouTubeVideo.readyState,
-        },
-      );
-      return;
-    }
-
-    // Only ask the user to start playback when no currently-playing YouTube
-    // media element can be found at all.
     console.log("[VOT][source-audio-upload] waiting for YouTube playback", {
       videoId: this.videoHandler.videoData?.videoId,
-      currentTime: Number(handlerVideo.currentTime.toFixed(3)),
-      readyState: handlerVideo.readyState,
+      currentTime: Number(this.videoHandler.video.currentTime.toFixed(3)),
+      readyState: this.videoHandler.video.readyState,
     });
 
     await this.videoHandler.updateTranslationErrorMsg(
@@ -349,12 +263,15 @@ export class VOTTranslationHandler {
   private shouldRetryYouTubeProcessingError(error: unknown): boolean {
     const message = getErrorMessage(error);
     const serverMessage = getServerErrorMessage(error) ?? "";
-    const _combinedMessage = `${message} ${serverMessage}`.toLowerCase();
+    const combinedMessage = `${message} ${serverMessage}`.toLowerCase();
 
-    // Only retry a transport/request failure here.
-    // A server-side translation failure is terminal: stop the current task
-    // instead of polling the same dead translationId again.
-    return message === "Failed to request video translation";
+    return (
+      message === "Failed to request video translation" ||
+      message === "Yandex couldn't translate video" ||
+      combinedMessage.includes("возникла ошибка") ||
+      combinedMessage.includes("попробуйте позже") ||
+      combinedMessage.includes("try again later")
+    );
   }
 
   private isYouTubeTranslationRequest(videoData?: VideoData): boolean {
@@ -391,6 +308,7 @@ export class VOTTranslationHandler {
     }
 
     if (
+      response.status !== VideoTranslationStatus.AUDIO_REQUESTED &&
       response.status !== VideoTranslationStatus.WAITING &&
       response.status !== VideoTranslationStatus.LONG_WAITING
     ) {
@@ -408,15 +326,6 @@ export class VOTTranslationHandler {
       response.translationId === undefined || response.translationId === null
         ? undefined
         : String(response.translationId);
-  }
-
-  private getYouTubeServerPollDelayMs(
-    remainingTimeSeconds: number | null | undefined,
-  ): number {
-    // Poll YouTube translation tasks at a fixed interval. The server ETA is
-    // still used for the UI text, but it no longer delays readiness checks.
-    void remainingTimeSeconds;
-    return YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS;
   }
 
   private normalizeUrlForRequest(raw: string): string {
@@ -683,9 +592,7 @@ export class VOTTranslationHandler {
           ? "yandexDisk"
           : this.videoHandler.site.host === "douyin"
             ? DOUYIN_AUDIO_STRATEGY
-            : this.videoHandler.site.host === "youtube"
-              ? WEB_ABR_STRATEGY
-              : YT_AUDIO_STRATEGY;
+            : YT_AUDIO_STRATEGY;
 
     if (this.audioDownloader.strategy === nextStrategy) {
       return;
@@ -1478,101 +1385,6 @@ export class VOTTranslationHandler {
     throw new Error("Failed to build Yandex Disk translation target");
   }
 
-  private resetRepeatedAudioRequestRecovery(audioRequestKey: string): void {
-    this.currentAudioRequestKey = audioRequestKey;
-    this.cachedAudioUpload = undefined;
-    this.repeatedAudioRequestCount = 0;
-    this.samePayloadReplayDone = false;
-    this.alternateTransportRetryDone = false;
-    this.webAbrTransportStartIndex = 0;
-  }
-
-  private async replayCachedAudioUpload(
-    audioRequestKey: string,
-    signal: AbortSignal,
-  ): Promise<boolean> {
-    const cached = this.cachedAudioUpload;
-    if (!cached || cached.key !== audioRequestKey) {
-      console.warn(
-        "[VOT][source-audio-upload] no cached payload available for replay",
-        {
-          audioRequestKey,
-        },
-      );
-      return false;
-    }
-
-    signal.throwIfAborted();
-    console.warn(
-      "[VOT][source-audio-upload] replaying the same audio payload",
-      {
-        translationId: cached.translationId,
-        videoId: cached.videoId,
-        kind: cached.kind,
-        chunks: cached.kind === "partial" ? cached.chunks.length : 1,
-      },
-    );
-
-    if (cached.kind === "full") {
-      await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
-          cached.videoUrl,
-          cached.translationId,
-          {
-            audioFile: cached.audioData,
-            fileId: cached.fileId,
-          },
-        ),
-      );
-      return true;
-    }
-
-    for (const chunk of cached.chunks) {
-      signal.throwIfAborted();
-      await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
-          cached.videoUrl,
-          cached.translationId,
-          {
-            audioFile: chunk.audioData,
-            chunkId: chunk.index,
-          },
-          {
-            audioPartsLength: chunk.amount,
-            fileId: cached.fileId,
-            version: chunk.version,
-          },
-        ),
-      );
-    }
-
-    return true;
-  }
-
-  private static readonly AUDIO_UPLOAD_MAX_RETRIES = 15;
-  private static readonly AUDIO_UPLOAD_RETRY_DELAY_MS = 1500;
-
-  private async retryAudioUpload<T>(fn: () => Promise<T>): Promise<T> {
-    const maxRetries = VOTTranslationHandler.AUDIO_UPLOAD_MAX_RETRIES;
-    const delayMs = VOTTranslationHandler.AUDIO_UPLOAD_RETRY_DELAY_MS;
-    let lastError: unknown;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-        if (attempt === maxRetries) throw error;
-        debug.log(
-          `[AudioUpload] retry ${attempt + 1}/${maxRetries} after ${delayMs}ms`,
-        );
-        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
-      }
-    }
-
-    throw lastError;
-  }
-
   private readonly onDownloadedAudio = async (
     translationId: string,
     data: DownloadedAudioData,
@@ -1595,16 +1407,15 @@ export class VOTTranslationHandler {
         videoUrl,
       });
 
-      const uploadResponse = await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
+      const uploadResponse =
+        await this.videoHandler.votClient.requestVtransAudio(
           videoUrl,
           translationId,
           {
             audioFile: audioData,
             fileId,
           },
-        ),
-      );
+        );
       console.log("[VOT] Upload full audio response", {
         translationId,
         videoId,
@@ -1613,17 +1424,6 @@ export class VOTTranslationHandler {
         status: uploadResponse?.status,
         remainingChunks: uploadResponse?.remainingChunks,
       });
-      if (this.currentAudioRequestKey) {
-        this.cachedAudioUpload = {
-          key: this.currentAudioRequestKey,
-          kind: "full",
-          translationId,
-          videoId,
-          videoUrl,
-          fileId,
-          audioData: audioData.slice(),
-        };
-      }
     } catch (error) {
       debug.error("Failed to upload downloaded audio", error);
       console.log("[VOT] Upload full audio failed", {
@@ -1664,8 +1464,8 @@ export class VOTTranslationHandler {
         videoUrl,
       });
 
-      const uploadResponse = await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
+      const uploadResponse =
+        await this.videoHandler.votClient.requestVtransAudio(
           videoUrl,
           translationId,
           {
@@ -1677,8 +1477,7 @@ export class VOTTranslationHandler {
             fileId,
             version,
           },
-        ),
-      );
+        );
       console.log("[VOT] Upload audio chunk response", {
         translationId,
         videoId,
@@ -1689,29 +1488,6 @@ export class VOTTranslationHandler {
         status: uploadResponse?.status,
         remainingChunks: uploadResponse?.remainingChunks,
       });
-      if (this.currentAudioRequestKey) {
-        if (
-          !this.cachedAudioUpload ||
-          this.cachedAudioUpload.key !== this.currentAudioRequestKey ||
-          this.cachedAudioUpload.kind !== "partial"
-        ) {
-          this.cachedAudioUpload = {
-            key: this.currentAudioRequestKey,
-            kind: "partial",
-            translationId,
-            videoId,
-            videoUrl,
-            fileId,
-            chunks: [],
-          };
-        }
-        this.cachedAudioUpload.chunks.push({
-          audioData: audioData.slice(),
-          index,
-          amount,
-          version,
-        });
-      }
     } catch (error) {
       debug.error("Failed to upload downloaded audio chunk", error);
       console.log("[VOT] Upload audio chunk failed", {
@@ -1733,10 +1509,7 @@ export class VOTTranslationHandler {
     }
   };
 
-  private readonly onDownloadAudioError = async (
-    translationId: string,
-    videoId: string,
-  ) => {
+  private readonly onDownloadAudioError = async (videoId: string) => {
     if (!this.downloading) {
       debug.log("skip downloadAudioError");
       return;
@@ -1744,42 +1517,13 @@ export class VOTTranslationHandler {
 
     debug.log(`Failed to download audio ${videoId}`);
 
-    const videoUrl = this.getCanonicalUrl(videoId);
-    const canUseYouTubeFallback =
-      this.videoHandler.site.host === "youtube" &&
-      Boolean(this.videoHandler.data?.useAudioDownload);
+    console.log("[VOT] downloadAudioError host:", this.videoHandler.site.host);
+    console.log(
+      "[VOT] downloadAudioError strategy:",
+      this.audioDownloader.strategy,
+    );
 
-    if (!canUseYouTubeFallback) {
-      this.finishDownloadFailure(
-        new VOTLocalizedError("VOTFailedDownloadAudio"),
-      );
-      return;
-    }
-
-    try {
-      if (this.youtubeFailedAudioSignalUrl === videoUrl) {
-        debug.log("fail-audio-js request already sent for this video");
-      } else {
-        debug.log("Sending fail-audio-js request");
-        await this.videoHandler.votClient.requestVtransFailAudio(videoUrl);
-        await this.videoHandler.votClient.requestVtransAudio(
-          videoUrl,
-          translationId,
-          {
-            audioFile: new Uint8Array(0),
-            fileId: `fallback-empty-audio:video-translation:${videoId}`,
-          },
-        );
-        this.youtubeFailedAudioSignalUrl = videoUrl;
-      }
-
-      this.finishDownloadSuccess();
-    } catch (error) {
-      debug.error("fail-audio-js request failed", error);
-      this.finishDownloadFailure(
-        new VOTLocalizedError("VOTFailedDownloadAudio"),
-      );
-    }
+    this.finishDownloadFailure(new VOTLocalizedError("VOTFailedDownloadAudio"));
   };
 
   private finishDownloadSuccess() {
@@ -1803,11 +1547,7 @@ export class VOTTranslationHandler {
     }
 
     if (this.videoHandler.site.host === "youtube") {
-      return (
-        this.activeTranslationUrl ||
-        this.videoHandler.videoData?.url ||
-        `https://youtu.be/${videoId}`
-      );
+      return `https://youtu.be/${videoId}`;
     }
 
     if (this.videoHandler.site.host === "yandexdisk") {
@@ -2238,8 +1978,7 @@ export class VOTTranslationHandler {
     }
 
     this.activeTranslationUrl =
-      this.videoHandler.site.host === "odysee" ||
-      this.isYouTubeTranslationRequest(requestVideoData)
+      this.videoHandler.site.host === "odysee"
         ? requestVideoData.url
         : this.getCanonicalUrl(videoData.videoId);
 
@@ -2276,31 +2015,37 @@ export class VOTTranslationHandler {
 
       let res: VideoTranslationResponse | undefined;
 
-      const _isYouTubeTranslateRequest =
-        this.isYouTubeTranslationRequest(requestVideoData);
-
-      // Match the known-working userscript: no video_lang/cache preflight
-      // in the main YouTube translation path.
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const _isYouTubeRequestForCall =
+          const firstRequest = !this.translationRequestStarted;
+          const isYouTubeRequestForCall =
             this.isYouTubeTranslationRequest(requestVideoData);
           const youtubeFailedAudioSignalUrl = String(
             requestVideoData.url || this.activeTranslationUrl || "",
           );
           const youtubeFailedAudioSignalAlreadySent =
+            isYouTubeRequestForCall &&
             this.youtubeFailedAudioSignalUrl === youtubeFailedAudioSignalUrl;
-          const allowFailedAudioSignal = shouldSendFailedAudio;
-          // Keep the exact same full request shape on YouTube polling.
-          // Only the firstRequest bit changes after the initial accepted request.
-          const useMinimalYouTubePollingPayload = false;
-          const extraOpts = {
-            useLivelyVoice,
-            videoTitle:
-              requestVideoData.title ??
-              this.videoHandler.videoData?.title ??
-              "",
-          };
+          const allowFailedAudioSignal = isYouTubeRequestForCall
+            ? !youtubeFailedAudioSignalAlreadySent
+            : shouldSendFailedAudio;
+          const useMinimalYouTubePollingPayload =
+            isYouTubeRequestForCall && youtubeFailedAudioSignalAlreadySent;
+          const extraOpts = useMinimalYouTubePollingPayload
+            ? {}
+            : {
+                useLivelyVoice,
+                forceSourceLang: requestLang !== "auto",
+                firstRequest,
+                videoTitle:
+                  requestVideoData.title ??
+                  this.videoHandler.videoData?.title ??
+                  "",
+              };
+
+          if (isYouTubeRequestForCall && allowFailedAudioSignal) {
+            this.youtubeFailedAudioSignalUrl = youtubeFailedAudioSignalUrl;
+          }
 
           console.log("[VOT][youtube/request-snapshot]", {
             host: requestVideoData.host,
@@ -2310,6 +2055,8 @@ export class VOTTranslationHandler {
             requestLang: requestLangForApi,
             responseLang,
             translationHelpCount: translationHelp?.length ?? 0,
+            firstRequest,
+            forceSourceLang: requestLang !== "auto",
             useLivelyVoice,
             allowFailedAudioSignal,
             youtubeFailedAudioSignalAlreadySent,
@@ -2332,6 +2079,7 @@ export class VOTTranslationHandler {
           this.postAudioTranslateRetryCount = 0;
 
           console.log("[VOT][translate] translate response", {
+            firstRequest,
             translated: res.translated,
             status: res.status,
             remainingTime: res.remainingTime,
@@ -2461,31 +2209,23 @@ export class VOTTranslationHandler {
       };
 
       if (
-        res.status === VideoTranslationStatus.WAITING ||
-        res.status === VideoTranslationStatus.LONG_WAITING
+        isYouTubeRequest &&
+        res.status === VideoTranslationStatus.AUDIO_REQUESTED
       ) {
         this.videoHandler.hadAsyncWait = true;
+        this.youtubeServerPollActive = true;
+        this.youtubeServerPollErrorCount = 0;
+
+        console.warn(
+          "[VOT][youtube/server-poll] AUDIO_REQUESTED still pending",
+          {
+            translationId: res.translationId,
+            remainingTime: res.remainingTime,
+            requestUrl: requestVideoData.url,
+          },
+        );
+
         updateProcessingUi();
-
-        let retryDelayMs = 5000;
-
-        if (isYouTubeRequest) {
-          retryDelayMs = this.getYouTubeServerPollDelayMs(res.remainingTime);
-
-          console.log(
-            "[VOT][youtube/server-poll] accepted task; scheduling VOT-parity poll",
-            {
-              translationId: res.translationId,
-              status: res.status,
-              remainingTime: res.remainingTime,
-              requestUrl: requestVideoData.url,
-              retryAttempt: this.youtubeServerPollRetryAttempt,
-              retryDelayMs,
-            },
-          );
-
-          this.youtubeServerPollRetryAttempt += 1;
-        }
 
         return this.scheduleRetry(
           () =>
@@ -2494,11 +2234,46 @@ export class VOTTranslationHandler {
               requestLang,
               responseLang,
               translationHelp,
-              shouldSendFailedAudio,
+              false,
               signal,
               livelyDisabled,
             ),
-          retryDelayMs,
+          YOUTUBE_SERVER_POLL_RETRY_DELAY_MS,
+          signal,
+        );
+      }
+
+      // Polling must not wait for UI text updates. On some pages the UI branch
+      // can perform async localization and stall the next /translate request.
+      if (
+        res.status === VideoTranslationStatus.WAITING ||
+        res.status === VideoTranslationStatus.LONG_WAITING
+      ) {
+        this.videoHandler.hadAsyncWait = true;
+
+        console.log("[VOT][youtube/server-poll] waiting", {
+          host: this.videoHandler.site.host,
+          translationId: res.translationId,
+          status: res.status,
+          remainingTime: res.remainingTime,
+          paused: this.videoHandler.video?.paused,
+          useLivelyVoice,
+        });
+
+        updateProcessingUi();
+
+        return this.scheduleRetry(
+          () =>
+            this.translateVideoImpl(
+              videoData,
+              requestLang,
+              responseLang,
+              translationHelp,
+              false,
+              signal,
+              livelyDisabled,
+            ),
+          isYouTubeRequest ? YOUTUBE_SERVER_POLL_RETRY_DELAY_MS : 5000,
           signal,
         );
       }
@@ -2509,6 +2284,7 @@ export class VOTTranslationHandler {
       );
 
       if (
+        !isYouTubeRequest &&
         res.status === VideoTranslationStatus.AUDIO_REQUESTED &&
         this.videoHandler.canUploadAudioForCurrentSite()
       ) {
@@ -2520,102 +2296,15 @@ export class VOTTranslationHandler {
         }
 
         if (this.handledAudioRequestKey === audioRequestKey) {
-          this.repeatedAudioRequestCount += 1;
-          console.warn("[VOT][source-audio-upload] repeated AUDIO_REQUESTED", {
-            translationId,
-            videoId: videoData.videoId,
-            repeatedCount: this.repeatedAudioRequestCount,
-            samePayloadReplayDone: this.samePayloadReplayDone,
-            alternateTransportRetryDone: this.alternateTransportRetryDone,
-          });
+          console.warn(
+            "[VOT][source-audio-upload] AUDIO_REQUESTED already handled",
+            {
+              translationId,
+              videoId: videoData.videoId,
+            },
+          );
 
           this.videoHandler.hadAsyncWait = true;
-
-          // The first repeated status can simply be a backend state propagation race.
-          // Give Yandex one extra poll before sending the audio again.
-          if (this.repeatedAudioRequestCount === 1) {
-            return this.scheduleRetry(
-              () =>
-                this.translateVideoImpl(
-                  videoData,
-                  requestLang,
-                  responseLang,
-                  translationHelp,
-                  false,
-                  signal,
-                  livelyDisabled,
-                ),
-              5000,
-              signal,
-            );
-          }
-
-          if (!this.samePayloadReplayDone) {
-            this.samePayloadReplayDone = true;
-            this.repeatedAudioRequestCount = 0;
-            const replayed = await this.replayCachedAudioUpload(
-              audioRequestKey,
-              signal,
-            );
-            if (replayed) {
-              return this.translateVideoImpl(
-                videoData,
-                requestLang,
-                responseLang,
-                translationHelp,
-                false,
-                signal,
-                livelyDisabled,
-              );
-            }
-          }
-
-          if (!this.alternateTransportRetryDone) {
-            this.alternateTransportRetryDone = true;
-            this.repeatedAudioRequestCount = 0;
-            this.webAbrTransportStartIndex = 1;
-            this.currentAudioRequestKey = audioRequestKey;
-            this.cachedAudioUpload = undefined;
-            this.downloadFailureError = undefined;
-            this.downloading = true;
-
-            console.warn(
-              "[VOT][source-audio-upload] same payload did not clear AUDIO_REQUESTED; redownloading with alternate WEB_ABR transport order",
-              {
-                translationId,
-                videoId: videoData.videoId,
-                transportStartIndex: this.webAbrTransportStartIndex,
-              },
-            );
-
-            await this.prepareSourceAudioUpload(signal);
-            await Promise.all([
-              this.waitForAudioDownloadCompletion(
-                signal,
-                YOUTUBE_AUDIO_STREAM_TIMEOUT_MS,
-              ),
-              this.audioDownloader.runAudioDownload(
-                videoData.videoId,
-                res.translationId,
-                signal,
-                this.videoHandler.video,
-                this.webAbrTransportStartIndex,
-              ),
-            ]);
-
-            return this.translateVideoImpl(
-              videoData,
-              requestLang,
-              responseLang,
-              translationHelp,
-              false,
-              signal,
-              livelyDisabled,
-            );
-          }
-
-          // Recovery is deliberately bounded: initial upload + one exact replay +
-          // one fresh download with a different WEB_ABR transport order.
           return this.scheduleRetry(
             () =>
               this.translateVideoImpl(
@@ -2632,7 +2321,6 @@ export class VOTTranslationHandler {
           );
         }
 
-        this.resetRepeatedAudioRequestRecovery(audioRequestKey);
         this.videoHandler.hadAsyncWait = true;
 
         debug.log("Start audio download");
@@ -2641,40 +2329,39 @@ export class VOTTranslationHandler {
 
         await this.prepareSourceAudioUpload(signal);
 
-        debug.log("[Translation] waiting for audio download completion", {
-          videoId: videoData.videoId,
-          translationId: res.translationId,
-          timeoutMs: YOUTUBE_AUDIO_STREAM_TIMEOUT_MS,
-        });
+        await this.audioDownloader.runAudioDownload(
+          videoData.videoId,
+          res.translationId,
+          signal,
+          this.videoHandler.video,
+        );
 
-        await Promise.all([
-          this.waitForAudioDownloadCompletion(
-            signal,
-            YOUTUBE_AUDIO_STREAM_TIMEOUT_MS,
-          ),
-          this.audioDownloader.runAudioDownload(
-            videoData.videoId,
-            res.translationId,
-            signal,
-            this.videoHandler.video,
-            this.webAbrTransportStartIndex,
-          ),
-        ]);
+        debug.log("waiting downloading finish");
+        await this.waitForAudioDownloadCompletion(
+          signal,
+          this.audioDownloader.strategy === "yandexDisk" ? 120000 : 15000,
+        );
 
         this.handledAudioRequestKey = audioRequestKey;
         this.postAudioTranslateRetryCount = 0;
 
-        // Real source audio has already been downloaded and uploaded successfully.
-        // Do not enable the legacy failed-audio signal here: doing so can trigger
-        // fail-audio-js / empty-audio handling after a valid web_abr upload.
-        return await this.translateVideoImpl(
-          videoData,
-          requestLang,
-          responseLang,
-          translationHelp,
-          false,
+        // Match the Yandex Disk state machine: after the requested source-audio
+        // stage finishes, give the backend time to attach/process the uploaded
+        // source before polling /translate again. An immediate recursive request
+        // can race the backend and return the same AUDIO_REQUESTED state/error.
+        return this.scheduleRetry(
+          () =>
+            this.translateVideoImpl(
+              videoData,
+              requestLang,
+              responseLang,
+              translationHelp,
+              false,
+              signal,
+              livelyDisabled,
+            ),
+          5000,
           signal,
-          livelyDisabled,
         );
       }
     } catch (err) {
@@ -2697,7 +2384,7 @@ export class VOTTranslationHandler {
           {
             attempt: this.youtubeServerPollErrorCount,
             maxAttempts: MAX_YOUTUBE_SERVER_POLL_ERROR_RETRIES,
-            retryDelayMs: YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS,
+            retryDelayMs: YOUTUBE_SERVER_POLL_RETRY_DELAY_MS,
             videoId: videoData.videoId,
             activeTranslationUrl: this.activeTranslationUrl,
             lastStatus: this.youtubeServerPollLastStatus,
@@ -2729,7 +2416,7 @@ export class VOTTranslationHandler {
               signal,
               livelyDisabled,
             ),
-          YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS,
+          YOUTUBE_SERVER_POLL_RETRY_DELAY_MS,
           signal,
         );
       }

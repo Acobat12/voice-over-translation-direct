@@ -2,7 +2,7 @@ import {
   extractAudioCodecFromMimeType,
   isAudioOnlyMimeType,
   type ProgressiveQuality,
-  pickAdaptiveAudioFormat,
+  pickByBitrate,
 } from "./internal/format-selection";
 
 export type AudioDownloadQuality = ProgressiveQuality;
@@ -124,6 +124,86 @@ const DEFAULT_HEADERS = {
   referer: `${YT_BASE}/`,
 } as const;
 const RANGE_FALLBACK_CHUNK_SIZE = 256 * 1024;
+
+function isMp4aAudioFormat(format: InnertubeFormat): boolean {
+  const mimeType = format.mimeType?.toLowerCase() ?? "";
+  return mimeType.includes("audio/mp4") && mimeType.includes("mp4a.");
+}
+
+function isOpusAudioFormat(format: InnertubeFormat): boolean {
+  const mimeType = format.mimeType?.toLowerCase() ?? "";
+  return mimeType.includes("audio/webm") && mimeType.includes("opus");
+}
+
+function formatAttemptLabel(format: InnertubeFormat): string {
+  return [
+    `itag=${format.itag ?? "unknown"}`,
+    format.mimeType,
+    format.bitrate ? `bitrate=${format.bitrate}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(",");
+}
+
+function sortByBitrate<T extends InnertubeFormat>(
+  formats: readonly T[],
+  direction: "max" | "min",
+): T[] {
+  const remaining = [...formats];
+  const sorted: T[] = [];
+
+  while (remaining.length > 0) {
+    const selected = pickByBitrate(remaining, direction);
+    if (!selected) {
+      break;
+    }
+
+    sorted.push(selected);
+    remaining.splice(remaining.indexOf(selected), 1);
+  }
+
+  return sorted;
+}
+
+function orderAdaptiveAudioFormats(
+  formats: readonly InnertubeFormat[],
+  quality: AudioDownloadQuality,
+): InnertubeFormat[] {
+  const audioFormats = formats.filter((format) =>
+    isAudioOnlyMimeType(format.mimeType),
+  );
+  const pickDirection = quality === "bestefficiency" ? "min" : "max";
+  const groups =
+    quality === "bestefficiency"
+      ? [
+          audioFormats.filter(isOpusAudioFormat),
+          audioFormats.filter((format) => !isOpusAudioFormat(format)),
+        ]
+      : [
+          audioFormats.filter(isMp4aAudioFormat),
+          audioFormats.filter(isOpusAudioFormat),
+          audioFormats.filter(
+            (format) =>
+              !isMp4aAudioFormat(format) && !isOpusAudioFormat(format),
+          ),
+        ];
+  const seen = new Set<string>();
+  const ordered: InnertubeFormat[] = [];
+
+  for (const group of groups) {
+    for (const format of sortByBitrate(group, pickDirection)) {
+      const key = `${format.itag ?? ""}|${format.mimeType ?? ""}|${format.url ?? ""}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      ordered.push(format);
+    }
+  }
+
+  return ordered;
+}
 
 function withSignal(signal: AbortSignal | undefined): RequestInit {
   return signal ? { signal } : {};
@@ -515,6 +595,13 @@ export class AudioDownloader {
           1,
           Math.ceil(fileSize / options.chunkSize),
         );
+        const firstChunkEnd = Math.min(fileSize - 1, options.chunkSize - 1);
+        const firstChunk = await this.fetchRangeChunk(
+          resolved.streamUrl,
+          0,
+          firstChunkEnd,
+          signal,
+        );
 
         return {
           videoId: resolved.videoId,
@@ -522,7 +609,9 @@ export class AudioDownloader {
           itag: resolved.chosenFormat.itag ?? 0,
           mediaPartsLength,
           getMediaBuffers: async function* () {
-            for (let index = 0; index < mediaPartsLength; index++) {
+            yield firstChunk;
+
+            for (let index = 1; index < mediaPartsLength; index++) {
               const start = index * options.chunkSize;
               const end = Math.min(fileSize - 1, start + options.chunkSize - 1);
               const bytes = await this.fetchRangeChunk(
@@ -612,29 +701,42 @@ export class AudioDownloader {
     const attemptErrors: string[] = [];
 
     for (const client of clientAttempts) {
+      let resolvedFormats: ResolvedPlayableFormat[];
       try {
-        const resolved = await this.resolvePlayableFormatForClient({
+        resolvedFormats = await this.resolvePlayableFormatsForClient({
           videoId,
           watchContext,
           client,
           quality,
           signal,
         });
-        if (!isAudioOnlyMimeType(resolved.chosenFormat.mimeType)) {
-          throw new Error(audioOnlyErrorMessage);
-        }
-
-        return await onResolved({ resolved, signal });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         attemptErrors.push(`${client}: ${message}`);
+        continue;
+      }
+
+      for (const resolved of resolvedFormats) {
+        try {
+          if (!isAudioOnlyMimeType(resolved.chosenFormat.mimeType)) {
+            throw new Error(audioOnlyErrorMessage);
+          }
+
+          return await onResolved({ resolved, signal });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          attemptErrors.push(
+            `${client}/${formatAttemptLabel(resolved.chosenFormat)}: ${message}`,
+          );
+        }
       }
     }
 
     throw new Error(`${failurePrefix}. Attempts: ${attemptErrors.join(" | ")}`);
   }
 
-  private async resolvePlayableFormatForClient({
+  private async resolvePlayableFormatsForClient({
     videoId,
     watchContext,
     client,
@@ -646,7 +748,7 @@ export class AudioDownloader {
     client: AudioDownloadClient;
     quality: AudioDownloadQuality;
     signal?: AbortSignal;
-  }): Promise<ResolvedPlayableFormat> {
+  }): Promise<ResolvedPlayableFormat[]> {
     const response = await this.fetchPlayerResponse(
       videoId,
       watchContext,
@@ -662,21 +764,24 @@ export class AudioDownloader {
         "Player response did not contain direct adaptive audio stream URLs",
       );
     }
-    const chosenFormat = pickAdaptiveAudioFormat(
+    const audioFormats = orderAdaptiveAudioFormats(
       directAdaptiveFormats,
       quality,
     );
+    if (!audioFormats.length) {
+      throw new Error(
+        "Player response did not contain direct adaptive audio stream URLs",
+      );
+    }
 
-    const streamUrl = this.resolveFormatUrl(
-      chosenFormat,
-      watchContext.clientVersion,
-    );
-
-    return {
+    return audioFormats.map((chosenFormat) => ({
       videoId,
       chosenFormat,
-      streamUrl,
-    };
+      streamUrl: this.resolveFormatUrl(
+        chosenFormat,
+        watchContext.clientVersion,
+      ),
+    }));
   }
 
   private async resolveStreamContentLength(

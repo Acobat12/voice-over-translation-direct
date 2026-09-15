@@ -1,4 +1,3 @@
-import VOTClient, { VOTWorkerClient } from "@vot.js/ext/client";
 import type { ServiceConf } from "@vot.js/ext/types/service";
 import { getService } from "@vot.js/ext/utils/videoData";
 import { availableTTS } from "@vot.js/shared/consts";
@@ -9,9 +8,9 @@ import { getOrCreateBootState } from "./bootstrap/bootState";
 import { startLightweightVideoProbe } from "./bootstrap/lightweightVideoProbe";
 import { ensureRuntimeActivated } from "./bootstrap/runtimeActivation";
 import { bindObserverListeners } from "./bootstrap/videoObserverBinding";
+import VOTClient, { VOTWorkerClient } from "./client";
 import {
   authCallbackOrigin,
-  minLongWaitingCount,
   proxyWorkerHost,
   votBackendUrl,
   workerHost,
@@ -71,7 +70,6 @@ import {
   stableStringify,
 } from "./utils/utils";
 import { VideoObserver } from "./utils/VideoObserver";
-import VOTLocalizedError from "./utils/VOTLocalizedError";
 import {
   clampPercentInt,
   snapVolume01,
@@ -1628,6 +1626,7 @@ export class VideoHandler {
         clearTimeout(this.translationRefreshTimeout);
         this.translationRefreshTimeout = undefined;
       }
+      this.translationHandler?.resetTranslationRequestState("stopTranslate");
       // Cancel in-flight translation work.
       this.resetActionsAbortController("stopTranslate");
     };
@@ -1659,14 +1658,14 @@ export class VideoHandler {
     }
     const translationTake = localizationProvider.get("translationTake");
     const lang = localizationProvider.lang;
+    // A repeated "about a minute" UI string is not proof that the server
+    // is stalled: several decreasing ETA values map to this same text.
+    // Do not synthesize TranslationDelayed from the display string alone.
     this.longWaitingResCount =
       errorMessage === localizationProvider.get("translationTakeAboutMinute")
         ? this.longWaitingResCount + 1
         : 0;
     debug.log("longWaitingResCount", this.longWaitingResCount);
-    if (this.longWaitingResCount > minLongWaitingCount) {
-      errorMessage = new VOTLocalizedError("TranslationDelayed");
-    }
     debug.log("updateTranslationErrorMsg message", errorMessage);
     if (errorMessage?.name === "VOTLocalizedError") {
       this.transformBtn("error", errorMessage.localizedMessage);

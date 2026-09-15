@@ -1216,7 +1216,9 @@ function ensureQuickMenu(): VOTMenu {
   });
   videoVolumeSlider.hidden = !state.showVideoSlider;
   videoVolumeSlider.addEventListener("input", (value, fromSetter) => {
-    videoVolumeSliderLabel!.value = value;
+    if (videoVolumeSliderLabel) {
+      videoVolumeSliderLabel.value = value;
+    }
     if (!fromSetter) {
       postBridgeCommand("set-video-volume", { value });
     }
@@ -1232,7 +1234,9 @@ function ensureQuickMenu(): VOTMenu {
     max: state.translationVolumeMax,
   });
   translationVolumeSlider.addEventListener("input", (value, fromSetter) => {
-    translationVolumeSliderLabel!.value = value;
+    if (translationVolumeSliderLabel) {
+      translationVolumeSliderLabel.value = value;
+    }
     if (!fromSetter) {
       postBridgeCommand("set-translation-volume", { value });
     }

@@ -56,6 +56,59 @@ function hasPlaybackStarted(video: HTMLVideoElement): boolean {
   );
 }
 
+function resolveActivePlaybackVideo(video: HTMLVideoElement): HTMLVideoElement {
+  const hostname = globalThis.location?.hostname?.toLowerCase?.() ?? "";
+  const isYouTube =
+    hostname === "youtu.be" ||
+    hostname === "youtube.com" ||
+    hostname.endsWith(".youtube.com");
+
+  if (!isYouTube || (!video.paused && !video.ended)) {
+    return video;
+  }
+
+  const candidates = Array.from(
+    document.querySelectorAll<HTMLVideoElement>(
+      "video.html5-main-video, .html5-video-container video, video",
+    ),
+  );
+
+  const active = candidates
+    .filter((candidate) => {
+      if (candidate.paused || candidate.ended) return false;
+      if (candidate.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
+        return false;
+
+      const rect = candidate.getBoundingClientRect();
+      return (
+        rect.width > 80 &&
+        rect.height > 80 &&
+        rect.bottom > 0 &&
+        rect.top < globalThis.innerHeight
+      );
+    })
+    .sort((a, b) => {
+      const ar = a.getBoundingClientRect();
+      const br = b.getBoundingClientRect();
+      return br.width * br.height - ar.width * ar.height;
+    })[0];
+
+  if (active && active !== video) {
+    console.log(
+      "[VOT][source-audio] using active YouTube video instead of stale handler video",
+      {
+        handlerPaused: video.paused,
+        handlerCurrentTime: Number(video.currentTime.toFixed(3)),
+        activePaused: active.paused,
+        activeCurrentTime: Number(active.currentTime.toFixed(3)),
+        activeReadyState: active.readyState,
+      },
+    );
+  }
+
+  return active ?? video;
+}
+
 function getCapturedAudioTrackCount(video: HTMLVideoElement): number | null {
   const candidate = video as HTMLVideoWithCaptureStream;
   const captureStream = candidate.captureStream ?? candidate.mozCaptureStream;
@@ -234,9 +287,10 @@ function maybeLogSourceAudioState(
 export function getSourceAudioAvailability(
   video: HTMLVideoElement,
 ): SourceAudioAvailabilityState {
-  const playbackStarted = hasPlaybackStarted(video);
-  const hasMediaSource = hasResolvableMediaSource(video);
-  const audioInspection = inspectAudioPresence(video, playbackStarted);
+  const media = resolveActivePlaybackVideo(video);
+  const playbackStarted = hasPlaybackStarted(media);
+  const hasMediaSource = hasResolvableMediaSource(media);
+  const audioInspection = inspectAudioPresence(media, playbackStarted);
 
   let state: SourceAudioAvailabilityState;
 
@@ -271,7 +325,7 @@ export function getSourceAudioAvailability(
       detectionSource: audioInspection.source,
       localizationKey: "VOTAudioNotYetAvailable",
     };
-  } else if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+  } else if (media.readyState < HTMLMediaElement.HAVE_METADATA) {
     state = {
       kind: "pending",
       ready: false,
@@ -279,7 +333,7 @@ export function getSourceAudioAvailability(
       detectionSource: audioInspection.source,
       localizationKey: "VOTAudioNotYetAvailable",
     };
-  } else if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+  } else if (media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
     state = {
       kind: "pending",
       ready: false,
@@ -296,13 +350,13 @@ export function getSourceAudioAvailability(
     };
   }
 
-  maybeLogSourceAudioState(video, state, {
+  maybeLogSourceAudioState(media, state, {
     playbackStarted,
     hasMediaSource,
-    readyState: video.readyState,
-    paused: video.paused,
-    currentTime: video.currentTime,
-    playedRanges: video.played.length,
+    readyState: media.readyState,
+    paused: media.paused,
+    currentTime: media.currentTime,
+    playedRanges: media.played.length,
     signals: audioInspection.signals,
   });
 

@@ -13,6 +13,10 @@ function isM3u8(url: string): boolean {
   return /\.m3u8(?:$|[?#])/i.test(url);
 }
 
+function isMpd(url: string): boolean {
+  return /\.mpd(?:$|[?#])/i.test(url);
+}
+
 function resolveUrl(url: string, baseUrl: string): string {
   return new URL(url, baseUrl).toString();
 }
@@ -94,15 +98,20 @@ function scoreVkMediaUrl(url: string): number {
 
   if (lower.startsWith("blob:")) score -= 100;
   if (/\.mp4(?:$|[?#])/i.test(normalized)) score += 50;
+  if (/\.webm(?:$|[?#])/i.test(normalized)) score += 55;
   if (/\.m3u8(?:$|[?#])/i.test(normalized)) score += 45;
   if (/master\.m3u8/i.test(normalized)) score += 35;
-  if (/\.mpd(?:$|[?#])/i.test(normalized)) {
-    return Number.NEGATIVE_INFINITY;
-  }
+
+  if (/\.mpd(?:$|[?#])/i.test(normalized)) score += 70;
+
   if (/manifest/i.test(normalized)) score += 15;
   if (/dashplaylist/i.test(normalized)) score += 15;
   if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(normalized))
     score += 10;
+  if (/\.okcdn\.ru/i.test(normalized)) {
+    if (/[?&]ct=22(?:[&#]|$)/i.test(normalized)) score += 100;
+    if (/[?&]ct=21(?:[&#]|$)/i.test(normalized)) score -= 50;
+  }
   if (/[?&]bytes=\d+-\d+/i.test(normalized)) score -= 60;
   if (/[?&]subid=/i.test(lower)) score -= 80;
   if (/[?&]type=2(?:[&#]|$)/i.test(normalized)) score -= 80;
@@ -152,7 +161,7 @@ function getPerformanceMediaUrl(): string {
         /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(candidate),
       )
       .filter((candidate) =>
-        /\.mp4(?:$|[?#])|\.m3u8(?:$|[?#])|[?&]type=1(?:[&#]|$)/i.test(
+        /\.mp4(?:$|[?#])|\.webm(?:$|[?#])|\.m3u8(?:$|[?#])|\.mpd(?:$|[?#])|[?&]type=1(?:[&#]|$)/i.test(
           candidate,
         ),
       )
@@ -252,6 +261,117 @@ async function resolveM3u8Segments(
   return urls.filter((url) => !isM3u8(url));
 }
 
+async function resolveMpdAudioSegments(
+  manifestUrl: string,
+  signal: AbortSignal,
+): Promise<string[]> {
+  const manifestText = await fetchText(manifestUrl, signal);
+
+  const xml = new DOMParser().parseFromString(manifestText, "application/xml");
+
+  if (xml.querySelector("parsererror")) {
+    throw new Error("[VOT] VK: failed to parse MPD");
+  }
+
+  const adaptationSets = Array.from(xml.querySelectorAll("AdaptationSet"));
+
+  const audioSet = adaptationSets.find((set) => {
+    const contentType = set.getAttribute("contentType") || "";
+    const mimeType = set.getAttribute("mimeType") || "";
+
+    return (
+      contentType.toLowerCase() === "audio" ||
+      mimeType.toLowerCase().startsWith("audio/")
+    );
+  });
+
+  if (!audioSet) {
+    throw new Error("[VOT] VK: MPD audio AdaptationSet not found");
+  }
+
+  const representations = Array.from(
+    audioSet.querySelectorAll(":scope > Representation"),
+  );
+
+  if (!representations.length) {
+    throw new Error("[VOT] VK: MPD audio Representation not found");
+  }
+
+  // Для распознавания речи нет смысла скачивать самый тяжёлый вариант.
+  // Берём дорожку с минимальным bitrate.
+  representations.sort((a, b) => {
+    const left = Number(a.getAttribute("bandwidth") || Number.MAX_SAFE_INTEGER);
+    const right = Number(
+      b.getAttribute("bandwidth") || Number.MAX_SAFE_INTEGER,
+    );
+
+    return left - right;
+  });
+
+  const representation = representations[0];
+
+  const segmentTemplate =
+    representation.querySelector(":scope > SegmentTemplate") ||
+    audioSet.querySelector(":scope > SegmentTemplate");
+
+  if (!segmentTemplate) {
+    throw new Error("[VOT] VK: MPD audio SegmentTemplate not found");
+  }
+
+  const initialization = segmentTemplate.getAttribute("initialization");
+  const media = segmentTemplate.getAttribute("media");
+
+  if (!initialization || !media) {
+    throw new Error("[VOT] VK: invalid MPD audio SegmentTemplate");
+  }
+
+  let segmentNumber = Number(
+    segmentTemplate.getAttribute("startNumber") || "1",
+  );
+
+  const result: string[] = [];
+
+  const replaceTemplate = (template: string, number?: number): string => {
+    let value = template;
+
+    if (number !== undefined) {
+      value = value.replace(/\$Number(?:%0\d+d)?\$/g, String(number));
+    }
+
+    const representationId = representation.getAttribute("id");
+
+    if (representationId) {
+      value = value.replace(/\$RepresentationID\$/g, representationId);
+    }
+
+    return resolveUrl(value, manifestUrl);
+  };
+
+  result.push(replaceTemplate(initialization));
+
+  const timeline = segmentTemplate.querySelector("SegmentTimeline");
+
+  if (!timeline) {
+    throw new Error("[VOT] VK: MPD SegmentTimeline not found");
+  }
+
+  const segments = Array.from(timeline.querySelectorAll(":scope > S"));
+
+  for (const segment of segments) {
+    const repeat = Number(segment.getAttribute("r") || "0");
+
+    // r=600 означает текущий сегмент + ещё 600 повторений.
+    const count = repeat >= 0 ? repeat + 1 : 1;
+
+    for (let i = 0; i < count; i++) {
+      result.push(replaceTemplate(media, segmentNumber));
+      segmentNumber++;
+    }
+  }
+
+  return result;
+}
+
 export async function getAudioFromVkVideo({
   videoId,
   signal,
@@ -305,11 +425,78 @@ export async function getAudioFromVkVideo({
 
   if (src.startsWith("blob:")) {
     throw new Error(
-      "[VOT] VK: blob source detected; need direct mp4/m3u8 URL from VK player/network",
+      "[VOT] VK: blob source detected; need direct mp4/webm/m3u8/mpd URL from player/network",
     );
   }
 
   const chunkSize = 256 * 1024;
+
+  if (isMpd(src)) {
+    const segmentUrls = await resolveMpdAudioSegments(src, signal);
+
+    if (!segmentUrls.length) {
+      throw new Error("[VOT] VK: empty MPD audio segment list");
+    }
+
+    debug.log("[VOT] VK strategy MPD audio segments:", segmentUrls.length);
+    debug.log("[VOT] VK strategy MPD first segment:", segmentUrls[0]);
+    debug.log(
+      "[VOT] VK strategy MPD last segment:",
+      segmentUrls[segmentUrls.length - 1],
+    );
+
+    // OK.ru DASH:
+    // track.a.m4s + s1.a.m4s + s2.a.m4s + ...
+    // Browser confirmed that concatenating these fragments produces
+    // a playable audio/mp4 stream.
+    const parts: Uint8Array[] = [];
+    let totalLength = 0;
+
+    for (let i = 0; i < segmentUrls.length; i++) {
+      const segmentUrl = segmentUrls[i];
+      const bytes = await fetchBytes(segmentUrl, signal);
+
+      if (!bytes.byteLength) {
+        throw new Error(
+          `[VOT] VK: empty MPD audio segment ${i}/${segmentUrls.length}`,
+        );
+      }
+
+      parts.push(bytes);
+      totalLength += bytes.byteLength;
+
+      debug.log(
+        `[VOT] VK strategy MPD downloaded ${i + 1}/${segmentUrls.length}`,
+      );
+    }
+
+    if (!totalLength) {
+      throw new Error("[VOT] VK: empty combined MPD audio");
+    }
+
+    const combined = new Uint8Array(totalLength);
+
+    let offset = 0;
+
+    for (const part of parts) {
+      combined.set(part, offset);
+      offset += part.byteLength;
+    }
+
+    const fileId = `vk_dash_audio_${totalLength}_${Date.now()}`;
+
+    debug.log("[VOT] VK strategy MPD combined bytes:", totalLength);
+    debug.log("[VOT] VK strategy MPD combined fileId:", fileId);
+
+    return {
+      fileId,
+      mediaPartsLength: 1,
+
+      async *getMediaBuffers(): AsyncGenerator<Uint8Array> {
+        yield combined;
+      },
+    };
+  }
 
   if (isM3u8(src)) {
     const segmentUrls = await resolveM3u8Segments(src, signal);

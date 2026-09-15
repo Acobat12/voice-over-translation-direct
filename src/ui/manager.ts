@@ -14,6 +14,7 @@ import ui from "../ui";
 import debug from "../utils/debug";
 import { resolveScopedFullscreenElement } from "../utils/dom";
 import { downloadTranslation } from "../utils/download";
+import { isAbortError } from "../utils/errors";
 import { GM_fetch } from "../utils/gm";
 import type { IntervalIdleChecker } from "../utils/intervalIdleChecker";
 import { votStorage } from "../utils/storage";
@@ -31,6 +32,7 @@ import { SettingsView } from "./views/settings";
 export class UIManager {
   mount: OverlayMount;
   private translationActionInFlight = false;
+  private translationActionGeneration = 0;
 
   private overlayEventsBound = false;
   private settingsEventsBound = false;
@@ -314,6 +316,17 @@ export class UIManager {
           translationActive: this.videoHandler?.hasActiveSource() ?? false,
           translationBusy: this.isTranslationBusy(),
         });
+
+        if (
+          this.deferVoiceModeChangeDuringSourceAudioUpload(
+            previousMode,
+            mode,
+            "rail-menu",
+          )
+        ) {
+          return;
+        }
+
         this.data.useLivelyVoice = livelyEnabled;
         if (this.votSettingsView.useLivelyVoiceCheckbox) {
           this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
@@ -487,8 +500,50 @@ export class UIManager {
     return Boolean(
       this.translationActionInFlight ||
         this.votOverlayView?.votButton?.loading === true ||
+        this.isSourceAudioUploadInProgress() ||
         this.videoHandler?.hadAsyncWait,
     );
+  }
+
+  private isSourceAudioUploadInProgress(): boolean {
+    return Boolean(
+      this.videoHandler?.translationHandler?.isSourceAudioUploadInProgress(),
+    );
+  }
+
+  private restoreVoiceModeUi(mode: "standard" | "lively"): void {
+    const livelyEnabled = mode === "lively";
+    this.data.useLivelyVoice = livelyEnabled;
+
+    if (
+      this.votSettingsView?.useLivelyVoiceCheckbox &&
+      this.votSettingsView.useLivelyVoiceCheckbox.checked !== livelyEnabled
+    ) {
+      this.votSettingsView.useLivelyVoiceCheckbox.checked = livelyEnabled;
+    }
+
+    this.votOverlayView?.syncVoiceModeUi();
+  }
+
+  private deferVoiceModeChangeDuringSourceAudioUpload(
+    previousMode: "standard" | "lively",
+    nextMode: "standard" | "lively",
+    source: string,
+  ): boolean {
+    if (previousMode === nextMode || !this.isSourceAudioUploadInProgress()) {
+      return false;
+    }
+
+    debug.warn(
+      "[voice-menu] voice mode change deferred during source audio upload",
+      {
+        previousMode,
+        nextMode,
+        source,
+      },
+    );
+    this.restoreVoiceModeUi(previousMode);
+    return true;
   }
 
   private async waitForTranslationActionSettled(timeoutMs = 2000) {
@@ -518,15 +573,15 @@ export class UIManager {
       });
       return;
     }
-    if (this.votOverlayView!.votButton.status === "disabled") {
+    if (this.votOverlayView?.votButton.status === "disabled") {
       this.transformBtn("none", localizationProvider.get("translateVideo"));
     }
 
-    if (this.votOverlayView!.votButton.status === "error") {
+    if (this.votOverlayView?.votButton.status === "error") {
       this.transformBtn("none", localizationProvider.get("translateVideo"));
     } else if (
-      this.votOverlayView!.votButton.status !== "disabled" &&
-      this.votOverlayView!.votButton.status !== "none" &&
+      this.votOverlayView?.votButton.status !== "disabled" &&
+      this.votOverlayView?.votButton.status !== "none" &&
       !videoHandler.hasActiveSource()
     ) {
       debug.log("[startTranslationFlow] reset stale button state");
@@ -641,17 +696,29 @@ export class UIManager {
     }
 
     if (this.translationActionInFlight) {
-      debug.warn("[voice-menu] startTranslationFlow early return reason", {
-        reason: "translation-action-still-in-flight",
-      });
-      return;
+      // stopTranslation() already aborted the old actionsAbortController.
+      // Invalidate the stale action instead of blocking the newly selected
+      // voice mode until the old Promise eventually settles.
+      this.translationActionGeneration += 1;
+      this.translationActionInFlight = false;
+      debug.log(
+        "[voice-menu] invalidated stale translation action after mode switch",
+        {
+          previousMode,
+          nextMode,
+          generation: this.translationActionGeneration,
+        },
+      );
     }
 
+    const actionGeneration = ++this.translationActionGeneration;
     this.translationActionInFlight = true;
     try {
       await this.startTranslationFlow(videoHandler);
     } finally {
-      this.translationActionInFlight = false;
+      if (this.translationActionGeneration === actionGeneration) {
+        this.translationActionInFlight = false;
+      }
     }
   }
 
@@ -800,8 +867,8 @@ export class UIManager {
         return;
       }
 
-      this.videoHandler!.syncTranslationPlaybackVolume();
-      this.videoHandler!.resetVolumeLinkState(
+      this.videoHandler?.syncTranslationPlaybackVolume();
+      this.videoHandler?.resetVolumeLinkState(
         Number(videoSlider.value),
         Number(translationSlider.value),
       );
@@ -843,6 +910,17 @@ export class UIManager {
   async applyDriveUseLivelyVoice(enabled: boolean) {
     const previousMode = this.data.useLivelyVoice ? "lively" : "standard";
     const nextMode = enabled ? "lively" : "standard";
+
+    if (
+      this.deferVoiceModeChangeDuringSourceAudioUpload(
+        previousMode,
+        nextMode,
+        "google-drive-top-frame",
+      )
+    ) {
+      return;
+    }
+
     this.data.useLivelyVoice = enabled;
 
     if (!this.videoHandler) {
@@ -942,6 +1020,20 @@ export class UIManager {
 
         const nextMode = checked ? "lively" : "standard";
         const previousMode = checked ? "standard" : "lively";
+
+        if (
+          this.deferVoiceModeChangeDuringSourceAudioUpload(
+            previousMode,
+            nextMode,
+            "settings",
+          )
+        ) {
+          this.runDetached(
+            votStorage.set("useLivelyVoice", previousMode === "lively"),
+            "Failed to restore voice mode selection",
+          );
+          return;
+        }
 
         this.runDetached(
           this.applyVoiceModeSelection(previousMode, nextMode),
@@ -1276,6 +1368,7 @@ export class UIManager {
       return this;
     }
 
+    const actionGeneration = ++this.translationActionGeneration;
     this.translationActionInFlight = true;
 
     try {
@@ -1300,7 +1393,9 @@ export class UIManager {
 
       this.transformBtn("error", message);
     } finally {
-      this.translationActionInFlight = false;
+      if (this.translationActionGeneration === actionGeneration) {
+        this.translationActionInFlight = false;
+      }
     }
 
     return this;
@@ -1330,7 +1425,7 @@ export class UIManager {
   }
 
   private isAbortError(error: unknown) {
-    return error instanceof Error && error.name === "AbortError";
+    return isAbortError(error);
   }
 
   private isLoadingText(text: string) {

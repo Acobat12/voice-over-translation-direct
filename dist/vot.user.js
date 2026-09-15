@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.10
+// @version         1.11.6.11
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -3573,8 +3573,204 @@
 		}
 	};
 	var OKRuHelper = class extends BaseHelper {
-		async getVideoId(url) {
-			return /\/video\/(\d+)/.exec(url.pathname)?.[1];
+		constructor(...args) {
+			super(...args);
+			this.AUDIO_HOST_RE = /^vd\d*\.okcdn\.ru$/i;
+			this.AUDIO_TYPE = "1";
+			this.AUDIO_CT = "22";
+			this.AUDIO_WAIT_TIMEOUT_MS = 15e3;
+			this.lastHref = "";
+			this.lastBlobUrl = "";
+			this.lastMediaId = "";
+			this.lastVideoData = void 0;
+			this.lastAudioUrl = "";
+			this.startWatcher();
+		}
+		startWatcher() {
+			const update = () => {
+				const video = this.getActiveVideoElement();
+				const player = this.getActivePlayer();
+				const href = location.href;
+				const blobUrl = video?.currentSrc || video?.src || "";
+				const rawStub = player?.getAttribute("stub-thumb-url") || "";
+				const mediaId = this.getActiveMediaId() || "";
+				if (href !== this.lastHref || blobUrl !== this.lastBlobUrl || mediaId !== this.lastMediaId) {
+					this.lastHref = href;
+					this.lastBlobUrl = blobUrl;
+					this.lastMediaId = mediaId;
+					this.lastVideoData = void 0;
+					this.lastAudioUrl = "";
+					console.log("[VOT][okru] current media", {
+						videoId: this.getPageVideoId(),
+						mediaId,
+						blobUrl,
+						hasPlayer: !!player,
+						stubThumbUrl: rawStub
+					});
+				}
+				requestAnimationFrame(update);
+			};
+			update();
+		}
+		getPageVideoId() {
+			return /\/(?:video|videoembed)\/(\d+)/.exec(location.pathname)?.[1];
+		}
+		getBoundVideoElement() {
+			return this.video || this.videoElement || this.media || this.target || this.container?.querySelector?.("video") || void 0;
+		}
+		getActiveVideoElement() {
+			return [...document.querySelectorAll("video")].map((video) => {
+				const rect = video.getBoundingClientRect();
+				return {
+					video,
+					paused: video.paused,
+					readyState: video.readyState,
+					visible: rect.width > 100 && rect.height > 100 && rect.bottom > 0 && rect.top < window.innerHeight,
+					centerDistance: Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2)
+				};
+			}).filter((x) => x.visible).sort((a, b) => {
+				if (a.paused !== b.paused) return a.paused ? 1 : -1;
+				if (a.readyState !== b.readyState) return b.readyState - a.readyState;
+				return a.centerDistance - b.centerDistance;
+			})[0]?.video;
+		}
+		isCurrentHandlerVideoActive() {
+			const bound = this.getBoundVideoElement();
+			const active = this.getActiveVideoElement();
+			if (!bound || !active) return true;
+			return bound === active;
+		}
+		getActivePlayer() {
+			const players = [...document.querySelectorAll("vk-video-player[stub-thumb-url]")];
+			return players.map((player) => {
+				const rect = player.getBoundingClientRect();
+				return {
+					player,
+					visible: rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.top < window.innerHeight,
+					centerDistance: Math.abs(rect.top + rect.height / 2 - window.innerHeight / 2)
+				};
+			}).filter((x) => x.visible).sort((a, b) => a.centerDistance - b.centerDistance)[0]?.player || players[0];
+		}
+		getActiveMediaId() {
+			const player = this.getActivePlayer();
+			if (!player) {
+				console.log("[VOT][OKRuHelper] no vk-video-player found");
+				return;
+			}
+			const raw = player.getAttribute("stub-thumb-url") || "";
+			console.log("[VOT][OKRuHelper] stub-thumb-url", raw);
+			if (!raw) return void 0;
+			try {
+				const id = new URL(raw, location.href).searchParams.get("id");
+				if (id) {
+					console.log("[VOT][OKRuHelper] mediaId from URLSearchParams", id);
+					return id;
+				}
+			} catch {}
+			try {
+				const decoded = decodeURIComponent(raw);
+				const match = /[?&]id=(\d+)/i.exec(decoded) || /[?&]id%3D(\d+)/i.exec(decoded);
+				if (match?.[1]) {
+					console.log("[VOT][OKRuHelper] mediaId from decoded URL", match[1]);
+					return match[1];
+				}
+			} catch {}
+			const match = /(?:[?&]|&amp;)id=(\d+)/i.exec(raw) || /\bid[=:](\d+)/i.exec(raw);
+			if (match?.[1]) {
+				console.log("[VOT][OKRuHelper] mediaId from raw URL", match[1]);
+				return match[1];
+			}
+			console.log("[VOT][OKRuHelper] mediaId NOT FOUND in stub-thumb-url", raw);
+		}
+		isDirectAudioUrl(rawUrl, mediaId) {
+			if (!rawUrl) return false;
+			try {
+				const url = new URL(rawUrl, location.href);
+				if (!this.AUDIO_HOST_RE.test(url.hostname)) return false;
+				if (url.searchParams.get("type") !== this.AUDIO_TYPE) return false;
+				if (url.searchParams.get("ct") !== this.AUDIO_CT) return false;
+				const candidateId = url.searchParams.get("id");
+				if (!candidateId) return false;
+				if (mediaId && candidateId !== mediaId) return false;
+				return true;
+			} catch {
+				return false;
+			}
+		}
+		normalizeDirectAudioUrl(rawUrl) {
+			const url = new URL(rawUrl, location.href);
+			url.searchParams.delete("bytes");
+			return url.toString();
+		}
+		findDirectAudioUrl(mediaId) {
+			const entries = performance.getEntriesByType("resource");
+			for (let i = entries.length - 1; i >= 0; i -= 1) {
+				const rawUrl = entries[i]?.name;
+				if (!this.isDirectAudioUrl(rawUrl, mediaId)) continue;
+				return this.normalizeDirectAudioUrl(rawUrl);
+			}
+		}
+		async waitForDirectAudioUrl(mediaId, timeoutMs = this.AUDIO_WAIT_TIMEOUT_MS) {
+			const existing = this.findDirectAudioUrl(mediaId);
+			if (existing) return existing;
+			if (typeof PerformanceObserver !== "function") return void 0;
+			return await new Promise((resolve) => {
+				let observer;
+				const finish = (value) => {
+					clearTimeout(timer);
+					observer?.disconnect();
+					resolve(value);
+				};
+				const timer = setTimeout(() => finish(void 0), timeoutMs);
+				observer = new PerformanceObserver((list) => {
+					for (const entry of list.getEntries()) {
+						if (!this.isDirectAudioUrl(entry.name, mediaId)) continue;
+						finish(this.normalizeDirectAudioUrl(entry.name));
+						return;
+					}
+				});
+				try {
+					observer.observe({
+						type: "resource",
+						buffered: true
+					});
+				} catch {
+					observer?.disconnect();
+					clearTimeout(timer);
+					resolve(void 0);
+				}
+			});
+		}
+		async getVideoData() {
+			if (!this.isCurrentHandlerVideoActive()) return void 0;
+			const requestVideoId = this.getPageVideoId();
+			if (!requestVideoId) return void 0;
+			const requestMediaId = this.getActiveMediaId();
+			console.log("[VOT][OKRuHelper] resolving videoData", {
+				videoId: requestVideoId,
+				mediaId: requestMediaId
+			});
+			const audioUrl = await this.waitForDirectAudioUrl(requestMediaId);
+			if (!this.isCurrentHandlerVideoActive()) return void 0;
+			if (requestVideoId !== this.getPageVideoId()) return void 0;
+			const currentMediaId = this.getActiveMediaId();
+			if (requestMediaId && currentMediaId && requestMediaId !== currentMediaId) return void 0;
+			if (!audioUrl) throw new Error("OK.ru direct audio URL was not detected (expected vd*.okcdn.ru type=1 ct=22)");
+			const video = this.getActiveVideoElement();
+			this.lastAudioUrl = audioUrl;
+			this.lastVideoData = {
+				url: audioUrl,
+				videoId: requestVideoId,
+				host: "okru",
+				duration: Number.isFinite(video?.duration) && video.duration > 0 ? video.duration : void 0,
+				isStream: false
+			};
+			console.log("[VOT][OKRuHelper] videoData", this.lastVideoData);
+			return this.lastVideoData;
+		}
+		async getVideoId() {
+			if (!this.isCurrentHandlerVideoActive()) return void 0;
+			return this.getPageVideoId();
 		}
 	};
 	var OlympicsReplayHelper = class extends BaseHelper {
@@ -23290,7 +23486,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.10"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.11"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -29363,7 +29559,7 @@
 		});
 		videoVolumeSlider.hidden = !state.showVideoSlider;
 		videoVolumeSlider.addEventListener("input", (value, fromSetter) => {
-			videoVolumeSliderLabel.value = value;
+			if (videoVolumeSliderLabel) videoVolumeSliderLabel.value = value;
 			if (!fromSetter) postBridgeCommand("set-video-volume", { value });
 		});
 		translationVolumeSliderLabel = new SliderLabel({
@@ -29376,7 +29572,7 @@
 			max: state.translationVolumeMax
 		});
 		translationVolumeSlider.addEventListener("input", (value, fromSetter) => {
-			translationVolumeSliderLabel.value = value;
+			if (translationVolumeSliderLabel) translationVolumeSliderLabel.value = value;
 			if (!fromSetter) postBridgeCommand("set-translation-volume", { value });
 		});
 		quickMenu.bodyContainer.style.display = "flex";
@@ -33135,7 +33331,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			host: VideoService.custom,
 			url: "stub",
 			match: /(^|\.)kinopoisk\.ru$/i,
-			selector: ".ott-player, [class*='player'], .yp-player, " + GENERIC_PLAYER_SELECTOR,
+			selector: `.ott-player, [class*='player'], .yp-player, ${GENERIC_PLAYER_SELECTOR}`,
 			rawResult: true
 		},
 		{
@@ -33156,7 +33352,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			host: VideoService.custom,
 			url: "stub",
 			match: /(^|\.)kodik\.(fun|pw|io|online|me)$/i,
-			selector: ".fp-player, " + GENERIC_PLAYER_SELECTOR,
+			selector: `.fp-player, ${GENERIC_PLAYER_SELECTOR}`,
 			rawResult: true
 		},
 		{
@@ -34699,8 +34895,518 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 		};
 	}
+	function makeDouyinFileId(videoId, size, chunkSize) {
+		return `douyin_${videoId}_${size}_${chunkSize}`;
+	}
+	async function fetchDouyinMedia(src, signal) {
+		try {
+			const res = await fetch(src, { signal });
+			if (res.ok) return res;
+		} catch {}
+		const gmRes = await GM_fetch(src, {
+			signal,
+			timeout: 0,
+			forceGmXhr: true
+		});
+		if (!gmRes.ok) throw new Error(`[VOT] Douyin: failed to fetch media: ${gmRes.status}`);
+		return gmRes;
+	}
+	async function getAudioFromDouyin({ videoId, signal, preferredVideo }) {
+		const video = preferredVideo instanceof HTMLVideoElement ? preferredVideo : document.querySelector("video");
+		if (!(video instanceof HTMLVideoElement)) throw new Error("[VOT] Douyin: video element not found");
+		const src = video.currentSrc || video.src;
+		debug.log("[VOT] Douyin strategy src:", src);
+		debug.log("[VOT] Douyin strategy videoId:", videoId);
+		if (!src) throw new Error("[VOT] Douyin: empty video src");
+		const buffer = await (await fetchDouyinMedia(src, signal)).arrayBuffer();
+		const bytes = new Uint8Array(buffer);
+		if (!bytes.byteLength) throw new Error("[VOT] Douyin: empty media bytes");
+		const chunkSize = 256 * 1024;
+		const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+		return {
+			fileId: makeDouyinFileId(videoId, bytes.byteLength, chunkSize),
+			mediaPartsLength,
+			async *getMediaBuffers() {
+				for (let start = 0; start < bytes.byteLength; start += chunkSize) yield bytes.subarray(start, Math.min(start + chunkSize, bytes.byteLength));
+			}
+		};
+	}
+	function makeSimpleFileId$2(size, chunkSize) {
+		return `local_${size}_${chunkSize}_${Date.now()}`;
+	}
+	async function fetchLocalMedia(src, signal) {
+		if (!src) throw new Error("[VOT] Local file: empty media src");
+		if (src.startsWith("blob:")) {
+			const res = await fetch(src, { signal });
+			if (!res.ok) throw new Error(`[VOT] Local file: failed to fetch blob media: ${res.status}`);
+			return res;
+		}
+		try {
+			const res = await fetch(src, { signal });
+			if (res.ok) return res;
+		} catch {}
+		const gmRes = await GM_fetch(src, {
+			signal,
+			timeout: 0
+		});
+		if (!gmRes.ok) throw new Error(`[VOT] Local file: failed to fetch media source: ${gmRes.status}`);
+		return gmRes;
+	}
+	function getContentLength(response) {
+		const raw = response.headers.get("content-length") || response.headers.get("Content-Length");
+		if (!raw) return null;
+		const value = Number.parseInt(raw, 10);
+		return Number.isFinite(value) && value > 0 ? value : null;
+	}
+	async function getAudioFromLocalFile({ signal }) {
+		const video = document.querySelector("video");
+		if (!(video instanceof HTMLVideoElement)) throw new Error("[VOT] Local file: video element not found");
+		const sourceEl = video.querySelector("source");
+		const src = video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "";
+		if (!src) throw new Error("[VOT] Local file: empty video src");
+		const response = await fetchLocalMedia(src, signal);
+		const chunkSize = 256 * 1024;
+		const contentLength = getContentLength(response);
+		if (response.body && contentLength) {
+			const mediaPartsLength = Math.max(1, Math.ceil(contentLength / chunkSize));
+			return {
+				fileId: makeSimpleFileId$2(contentLength, chunkSize),
+				mediaPartsLength,
+				async *getMediaBuffers() {
+					const reader = response.body?.getReader();
+					let pending = new Uint8Array(0);
+					try {
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							if (!value?.byteLength) continue;
+							let merged;
+							if (pending.byteLength === 0) merged = value;
+							else {
+								merged = new Uint8Array(pending.byteLength + value.byteLength);
+								merged.set(pending, 0);
+								merged.set(value, pending.byteLength);
+							}
+							let offset = 0;
+							while (merged.byteLength - offset >= chunkSize) {
+								yield merged.subarray(offset, offset + chunkSize);
+								offset += chunkSize;
+							}
+							pending = offset < merged.byteLength ? merged.slice(offset) : new Uint8Array(0);
+						}
+						if (pending.byteLength) yield pending;
+					} finally {
+						reader.releaseLock();
+					}
+				}
+			};
+		}
+		const buffer = await response.arrayBuffer();
+		const bytes = new Uint8Array(buffer);
+		if (!bytes.byteLength) throw new Error("[VOT] Local file: empty media bytes");
+		const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+		return {
+			fileId: makeSimpleFileId$2(bytes.byteLength, chunkSize),
+			mediaPartsLength,
+			async *getMediaBuffers() {
+				for (let start = 0; start < bytes.byteLength; start += chunkSize) {
+					const end = Math.min(start + chunkSize, bytes.byteLength);
+					yield bytes.subarray(start, end);
+				}
+			}
+		};
+	}
+	var manifestPatterns = [
+		/\.m3u8(?:$|[?#])/i,
+		/master\.m3u8/i,
+		/manifest/i,
+		/dashplaylist/i,
+		/\.mp4(?:$|[?#])/i
+	];
+	function isManifestUrl(url) {
+		return manifestPatterns.some((re) => re.test(url));
+	}
+	var bestManifest = null;
+	var installed$1 = false;
+	function normalizeUrl$1(input) {
+		try {
+			return new URL(input, globalThis.location.href).href;
+		} catch {
+			return input;
+		}
+	}
+	function isDirectMediaCandidate(url) {
+		return /\.m3u8(?:$|[?#])/i.test(url) || /master\.m3u8/i.test(url) || /dashplaylist/i.test(url) || /\.mp4(?:$|[?#])/i.test(url);
+	}
+	function isBadSegmentUrl(url) {
+		const lower = url.toLowerCase();
+		if (isDirectMediaCandidate(lower)) return false;
+		return lower.includes("okcdn.ru/?") || /[?&]bytes=\d+-\d+/i.test(lower) || /[?&]type=\d+/i.test(lower);
+	}
+	function rememberManifest(url) {
+		const normalized = normalizeUrl$1(url);
+		if (isBadSegmentUrl(normalized)) return;
+		if (!isManifestUrl(normalized)) return;
+		console.log("[VOT][manifestSniffer] candidate", normalized);
+		if (!bestManifest) {
+			bestManifest = {
+				url: normalized,
+				seenAt: Date.now()
+			};
+			console.log("[VOT][manifestSniffer] selected", bestManifest.url);
+			return;
+		}
+		const currentScore = scoreManifestUrl(bestManifest.url);
+		if (scoreManifestUrl(normalized) >= currentScore) {
+			bestManifest = {
+				url: normalized,
+				seenAt: Date.now()
+			};
+			console.log("[VOT][manifestSniffer] selected", bestManifest.url);
+		}
+	}
+	function scoreManifestUrl(url) {
+		let score = 0;
+		if (/\.mp4(?:$|[?#])/i.test(url)) score += 5;
+		if (/\.m3u8(?:$|[?#])/i.test(url)) score += 4;
+		if (/master\.m3u8/i.test(url)) score += 3;
+		if (/\.mpd(?:$|[?#])/i.test(url)) return Number.NEGATIVE_INFINITY;
+		if (/manifest/i.test(url)) score += 1;
+		if (/dashplaylist/i.test(url)) score += 1;
+		if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(url)) score += 2;
+		return score;
+	}
+	function getLastManifestUrl() {
+		return bestManifest?.url ?? "";
+	}
+	var DIRECT_SOURCES_KEY = "__VOT_DIRECT_SOURCES__";
+	function tryInjectDirectSources(text) {
+		try {
+			const data = JSON.parse(text);
+			if (!data || typeof data !== "object") return;
+			if (!("unitedVideoId" in data || "video" in data && typeof data.video === "object")) return;
+			const existing = globalThis[DIRECT_SOURCES_KEY];
+			if (existing && typeof existing === "object") return;
+			globalThis[DIRECT_SOURCES_KEY] = data;
+			console.log("[VOT][manifestSniffer] injected __VOT_DIRECT_SOURCES__", data);
+		} catch {}
+	}
+	function installManifestSniffer() {
+		if (installed$1) return;
+		installed$1 = true;
+		const originalFetch = globalThis.fetch.bind(globalThis);
+		globalThis.fetch = async (...args) => {
+			const input = args[0];
+			rememberManifest(typeof input === "string" ? input : input instanceof Request ? input.url : String(input ?? ""));
+			const response = await originalFetch(...args);
+			if (response.headers.get("content-type")?.includes("application/json")) response.clone().text().then(tryInjectDirectSources).catch(() => {});
+			return response;
+		};
+		const originalOpen = XMLHttpRequest.prototype.open;
+		XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+			rememberManifest(String(url));
+			this.addEventListener("load", function() {
+				const ct = this.getResponseHeader("content-type") ?? "";
+				if (!ct.includes("application/json") && !ct.includes("text/javascript")) return;
+				if (this.responseType !== "" && this.responseType !== "text") return;
+				try {
+					if (typeof this.responseText === "string") tryInjectDirectSources(this.responseText);
+				} catch {}
+			});
+			return originalOpen.call(this, method, url, ...rest);
+		};
+	}
+	var VK_PLAYER_SELECTOR = ".videoplayer_media, vk-video-player";
+	function makeSimpleFileId$1(size, chunkSize) {
+		return `vk_${size}_${chunkSize}_${Date.now()}`;
+	}
+	function isM3u8(url) {
+		return /\.m3u8(?:$|[?#])/i.test(url);
+	}
+	function isMpd(url) {
+		return /\.mpd(?:$|[?#])/i.test(url);
+	}
+	function resolveUrl(url, baseUrl) {
+		return new URL(url, baseUrl).toString();
+	}
+	function getVideoSrc(video) {
+		const sourceEl = video.querySelector("source");
+		return String(video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "").trim();
+	}
+	function isVisibleVideo(video) {
+		const rect = video.getBoundingClientRect();
+		return rect.width > 64 && rect.height > 64;
+	}
+	function collectVideoCandidates(preferredVideo) {
+		const seen = new Set();
+		const result = [];
+		const push = (video) => {
+			if (!(video instanceof HTMLVideoElement) || seen.has(video)) return;
+			seen.add(video);
+			result.push(video);
+		};
+		push(preferredVideo);
+		for (const video of Array.from(document.querySelectorAll("video"))) push(video);
+		return result;
+	}
+	function scoreVideoCandidate(video, preferredVideo) {
+		let score = 0;
+		const src = getVideoSrc(video);
+		if (video === preferredVideo) score += 100;
+		if (video.isConnected) score += 10;
+		if (isVisibleVideo(video)) score += 25;
+		if (video.closest(VK_PLAYER_SELECTOR)) score += 20;
+		if (!video.paused) score += 8;
+		if (video.readyState > 0) score += 8;
+		if (src) score += 4;
+		if (src && !src.startsWith("blob:")) score += 6;
+		return score;
+	}
+	function normalizeCandidateUrl(url) {
+		try {
+			return new URL(url, globalThis.location.href).toString();
+		} catch {
+			return String(url || "").trim();
+		}
+	}
+	function scoreVkMediaUrl(url) {
+		const normalized = normalizeCandidateUrl(url);
+		if (!normalized) return Number.NEGATIVE_INFINITY;
+		const lower = normalized.toLowerCase();
+		let score = 0;
+		if (lower.startsWith("blob:")) score -= 100;
+		if (/\.mp4(?:$|[?#])/i.test(normalized)) score += 50;
+		if (/\.webm(?:$|[?#])/i.test(normalized)) score += 55;
+		if (/\.m3u8(?:$|[?#])/i.test(normalized)) score += 45;
+		if (/master\.m3u8/i.test(normalized)) score += 35;
+		if (/\.mpd(?:$|[?#])/i.test(normalized)) score += 70;
+		if (/manifest/i.test(normalized)) score += 15;
+		if (/dashplaylist/i.test(normalized)) score += 15;
+		if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(normalized)) score += 10;
+		if (/\.okcdn\.ru/i.test(normalized)) {
+			if (/[?&]ct=22(?:[&#]|$)/i.test(normalized)) score += 100;
+			if (/[?&]ct=21(?:[&#]|$)/i.test(normalized)) score -= 50;
+		}
+		if (/[?&]bytes=\d+-\d+/i.test(normalized)) score -= 60;
+		if (/[?&]subid=/i.test(lower)) score -= 80;
+		if (/[?&]type=2(?:[&#]|$)/i.test(normalized)) score -= 80;
+		return score;
+	}
+	function pickBestVkMediaUrl(candidates) {
+		let best = "";
+		let bestScore = Number.NEGATIVE_INFINITY;
+		for (const candidate of candidates) {
+			const normalized = normalizeCandidateUrl(String(candidate || "").trim());
+			const score = scoreVkMediaUrl(normalized);
+			if (score > bestScore) {
+				best = normalized;
+				bestScore = score;
+			}
+		}
+		return best;
+	}
+	function stripBytesParam(url) {
+		try {
+			const u = new URL(url);
+			u.searchParams.delete("bytes");
+			return u.toString();
+		} catch {
+			return url;
+		}
+	}
+	function getPerformanceMediaUrl() {
+		try {
+			return pickBestVkMediaUrl(performance.getEntriesByType("resource").map((entry) => {
+				const raw = String(entry?.name || "").trim();
+				return /[?&]bytes=\d+-\d+/i.test(raw) ? stripBytesParam(raw) : raw;
+			}).filter((candidate) => /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(candidate)).filter((candidate) => /\.mp4(?:$|[?#])|\.webm(?:$|[?#])|\.m3u8(?:$|[?#])|\.mpd(?:$|[?#])|[?&]type=1(?:[&#]|$)/i.test(candidate)).filter(Boolean));
+		} catch {
+			return "";
+		}
+	}
+	async function fetchVkMedia(src, signal) {
+		if (/(?:^|\.)okcdn\.ru/i.test(src) || /vkvd\d+\.okcdn\.ru/i.test(src) || /vkvideo\.ru/i.test(src)) {
+			const gmRes = await GM_fetch(src, {
+				signal,
+				timeout: 0
+			});
+			if (!gmRes.ok) throw new Error(`[VOT] VK: failed to fetch media source via GM_fetch: ${gmRes.status}`);
+			return gmRes;
+		}
+		try {
+			const res = await fetch(src, {
+				signal,
+				credentials: "include"
+			});
+			if (res.ok) return res;
+		} catch {}
+		const gmRes = await GM_fetch(src, {
+			signal,
+			timeout: 0
+		});
+		if (!gmRes.ok) throw new Error(`[VOT] VK: failed to fetch media source: ${gmRes.status}`);
+		return gmRes;
+	}
+	async function fetchText(src, signal) {
+		return await (await fetchVkMedia(src, signal)).text();
+	}
+	async function fetchBytes(src, signal) {
+		const buffer = await (await fetchVkMedia(src, signal)).arrayBuffer();
+		return new Uint8Array(buffer);
+	}
+	function parseM3u8Urls(text, baseUrl) {
+		return text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => resolveUrl(line, baseUrl));
+	}
+	async function resolveM3u8Segments(manifestUrl, signal) {
+		const urls = parseM3u8Urls(await fetchText(manifestUrl, signal), manifestUrl);
+		const nestedManifest = urls.find((url) => isM3u8(url));
+		if (nestedManifest) return parseM3u8Urls(await fetchText(nestedManifest, signal), nestedManifest).filter((url) => !isM3u8(url));
+		return urls.filter((url) => !isM3u8(url));
+	}
+	async function resolveMpdAudioSegments(manifestUrl, signal) {
+		const manifestText = await fetchText(manifestUrl, signal);
+		const xml = new DOMParser().parseFromString(manifestText, "application/xml");
+		if (xml.querySelector("parsererror")) throw new Error("[VOT] VK: failed to parse MPD");
+		const audioSet = Array.from(xml.querySelectorAll("AdaptationSet")).find((set) => {
+			const contentType = set.getAttribute("contentType") || "";
+			const mimeType = set.getAttribute("mimeType") || "";
+			return contentType.toLowerCase() === "audio" || mimeType.toLowerCase().startsWith("audio/");
+		});
+		if (!audioSet) throw new Error("[VOT] VK: MPD audio AdaptationSet not found");
+		const representations = Array.from(audioSet.querySelectorAll(":scope > Representation"));
+		if (!representations.length) throw new Error("[VOT] VK: MPD audio Representation not found");
+		representations.sort((a, b) => {
+			return Number(a.getAttribute("bandwidth") || Number.MAX_SAFE_INTEGER) - Number(b.getAttribute("bandwidth") || Number.MAX_SAFE_INTEGER);
+		});
+		const representation = representations[0];
+		const segmentTemplate = representation.querySelector(":scope > SegmentTemplate") || audioSet.querySelector(":scope > SegmentTemplate");
+		if (!segmentTemplate) throw new Error("[VOT] VK: MPD audio SegmentTemplate not found");
+		const initialization = segmentTemplate.getAttribute("initialization");
+		const media = segmentTemplate.getAttribute("media");
+		if (!initialization || !media) throw new Error("[VOT] VK: invalid MPD audio SegmentTemplate");
+		let segmentNumber = Number(segmentTemplate.getAttribute("startNumber") || "1");
+		const result = [];
+		const replaceTemplate = (template, number) => {
+			let value = template;
+			if (number !== void 0) value = value.replace(/\$Number(?:%0\d+d)?\$/g, String(number));
+			const representationId = representation.getAttribute("id");
+			if (representationId) value = value.replace(/\$RepresentationID\$/g, representationId);
+			return resolveUrl(value, manifestUrl);
+		};
+		result.push(replaceTemplate(initialization));
+		const timeline = segmentTemplate.querySelector("SegmentTimeline");
+		if (!timeline) throw new Error("[VOT] VK: MPD SegmentTimeline not found");
+		const segments = Array.from(timeline.querySelectorAll(":scope > S"));
+		for (const segment of segments) {
+			const repeat = Number(segment.getAttribute("r") || "0");
+			const count = repeat >= 0 ? repeat + 1 : 1;
+			for (let i = 0; i < count; i++) {
+				result.push(replaceTemplate(media, segmentNumber));
+				segmentNumber++;
+			}
+		}
+		return result;
+	}
+	async function getAudioFromVkVideo({ videoId, signal, preferredVideo }) {
+		const videos = collectVideoCandidates(preferredVideo).sort((left, right) => scoreVideoCandidate(right, preferredVideo) - scoreVideoCandidate(left, preferredVideo));
+		const video = videos[0];
+		if (!(video instanceof HTMLVideoElement)) throw new Error("[VOT] VK: video element not found");
+		const sniffedManifestUrl = getLastManifestUrl();
+		const performanceMediaUrl = getPerformanceMediaUrl();
+		const selectedVideoSrc = getVideoSrc(video);
+		const src = pickBestVkMediaUrl([
+			sniffedManifestUrl,
+			performanceMediaUrl,
+			...videos.map((candidate) => getVideoSrc(candidate)).filter((candidate) => candidate && !candidate.startsWith("blob:")),
+			selectedVideoSrc
+		]);
+		debug.log("[VOT] VK strategy videoId:", videoId);
+		debug.log("[VOT] VK strategy manifest:", sniffedManifestUrl);
+		debug.log("[VOT] VK strategy performance media:", performanceMediaUrl);
+		debug.log("[VOT] VK strategy currentSrc:", video.currentSrc);
+		debug.log("[VOT] VK strategy src:", video.src);
+		debug.log("[VOT] VK strategy selected video src:", selectedVideoSrc);
+		debug.log("[VOT] VK strategy candidate videos:", videos.map((candidate) => ({
+			src: getVideoSrc(candidate),
+			visible: isVisibleVideo(candidate),
+			paused: candidate.paused,
+			readyState: candidate.readyState,
+			score: scoreVideoCandidate(candidate, preferredVideo)
+		})));
+		debug.log("[VOT] VK strategy selected src:", src);
+		if (!src) throw new Error("[VOT] VK: empty video src");
+		if (src.startsWith("blob:")) throw new Error("[VOT] VK: blob source detected; need direct mp4/webm/m3u8/mpd URL from player/network");
+		const chunkSize = 256 * 1024;
+		if (isMpd(src)) {
+			const segmentUrls = await resolveMpdAudioSegments(src, signal);
+			if (!segmentUrls.length) throw new Error("[VOT] VK: empty MPD audio segment list");
+			debug.log("[VOT] VK strategy MPD audio segments:", segmentUrls.length);
+			debug.log("[VOT] VK strategy MPD first segment:", segmentUrls[0]);
+			debug.log("[VOT] VK strategy MPD last segment:", segmentUrls[segmentUrls.length - 1]);
+			const parts = [];
+			let totalLength = 0;
+			for (let i = 0; i < segmentUrls.length; i++) {
+				const segmentUrl = segmentUrls[i];
+				const bytes = await fetchBytes(segmentUrl, signal);
+				if (!bytes.byteLength) throw new Error(`[VOT] VK: empty MPD audio segment ${i}/${segmentUrls.length}`);
+				parts.push(bytes);
+				totalLength += bytes.byteLength;
+				debug.log(`[VOT] VK strategy MPD downloaded ${i + 1}/${segmentUrls.length}`);
+			}
+			if (!totalLength) throw new Error("[VOT] VK: empty combined MPD audio");
+			const combined = new Uint8Array(totalLength);
+			let offset = 0;
+			for (const part of parts) {
+				combined.set(part, offset);
+				offset += part.byteLength;
+			}
+			const fileId = `vk_dash_audio_${totalLength}_${Date.now()}`;
+			debug.log("[VOT] VK strategy MPD combined bytes:", totalLength);
+			debug.log("[VOT] VK strategy MPD combined fileId:", fileId);
+			return {
+				fileId,
+				mediaPartsLength: 1,
+				async *getMediaBuffers() {
+					yield combined;
+				}
+			};
+		}
+		if (isM3u8(src)) {
+			const segmentUrls = await resolveM3u8Segments(src, signal);
+			if (!segmentUrls.length) throw new Error("[VOT] VK: empty m3u8 segment list");
+			const fileId = `vk_hls_${Date.now()}`;
+			debug.log("[VOT] VK strategy m3u8 segments:", segmentUrls.length);
+			return {
+				fileId,
+				mediaPartsLength: segmentUrls.length,
+				async *getMediaBuffers() {
+					for (const segmentUrl of segmentUrls) {
+						const bytes = await fetchBytes(segmentUrl, signal);
+						if (!bytes.byteLength) throw new Error("[VOT] VK: empty m3u8 segment");
+						yield bytes;
+					}
+				}
+			};
+		}
+		const bytes = await fetchBytes(src, signal);
+		if (!bytes.byteLength) throw new Error("[VOT] VK: empty media bytes");
+		const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
+		const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
+		debug.log("[VOT] VK strategy bytes:", bytes.byteLength);
+		debug.log("[VOT] VK strategy mediaPartsLength:", mediaPartsLength);
+		return {
+			fileId,
+			mediaPartsLength,
+			async *getMediaBuffers() {
+				for (let start = 0; start < bytes.byteLength; start += chunkSize) {
+					const end = Math.min(start + chunkSize, bytes.byteLength);
+					yield bytes.subarray(start, end);
+				}
+			}
+		};
+	}
 	var e$1 = Object.defineProperty, t$1 = (t, n) => {
-		let r = {};
+		const r = {};
 		for (var i in t) e$1(r, i, {
 			get: t[i],
 			enumerable: !0
@@ -34771,29 +35477,29 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		RestElement: 1
 	};
 	function o$1(e, t) {
-		let { generator: n } = e;
+		const { generator: n } = e;
 		if (e.write("("), t != null && t.length > 0) {
 			n[t[0].type](t[0], e);
-			let { length: r } = t;
+			const { length: r } = t;
 			for (let i = 1; i < r; i++) {
-				let r = t[i];
+				const r = t[i];
 				e.write(", "), n[r.type](r, e);
 			}
 		}
 		e.write(")");
 	}
 	function s$1(e, t, n, r) {
-		let a = e.expressionsPrecedence[t.type];
+		const a = e.expressionsPrecedence[t.type];
 		if (a === 17) return !0;
-		let o = e.expressionsPrecedence[n.type];
+		const o = e.expressionsPrecedence[n.type];
 		return a === o ? a !== 13 && a !== 14 ? !1 : t.operator === "**" && n.operator === "**" ? !r : a === 13 && o === 13 && (t.operator === "??" || n.operator === "??") ? !0 : r ? i$1[t.operator] <= i$1[n.operator] : i$1[t.operator] < i$1[n.operator] : !r && a === 15 && o === 14 && n.operator === "**" || a < o;
 	}
 	function c$1(e, t, n, r) {
-		let { generator: i } = e;
+		const { generator: i } = e;
 		s$1(e, t, n, r) ? (e.write("("), i[t.type](t, e), e.write(")")) : i[t.type](t, e);
 	}
 	function l$1(e, t, n, r) {
-		let i = t.split("\n"), a = i.length - 1;
+		const i = t.split("\n"), a = i.length - 1;
 		if (e.write(i[0].trim()), a > 0) {
 			e.write(r);
 			for (let t = 1; t < a; t++) e.write(n + i[t].trim() + r);
@@ -34801,25 +35507,25 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 	}
 	function u$1(e, t, n, r) {
-		let { length: i } = t;
+		const { length: i } = t;
 		for (let a = 0; a < i; a++) {
-			let i = t[a];
-			e.write(n), i.type[0] === "L" ? e.write("// " + i.value.trim() + "\n", i) : (e.write("/*"), l$1(e, i.value, n, r), e.write("*/" + r));
+			const i = t[a];
+			e.write(n), i.type[0] === "L" ? e.write(`// ${i.value.trim()}\n`, i) : (e.write("/*"), l$1(e, i.value, n, r), e.write(`*/${r}`));
 		}
 	}
 	function d$1(e) {
 		let t = e;
 		for (; t != null;) {
-			let { type: e } = t;
+			const { type: e } = t;
 			if (e[0] === "C" && e[1] === "a") return !0;
 			if (e[0] === "M" && e[1] === "e" && e[2] === "m") t = t.object;
 			else return !1;
 		}
 	}
 	function f$1(e, t) {
-		let { generator: n } = e, { declarations: r } = t;
-		e.write(t.kind + " ");
-		let { length: i } = r;
+		const { generator: n } = e, { declarations: r } = t;
+		e.write(`${t.kind} `);
+		const { length: i } = r;
 		if (i > 0) {
 			n.VariableDeclarator(r[0], e);
 			for (let t = 1; t < i; t++) e.write(", "), n.VariableDeclarator(r[t], e);
@@ -34833,24 +35539,24 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	var te;
 	var ne = {
 		Program(e, t) {
-			let n = t.indent.repeat(t.indentLevel), { lineEnd: r, writeComments: i } = t;
+			const n = t.indent.repeat(t.indentLevel), { lineEnd: r, writeComments: i } = t;
 			i && e.comments != null && u$1(t, e.comments, n, r);
-			let a = e.body, { length: o } = a;
+			const a = e.body, { length: o } = a;
 			for (let e = 0; e < o; e++) {
-				let o = a[e];
+				const o = a[e];
 				i && o.comments != null && u$1(t, o.comments, n, r), t.write(n), this[o.type](o, t), t.write(r);
 			}
 			i && e.trailingComments != null && u$1(t, e.trailingComments, n, r);
 		},
 		BlockStatement: te = function(e, t) {
-			let n = t.indent.repeat(t.indentLevel++), { lineEnd: r, writeComments: i } = t, a = n + t.indent;
+			const n = t.indent.repeat(t.indentLevel++), { lineEnd: r, writeComments: i } = t, a = n + t.indent;
 			t.write("{");
-			let o = e.body;
+			const o = e.body;
 			if (o != null && o.length > 0) {
 				t.write(r), i && e.comments != null && u$1(t, e.comments, a, r);
-				let { length: s } = o;
+				const { length: s } = o;
 				for (let e = 0; e < s; e++) {
-					let n = o[e];
+					const n = o[e];
 					i && n.comments != null && u$1(t, n.comments, a, r), t.write(a), this[n.type](n, t), t.write(r);
 				}
 				t.write(n);
@@ -34861,11 +35567,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		StaticBlock(e, t) {
 			t.write("static "), this.BlockStatement(e, t);
 		},
-		EmptyStatement(e, t) {
+		EmptyStatement(_e, t) {
 			t.write(";");
 		},
 		ExpressionStatement(e, t) {
-			let n = t.expressionsPrecedence[e.expression.type];
+			const n = t.expressionsPrecedence[e.expression.type];
 			n === 17 || n === 3 && e.expression.left.type[0] === "O" ? (t.write("("), this[e.expression.type](e.expression, t), t.write(")")) : this[e.expression.type](e.expression, t), t.write(";");
 		},
 		IfStatement(e, t) {
@@ -34884,21 +35590,21 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			t.write("with ("), this[e.object.type](e.object, t), t.write(") "), this[e.body.type](e.body, t);
 		},
 		SwitchStatement(e, t) {
-			let n = t.indent.repeat(t.indentLevel++), { lineEnd: r, writeComments: i } = t;
+			const n = t.indent.repeat(t.indentLevel++), { lineEnd: r, writeComments: i } = t;
 			t.indentLevel++;
-			let a = n + t.indent, o = a + t.indent;
-			t.write("switch ("), this[e.discriminant.type](e.discriminant, t), t.write(") {" + r);
-			let { cases: s } = e, { length: c } = s;
+			const a = n + t.indent, o = a + t.indent;
+			t.write("switch ("), this[e.discriminant.type](e.discriminant, t), t.write(`) {${r}`);
+			const { cases: s } = e, { length: c } = s;
 			for (let e = 0; e < c; e++) {
-				let n = s[e];
-				i && n.comments != null && u$1(t, n.comments, a, r), n.test ? (t.write(a + "case "), this[n.test.type](n.test, t), t.write(":" + r)) : t.write(a + "default:" + r);
-				let { consequent: c } = n, { length: l } = c;
+				const n = s[e];
+				i && n.comments != null && u$1(t, n.comments, a, r), n.test ? (t.write(`${a}case `), this[n.test.type](n.test, t), t.write(`:${r}`)) : t.write(`${a}default:${r}`);
+				const { consequent: c } = n, { length: l } = c;
 				for (let e = 0; e < l; e++) {
-					let n = c[e];
+					const n = c[e];
 					i && n.comments != null && u$1(t, n.comments, o, r), t.write(o), this[n.type](n, t), t.write(r);
 				}
 			}
-			t.indentLevel -= 2, t.write(n + "}");
+			t.indentLevel -= 2, t.write(`${n}}`);
 		},
 		ReturnStatement(e, t) {
 			t.write("return"), e.argument && (t.write(" "), this[e.argument.type](e.argument, t)), t.write(";");
@@ -34908,7 +35614,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		TryStatement(e, t) {
 			if (t.write("try "), this[e.block.type](e.block, t), e.handler) {
-				let { handler: n } = e;
+				const { handler: n } = e;
 				n.param == null ? t.write(" catch ") : (t.write(" catch ("), this[n.param.type](n.param, t), t.write(") ")), this[n.body.type](n.body, t);
 			}
 			e.finalizer && (t.write(" finally "), this[e.finalizer.type](e.finalizer, t));
@@ -34921,14 +35627,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		ForStatement(e, t) {
 			if (t.write("for ("), e.init != null) {
-				let { init: n } = e;
+				const { init: n } = e;
 				n.type[0] === "V" ? f$1(t, n) : this[n.type](n, t);
 			}
 			t.write("; "), e.test && this[e.test.type](e.test, t), t.write("; "), e.update && this[e.update.type](e.update, t), t.write(") "), this[e.body.type](e.body, t);
 		},
 		ForInStatement: p$1 = function(e, t) {
 			t.write(`for ${e.await ? "await " : ""}(`);
-			let { left: n } = e;
+			const { left: n } = e;
 			n.type[0] === "V" ? f$1(t, n) : this[n.type](n, t), t.write(e.type[3] === "I" ? " in " : " of "), this[e.right.type](e.right, t), t.write(") "), this[e.body.type](e.body, t);
 		},
 		ForOfStatement: p$1,
@@ -34946,9 +35652,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			this[e.id.type](e.id, t), e.init != null && (t.write(" = "), this[e.init.type](e.init, t));
 		},
 		ClassDeclaration(e, t) {
-			if (t.write("class " + (e.id ? `${e.id.name} ` : ""), e), e.superClass) {
+			if (t.write(`class ${e.id ? `${e.id.name} ` : ""}`, e), e.superClass) {
 				t.write("extends ");
-				let { superClass: n } = e, { type: r } = n, i = t.expressionsPrecedence[r];
+				const { superClass: n } = e, { type: r } = n, i = t.expressionsPrecedence[r];
 				(r[0] !== "C" || r[1] !== "l" || r[5] !== "E") && (i === 17 || i < t.expressionsPrecedence.ClassExpression) ? (t.write("("), this[e.superClass.type](n, t), t.write(")")) : this[n.type](n, t), t.write(" ");
 			}
 			this.ClassBody(e.body, t);
@@ -34959,15 +35665,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			if (i > 0) {
 				for (; a < i;) {
 					a > 0 && t.write(", ");
-					let e = n[a], r = e.type[6];
+					const e = n[a], r = e.type[6];
 					if (r === "D") t.write(e.local.name, e), a++;
-					else if (r === "N") t.write("* as " + e.local.name, e), a++;
+					else if (r === "N") t.write(`* as ${e.local.name}`, e), a++;
 					else break;
 				}
 				if (a < i) {
 					for (t.write("{");;) {
-						let e = n[a], { name: r } = e.imported;
-						if (t.write(r, e), r !== e.local.name && t.write(" as " + e.local.name), ++a < i) t.write(", ");
+						const e = n[a], { name: r } = e.imported;
+						if (t.write(r, e), r !== e.local.name && t.write(` as ${e.local.name}`), ++a < i) t.write(", ");
 						else break;
 					}
 					t.write("}");
@@ -34994,10 +35700,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			if (t.write("export "), e.declaration) this[e.declaration.type](e.declaration, t);
 			else {
 				t.write("{");
-				let { specifiers: n } = e, { length: r } = n;
+				const { specifiers: n } = e, { length: r } = n;
 				if (r > 0) for (let e = 0;;) {
-					let i = n[e], { name: a } = i.local;
-					if (t.write(a, i), a !== i.exported.name && t.write(" as " + i.exported.name), ++e < r) t.write(", ");
+					const i = n[e], { name: a } = i.local;
+					if (t.write(a, i), a !== i.exported.name && t.write(` as ${i.exported.name}`), ++e < r) t.write(", ");
 					else break;
 				}
 				if (t.write("}"), e.source && (t.write(" from "), this.Literal(e.source, t)), e.attributes && e.attributes.length > 0) {
@@ -35009,7 +35715,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 		},
 		ExportAllDeclaration(e, t) {
-			if (e.exported == null ? t.write("export * from ") : t.write("export * as " + e.exported.name + " from "), this.Literal(e.source, t), e.attributes && e.attributes.length > 0) {
+			if (e.exported == null ? t.write("export * from ") : t.write(`export * as ${e.exported.name} from `), this.Literal(e.source, t), e.attributes && e.attributes.length > 0) {
 				t.write(" with { ");
 				for (let n = 0; n < e.attributes.length; n++) this.ImportAttribute(e.attributes[n], t), n < e.attributes.length - 1 && t.write(", ");
 				t.write(" }");
@@ -35018,15 +35724,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		MethodDefinition(e, t) {
 			e.static && t.write("static ");
-			let n = e.kind[0];
-			(n === "g" || n === "s") && t.write(e.kind + " "), e.value.async && t.write("async "), e.value.generator && t.write("*"), e.computed ? (t.write("["), this[e.key.type](e.key, t), t.write("]")) : this[e.key.type](e.key, t), o$1(t, e.value.params), t.write(" "), this[e.value.body.type](e.value.body, t);
+			const n = e.kind[0];
+			(n === "g" || n === "s") && t.write(`${e.kind} `), e.value.async && t.write("async "), e.value.generator && t.write("*"), e.computed ? (t.write("["), this[e.key.type](e.key, t), t.write("]")) : this[e.key.type](e.key, t), o$1(t, e.value.params), t.write(" "), this[e.value.body.type](e.value.body, t);
 		},
 		ClassExpression(e, t) {
 			this.ClassDeclaration(e, t);
 		},
 		ArrowFunctionExpression(e, t) {
 			t.write(e.async ? "async " : "", e);
-			let { params: n } = e;
+			const { params: n } = e;
 			n != null && (n.length === 1 && n[0].type[0] === "I" ? t.write(n[0].name, n[0]) : o$1(t, e.params)), t.write(" => "), e.body.type[0] === "O" ? (t.write("("), this.ObjectExpression(e.body, t), t.write(")")) : this[e.body.type](e.body, t);
 		},
 		ThisExpression(e, t) {
@@ -35046,14 +35752,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			t.write("await ", e), c$1(t, e.argument, e);
 		},
 		TemplateLiteral(e, t) {
-			let { quasis: n, expressions: r } = e;
+			const { quasis: n, expressions: r } = e;
 			t.write("`");
-			let { length: i } = r;
+			const { length: i } = r;
 			for (let e = 0; e < i; e++) {
-				let i = r[e], a = n[e];
+				const i = r[e], a = n[e];
 				t.write(a.value.raw, a), t.write("${"), this[i.type](i, t), t.write("}");
 			}
-			let a = n[n.length - 1];
+			const a = n[n.length - 1];
 			t.write(a.value.raw, a), t.write("`");
 		},
 		TemplateElement(e, t) {
@@ -35064,9 +35770,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		ArrayExpression: ee = function(e, t) {
 			if (t.write("["), e.elements.length > 0) {
-				let { elements: n } = e, { length: r } = n;
+				const { elements: n } = e, { length: r } = n;
 				for (let e = 0;;) {
-					let i = n[e];
+					const i = n[e];
 					if (i != null && this[i.type](i, t), ++e < r) t.write(", ");
 					else {
 						i ?? t.write(", ");
@@ -35078,17 +35784,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		ArrayPattern: ee,
 		ObjectExpression(e, t) {
-			let n = t.indent.repeat(t.indentLevel++), { lineEnd: r, writeComments: i } = t, a = n + t.indent;
+			const n = t.indent.repeat(t.indentLevel++), { lineEnd: r, writeComments: i } = t, a = n + t.indent;
 			if (t.write("{"), e.properties.length > 0) {
 				t.write(r), i && e.comments != null && u$1(t, e.comments, a, r);
-				let o = "," + r, { properties: s } = e, { length: c } = s;
+				const o = `,${r}`, { properties: s } = e, { length: c } = s;
 				for (let e = 0;;) {
-					let n = s[e];
+					const n = s[e];
 					if (i && n.comments != null && u$1(t, n.comments, a, r), t.write(a), this[n.type](n, t), ++e < c) t.write(o);
 					else break;
 				}
-				t.write(r), i && e.trailingComments != null && u$1(t, e.trailingComments, a, r), t.write(n + "}");
-			} else i ? e.comments == null ? e.trailingComments == null ? t.write("}") : (t.write(r), u$1(t, e.trailingComments, a, r), t.write(n + "}")) : (t.write(r), u$1(t, e.comments, a, r), e.trailingComments != null && u$1(t, e.trailingComments, a, r), t.write(n + "}")) : t.write("}");
+				t.write(r), i && e.trailingComments != null && u$1(t, e.trailingComments, a, r), t.write(`${n}}`);
+			} else i ? e.comments == null ? e.trailingComments == null ? t.write("}") : (t.write(r), u$1(t, e.trailingComments, a, r), t.write(`${n}}`)) : (t.write(r), u$1(t, e.comments, a, r), e.trailingComments != null && u$1(t, e.trailingComments, a, r), t.write(`${n}}`)) : t.write("}");
 			t.indentLevel--;
 		},
 		Property(e, t) {
@@ -35103,7 +35809,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		ObjectPattern(e, t) {
 			if (t.write("{"), e.properties.length > 0) {
-				let { properties: n } = e, { length: r } = n;
+				const { properties: n } = e, { length: r } = n;
 				for (let e = 0; this[n[e].type](n[e], t), ++e < r;) t.write(", ");
 			}
 			t.write("}");
@@ -35113,9 +35819,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		},
 		UnaryExpression(e, t) {
 			if (e.prefix) {
-				let { operator: n, argument: r, argument: { type: i } } = e;
+				const { operator: n, argument: r, argument: { type: i } } = e;
 				t.write(n);
-				let a = s$1(t, r, e);
+				const a = s$1(t, r, e);
 				!a && (n.length > 1 || i[0] === "U" && (i[1] === "n" || i[1] === "p") && r.prefix && r.operator[0] === n && (n === "+" || n === "-")) && t.write(" "), a ? (t.write(n.length > 1 ? " (" : "("), this[i](r, t), t.write(")")) : this[i](r, t);
 			} else this[e.argument.type](e.argument, t), t.write(e.operator);
 		},
@@ -35123,38 +35829,38 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			e.prefix ? (t.write(e.operator), this[e.argument.type](e.argument, t)) : (this[e.argument.type](e.argument, t), t.write(e.operator));
 		},
 		AssignmentExpression(e, t) {
-			this[e.left.type](e.left, t), t.write(" " + e.operator + " "), this[e.right.type](e.right, t);
+			this[e.left.type](e.left, t), t.write(` ${e.operator} `), this[e.right.type](e.right, t);
 		},
 		AssignmentPattern(e, t) {
 			this[e.left.type](e.left, t), t.write(" = "), this[e.right.type](e.right, t);
 		},
-		BinaryExpression: g$1 = function(e, t) {
-			let n = e.operator === "in";
-			n && t.write("("), c$1(t, e.left, e, !1), t.write(" " + e.operator + " "), c$1(t, e.right, e, !0), n && t.write(")");
+		BinaryExpression: g$1 = (e, t) => {
+			const n = e.operator === "in";
+			n && t.write("("), c$1(t, e.left, e, !1), t.write(` ${e.operator} `), c$1(t, e.right, e, !0), n && t.write(")");
 		},
 		LogicalExpression: g$1,
 		ConditionalExpression(e, t) {
-			let { test: n } = e, r = t.expressionsPrecedence[n.type];
+			const { test: n } = e, r = t.expressionsPrecedence[n.type];
 			r === 17 || r <= t.expressionsPrecedence.ConditionalExpression ? (t.write("("), this[n.type](n, t), t.write(")")) : this[n.type](n, t), t.write(" ? "), this[e.consequent.type](e.consequent, t), t.write(" : "), this[e.alternate.type](e.alternate, t);
 		},
 		NewExpression(e, t) {
 			t.write("new ");
-			let n = t.expressionsPrecedence[e.callee.type];
+			const n = t.expressionsPrecedence[e.callee.type];
 			n === 17 || n < t.expressionsPrecedence.CallExpression || d$1(e.callee) ? (t.write("("), this[e.callee.type](e.callee, t), t.write(")")) : this[e.callee.type](e.callee, t), o$1(t, e.arguments);
 		},
 		CallExpression(e, t) {
-			let n = t.expressionsPrecedence[e.callee.type];
+			const n = t.expressionsPrecedence[e.callee.type];
 			n === 17 || n < t.expressionsPrecedence.CallExpression ? (t.write("("), this[e.callee.type](e.callee, t), t.write(")")) : this[e.callee.type](e.callee, t), e.optional && t.write("?."), o$1(t, e.arguments);
 		},
 		ChainExpression(e, t) {
 			this[e.expression.type](e.expression, t);
 		},
 		MemberExpression(e, t) {
-			let n = t.expressionsPrecedence[e.object.type];
+			const n = t.expressionsPrecedence[e.object.type];
 			n === 17 || n < t.expressionsPrecedence.MemberExpression ? (t.write("("), this[e.object.type](e.object, t), t.write(")")) : this[e.object.type](e.object, t), e.computed ? (e.optional && t.write("?."), t.write("["), this[e.property.type](e.property, t), t.write("]")) : (e.optional ? t.write("?.") : t.write("."), this[e.property.type](e.property, t));
 		},
 		MetaProperty(e, t) {
-			t.write(e.meta.name + "." + e.property.name, e);
+			t.write(`${e.meta.name}.${e.property.name}`, e);
 		},
 		Identifier(e, t) {
 			t.write(e.name, e);
@@ -35163,10 +35869,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			t.write(`#${e.name}`, e);
 		},
 		Literal(e, t) {
-			e.raw == null ? e.regex == null ? e.bigint == null ? t.write(r$1(e.value), e) : t.write(e.bigint + "n", e) : this.RegExpLiteral(e, t) : t.write(e.raw, e);
+			e.raw == null ? e.regex == null ? e.bigint == null ? t.write(r$1(e.value), e) : t.write(`${e.bigint}n`, e) : this.RegExpLiteral(e, t) : t.write(e.raw, e);
 		},
 		RegExpLiteral(e, t) {
-			let { regex: n } = e;
+			const { regex: n } = e;
 			t.write(`/${n.pattern}/${n.flags}`, e);
 		}
 	};
@@ -35174,7 +35880,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	var ie = ne;
 	var ae = class {
 		constructor(e) {
-			let t = e ?? re;
+			const t = e ?? re;
 			this.output = "", t.output == null ? this.output = "" : (this.output = t.output, this.write = this.writeToStream), this.generator = t.generator == null ? ne : t.generator, this.expressionsPrecedence = t.expressionsPrecedence == null ? a$1 : t.expressionsPrecedence, this.indent = t.indent == null ? "  " : t.indent, this.lineEnd = t.lineEnd == null ? "\n" : t.lineEnd, this.indentLevel = t.startingIndentLevel == null ? 0 : t.startingIndentLevel, this.writeComments = t.comments ? t.comments : !1, t.sourceMap != null && (this.write = t.output == null ? this.writeAndMap : this.writeToStreamAndMap, this.sourceMap = t.sourceMap, this.line = 1, this.column = 0, this.lineEndSize = this.lineEnd.split("\n").length - 1, this.mapping = {
 				original: null,
 				generated: this,
@@ -35196,23 +35902,23 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 		map(e, t) {
 			if (t != null) {
-				let { type: n } = t;
+				const { type: n } = t;
 				if (n[0] === "L" && n[2] === "n") {
 					this.column = 0, this.line++;
 					return;
 				}
 				if (t.loc != null) {
-					let { mapping: e } = this;
+					const { mapping: e } = this;
 					e.original = t.loc.start, e.name = t.name, this.sourceMap.addMapping(e);
 				}
-				if (n[0] === "T" && n[8] === "E" || n[0] === "L" && n[1] === "i" && typeof t.value == "string") {
+				if (n[0] === "T" && n[8] === "E" || n[0] === "L" && n[1] === "i" && typeof t.value === "string") {
 					let { length: t } = e, { column: n, line: r } = this;
 					for (let i = 0; i < t; i++) e[i] === "\n" ? (n = 0, r++) : n++;
 					this.column = n, this.line = r;
 					return;
 				}
 			}
-			let { length: n } = e, { lineEnd: r } = this;
+			const { length: n } = e, { lineEnd: r } = this;
 			n > 0 && (this.lineEndSize > 0 && (r.length === 1 ? e[n - 1] === r : e.endsWith(r)) ? (this.line += this.lineEndSize, this.column = 0) : this.column += n);
 		}
 		toString() {
@@ -35220,7 +35926,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 	};
 	function oe(e, t) {
-		let n = new ae(t);
+		const n = new ae(t);
 		return n.generator[e.type](e, n), n.output;
 	}
 	var se = t$1({
@@ -35232,7 +35938,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	var ce = ((e, t) => {
 		let n = new Uint32Array(69632), r = 0, i = 0;
 		for (; r < 2571;) {
-			let a = e[r++];
+			const a = e[r++];
 			if (a < 0) i -= a;
 			else {
 				let o = e[r++];
@@ -37983,10 +38689,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.column++, e.currentChar = e.source.charCodeAt(++e.index);
 	}
 	function de(e) {
-		let t = e.currentChar;
-		if ((t & 64512) != 55296) return 0;
-		let n = e.source.charCodeAt(e.index + 1);
-		return (n & 64512) == 56320 ? 65536 + ((t & 1023) << 10) + (n & 1023) : 0;
+		const t = e.currentChar;
+		if ((t & 64512) !== 55296) return 0;
+		const n = e.source.charCodeAt(e.index + 1);
+		return (n & 64512) === 56320 ? 65536 + ((t & 1023) << 10) + (n & 1023) : 0;
 	}
 	function fe(e, t) {
 		e.currentChar = e.source.charCodeAt(++e.index), e.flags |= 1, t & 4 || (e.column = 0, e.line++);
@@ -38011,7 +38717,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			case 67174408:
 			case 67174409:
 			case 131: return "TemplateLiteral";
-			default: return (e & 143360) == 143360 ? "Identifier" : (e & 4096) == 4096 ? "Keyword" : "Punctuator";
+			default: return (e & 143360) === 143360 ? "Identifier" : (e & 4096) === 4096 ? "Keyword" : "Punctuator";
 		}
 	}
 	var b$1 = [
@@ -38418,17 +39124,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		"HashbangComment"
 	];
 	function be(e) {
-		let { source: t } = e;
+		const { source: t } = e;
 		e.currentChar === 35 && t.charCodeAt(e.index + 1) === 33 && (_$1(e), _$1(e), Se(e, t, 0, 4, e.tokenStart));
 	}
 	function xe(e, t, n, r, i, a) {
 		return r & 2 && e.report(0), Se(e, t, n, i, a);
 	}
 	function Se(e, t, n, r, i) {
-		let { index: a } = e;
+		const { index: a } = e;
 		for (e.tokenIndex = e.index, e.tokenLine = e.line, e.tokenColumn = e.column; e.index < e.end;) {
 			if (b$1[e.currentChar] & 8) {
-				let n = e.currentChar === 13;
+				const n = e.currentChar === 13;
 				v$1(e), n && e.index < e.end && e.currentChar === 10 && (e.currentChar = t.charCodeAt(++e.index));
 				break;
 			}
@@ -38439,7 +39145,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			_$1(e), e.tokenIndex = e.index, e.tokenLine = e.line, e.tokenColumn = e.column;
 		}
 		if (e.options.onComment) {
-			let n = {
+			const n = {
 				start: {
 					line: i.line,
 					column: i.column
@@ -38454,12 +39160,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return n | 1;
 	}
 	function Ce(e, t, n) {
-		let { index: r } = e;
+		const { index: r } = e;
 		for (; e.index < e.end;) if (e.currentChar < 43) {
 			let i = !1;
 			for (; e.currentChar === 42;) if (i ||= (n &= -5, !0), _$1(e) === 47) {
 				if (_$1(e), e.options.onComment) {
-					let n = {
+					const n = {
 						start: {
 							line: e.tokenLine,
 							column: e.tokenColumn
@@ -38479,17 +39185,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		e.report(18);
 	}
 	var x$1;
-	(function(e) {
+	((e) => {
 		e[e.Empty = 0] = "Empty", e[e.Escape = 1] = "Escape", e[e.Class = 2] = "Class";
 	})(x$1 ||= {});
 	var S$1;
-	(function(e) {
+	((e) => {
 		e[e.Empty = 0] = "Empty", e[e.IgnoreCase = 1] = "IgnoreCase", e[e.Global = 2] = "Global", e[e.Multiline = 4] = "Multiline", e[e.Unicode = 16] = "Unicode", e[e.Sticky = 8] = "Sticky", e[e.DotAll = 32] = "DotAll", e[e.Indices = 64] = "Indices", e[e.UnicodeSets = 128] = "UnicodeSets";
 	})(S$1 ||= {});
 	function we(e) {
 		let t = e.index, n = x$1.Empty;
 		loop: for (;;) {
-			let t = e.currentChar;
+			const t = e.currentChar;
 			if (_$1(e), n & x$1.Escape) n &= ~x$1.Escape;
 			else switch (t) {
 				case 47:
@@ -38536,7 +39242,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			a = _$1(e);
 		}
-		let s = e.source.slice(o, e.index), c = e.source.slice(t, r);
+		const s = e.source.slice(o, e.index), c = e.source.slice(t, r);
 		return e.tokenRegExp = {
 			pattern: c,
 			flags: s
@@ -38557,9 +39263,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let { index: r } = e, i = "", a = _$1(e), o = e.index;
 		for (; !(b$1[a] & 8);) {
 			if (a === n) return i += e.source.slice(o, e.index), _$1(e), e.options.raw && (e.tokenRaw = e.source.slice(r, e.index)), e.tokenValue = i, 134283267;
-			if ((a & 8) == 8 && a === 92) {
+			if ((a & 8) === 8 && a === 92) {
 				if (i += e.source.slice(o, e.index), a = _$1(e), a < 127 || a === 8232 || a === 8233) {
-					let n = De(e, t, a);
+					const n = De(e, t, a);
 					n >= 0 ? i += String.fromCodePoint(n) : Oe(e, n, 0);
 				} else i += String.fromCodePoint(a);
 				o = e.index + 1;
@@ -38577,7 +39283,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			case 116: return 9;
 			case 118: return 11;
 			case 13: if (e.index < e.end) {
-				let t = e.source.charCodeAt(e.index + 1);
+				const t = e.source.charCodeAt(e.index + 1);
 				t === 10 && (e.index += 1, e.currentChar = t);
 			}
 			case 10:
@@ -38589,7 +39295,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			case 51: {
 				let i = n - 48, a = e.index + 1, o = e.column + 1;
 				if (a < e.end) {
-					let n = e.source.charCodeAt(a);
+					const n = e.source.charCodeAt(a);
 					if (!(b$1[n] & 32)) {
 						if (i !== 0 || b$1[n] & 512) {
 							if (t & 1 || r) return -2;
@@ -38598,7 +39304,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					} else if (t & 1 || r) return -2;
 					else {
 						if (e.currentChar = n, i = i << 3 | n - 48, a++, o++, a < e.end) {
-							let t = e.source.charCodeAt(a);
+							const t = e.source.charCodeAt(a);
 							b$1[t] & 32 && (e.currentChar = t, i = i << 3 | t - 48, a++, o++);
 						}
 						e.flags |= 64;
@@ -38614,21 +39320,21 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				if (r || t & 1) return -2;
 				let i = n - 48, a = e.index + 1, o = e.column + 1;
 				if (a < e.end) {
-					let t = e.source.charCodeAt(a);
+					const t = e.source.charCodeAt(a);
 					b$1[t] & 32 && (i = i << 3 | t - 48, e.currentChar = t, e.index = a, e.column = o);
 				}
 				return e.flags |= 64, i;
 			}
 			case 120: {
-				let t = _$1(e);
+				const t = _$1(e);
 				if (!(b$1[t] & 64)) return -4;
-				let n = y$1(t), r = _$1(e);
+				const n = y$1(t), r = _$1(e);
 				if (!(b$1[r] & 64)) return -4;
-				let i = y$1(r);
+				const i = y$1(r);
 				return n << 4 | i;
 			}
 			case 117: {
-				let t = _$1(e);
+				const t = _$1(e);
 				if (e.currentChar === 123) {
 					let t = 0;
 					for (; b$1[_$1(e)] & 64;) if (t = t << 4 | y$1(e.currentChar), t > 1114111) return -5;
@@ -38636,11 +39342,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				}
 				{
 					if (!(b$1[t] & 64)) return -4;
-					let n = e.source.charCodeAt(e.index + 1);
+					const n = e.source.charCodeAt(e.index + 1);
 					if (!(b$1[n] & 64)) return -4;
-					let r = e.source.charCodeAt(e.index + 2);
+					const r = e.source.charCodeAt(e.index + 2);
 					if (!(b$1[r] & 64)) return -4;
-					let i = e.source.charCodeAt(e.index + 3);
+					const i = e.source.charCodeAt(e.index + 3);
 					return b$1[i] & 64 ? (e.index += 3, e.column += 3, e.currentChar = e.source.charCodeAt(e.index), y$1(t) << 12 | y$1(n) << 8 | y$1(r) << 4 | y$1(i)) : -4;
 				}
 			}
@@ -38669,7 +39375,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			if (a === 92) if (a = _$1(e), a > 126) i += String.fromCodePoint(a);
 			else {
-				let { index: n, line: o, column: s } = e, c = De(e, t | 1, a, 1);
+				const { index: n, line: o, column: s } = e, c = De(e, t | 1, a, 1);
 				if (c >= 0) i += String.fromCodePoint(c);
 				else if (c !== -1 && t & 64) {
 					e.index = n, e.line = o, e.column = s, i = null, a = Ae(e, a), a < 0 && (r = 67174408);
@@ -38685,7 +39391,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		for (; t !== 96;) {
 			switch (t) {
 				case 36: {
-					let n = e.index + 1;
+					const n = e.index + 1;
 					if (n < e.end && e.source.charCodeAt(n) === 123) return e.index = n, e.column++, -t;
 					break;
 				}
@@ -38886,7 +39592,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		loc;
 		description;
 		constructor(e, t, n, ...r) {
-			let i = Me[n].replace(/%(\d+)/g, (e, t) => r[t]), a = "[" + e.line + ":" + e.column + "-" + t.line + ":" + t.column + "]: " + i;
+			const i = Me[n].replace(/%(\d+)/g, (_e, t) => r[t]), a = "[" + e.line + ":" + e.column + "-" + t.line + ":" + t.column + "]: " + i;
 			super(a), this.start = e.index, this.end = t.index, this.range = [e.index, t.index], this.loc = {
 				start: {
 					line: e.line,
@@ -38901,9 +39607,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	};
 	function Ne(e, t, n) {
 		let r = e.currentChar, i = 0, a = 9, o = n & 64 ? 0 : 1, s = 0, c = 0;
-		if (n & 64) i = "." + Pe(e, r), r = e.currentChar, r === 110 && e.report(12);
+		if (n & 64) i = `.${Pe(e, r)}`, r = e.currentChar, r === 110 && e.report(12);
 		else {
-			if (r === 48) if (r = _$1(e), (r | 32) == 120) {
+			if (r === 48) if (r = _$1(e), (r | 32) === 120) {
 				for (n = 136, r = _$1(e); b$1[r] & 4160;) {
 					if (r === 95) {
 						c || e.report(152), c = 0, r = _$1(e);
@@ -38912,7 +39618,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					c = 1, i = i * 16 + y$1(r), s++, r = _$1(e);
 				}
 				(s === 0 || !c) && e.report(s === 0 ? 21 : 153);
-			} else if ((r | 32) == 111) {
+			} else if ((r | 32) === 111) {
 				for (n = 132, r = _$1(e); b$1[r] & 4128;) {
 					if (r === 95) {
 						c || e.report(152), c = 0, r = _$1(e);
@@ -38921,7 +39627,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					c = 1, i = i * 8 + (r - 48), s++, r = _$1(e);
 				}
 				(s === 0 || !c) && e.report(s === 0 ? 0 : 153);
-			} else if ((r | 32) == 98) {
+			} else if ((r | 32) === 98) {
 				for (n = 130, r = _$1(e); b$1[r] & 4224;) {
 					if (r === 95) {
 						c || e.report(152), c = 0, r = _$1(e);
@@ -38959,14 +39665,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					}, 153);
 					if (a >= 0 && !_e(r) && r !== 46) return e.tokenValue = i, e.options.raw && (e.tokenRaw = e.source.slice(e.tokenIndex, e.index)), 134283266;
 				}
-				i += Pe(e, r), r = e.currentChar, r === 46 && (_$1(e) === 95 && e.report(0), n = 64, i += "." + Pe(e, e.currentChar), r = e.currentChar);
+				i += Pe(e, r), r = e.currentChar, r === 46 && (_$1(e) === 95 && e.report(0), n = 64, i += `.${Pe(e, e.currentChar)}`, r = e.currentChar);
 			}
 		}
 		let l = e.index, u = 0;
 		if (r === 110 && n & 128) u = 1, r = _$1(e);
-		else if ((r | 32) == 101) {
+		else if ((r | 32) === 101) {
 			r = _$1(e), b$1[r] & 256 && (r = _$1(e));
-			let { index: t } = e;
+			const { index: t } = e;
 			b$1[r] & 16 || e.report(11), i += e.source.substring(l, t) + Pe(e, r), r = e.currentChar;
 		}
 		return (e.index < e.end && b$1[r] & 16 || _e(r)) && e.report(13), u ? (e.tokenRaw = e.source.slice(e.tokenIndex, e.index), e.tokenValue = BigInt(e.tokenRaw.slice(0, -1).replaceAll("_", "")), 134283388) : (e.tokenValue = n & 15 ? i : n & 32 ? parseFloat(e.source.substring(e.tokenIndex, e.index)) : +i, e.options.raw && (e.tokenRaw = e.source.slice(e.tokenIndex, e.index)), 134283266);
@@ -38975,7 +39681,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let n = 0, r = e.index, i = "";
 		for (; b$1[t] & 4112;) {
 			if (t === 95) {
-				let { index: a } = e;
+				const { index: a } = e;
 				if (t = _$1(e), t === 95) throw new C$1(e.currentLocation, {
 					index: e.index + 1,
 					line: e.line,
@@ -39194,10 +39900,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		accessor: 12402
 	};
 	function T$1(e, t) {
-		!(e.flags & 1) && (e.getToken() & 1048576) != 1048576 && e.report(30, w$1[e.getToken() & 255]), E$1(e, t, 1074790417) || e.options.onInsertedSemicolon?.(e.startIndex);
+		!(e.flags & 1) && (e.getToken() & 1048576) !== 1048576 && e.report(30, w$1[e.getToken() & 255]), E$1(e, t, 1074790417) || e.options.onInsertedSemicolon?.(e.startIndex);
 	}
 	function Ie(e, t, n, r) {
-		return t - n < 13 && r === "use strict" && ((e.getToken() & 1048576) == 1048576 || e.flags & 1) ? 1 : 0;
+		return t - n < 13 && r === "use strict" && ((e.getToken() & 1048576) === 1048576 || e.flags & 1) ? 1 : 0;
 	}
 	function Le(e, t, n) {
 		return e.getToken() === n ? (A$1(e, t), 1) : 0;
@@ -39212,16 +39918,16 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		switch (t.type) {
 			case "ArrayExpression": {
 				t.type = "ArrayPattern";
-				let { elements: n } = t;
+				const { elements: n } = t;
 				for (let t = 0, r = n.length; t < r; ++t) {
-					let r = n[t];
+					const r = n[t];
 					r && O(e, r);
 				}
 				return;
 			}
 			case "ObjectExpression": {
 				t.type = "ObjectPattern";
-				let { properties: n } = t;
+				const { properties: n } = t;
 				for (let t = 0, r = n.length; t < r; ++t) O(e, n[t]);
 				return;
 			}
@@ -39235,41 +39941,41 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 	}
 	function Re(e, t, n, r, i) {
-		t & 1 && ((r & 36864) == 36864 && e.report(118), !i && (r & 537079808) == 537079808 && e.report(119)), ((r & 20480) == 20480 || r === -2147483528) && e.report(102), n & 24 && (r & 255) == 73 && e.report(100), t & 2050 && r === 209006 && e.report(110), t & 1025 && r === 241771 && e.report(97, "yield");
+		t & 1 && ((r & 36864) === 36864 && e.report(118), !i && (r & 537079808) === 537079808 && e.report(119)), ((r & 20480) === 20480 || r === -2147483528) && e.report(102), n & 24 && (r & 255) === 73 && e.report(100), t & 2050 && r === 209006 && e.report(110), t & 1025 && r === 241771 && e.report(97, "yield");
 	}
 	function ze(e, t, n) {
-		t & 1 && ((n & 36864) == 36864 && e.report(118), (n & 537079808) == 537079808 && e.report(119), n === -2147483527 && e.report(95), n === -2147483528 && e.report(95)), (n & 20480) == 20480 && e.report(102), t & 2050 && n === 209006 && e.report(110), t & 1025 && n === 241771 && e.report(97, "yield");
+		t & 1 && ((n & 36864) === 36864 && e.report(118), (n & 537079808) === 537079808 && e.report(119), n === -2147483527 && e.report(95), n === -2147483528 && e.report(95)), (n & 20480) === 20480 && e.report(102), t & 2050 && n === 209006 && e.report(110), t & 1025 && n === 241771 && e.report(97, "yield");
 	}
 	function Be(e, t, n) {
-		return n === 209006 && (t & 2050 && e.report(110), e.destructible |= 128), n === 241771 && t & 1024 && e.report(97, "yield"), (n & 20480) == 20480 || (n & 36864) == 36864 || n == -2147483527;
+		return n === 209006 && (t & 2050 && e.report(110), e.destructible |= 128), n === 241771 && t & 1024 && e.report(97, "yield"), (n & 20480) === 20480 || (n & 36864) === 36864 || n === -2147483527;
 	}
 	function Ve(e) {
 		return e.property ? e.property.type === "PrivateIdentifier" : !1;
 	}
 	function He(e, t, n, r) {
 		for (; t;) {
-			if (t["$" + n]) return r && e.report(137), 1;
+			if (t[`$${n}`]) return r && e.report(137), 1;
 			r && t.loop && (r = 0), t = t.$;
 		}
 		return 0;
 	}
 	function Ue(e, t, n) {
 		let r = t;
-		for (; r;) r["$" + n] && e.report(136, n), r = r.$;
-		t["$" + n] = 1;
+		for (; r;) r[`$${n}`] && e.report(136, n), r = r.$;
+		t[`$${n}`] = 1;
 	}
 	function We(e) {
 		switch (e.type) {
 			case "JSXIdentifier": return e.name;
-			case "JSXNamespacedName": return e.namespace + ":" + e.name;
-			case "JSXMemberExpression": return We(e.object) + "." + We(e.property);
+			case "JSXNamespacedName": return `${e.namespace}:${e.name}`;
+			case "JSXMemberExpression": return `${We(e.object)}.${We(e.property)}`;
 		}
 	}
 	function k$1(e, t) {
-		return e & 1025 ? e & 2 && t === 209006 || e & 1024 && t === 241771 ? !1 : (t & 12288) == 12288 : (t & 12288) == 12288 || (t & 36864) == 36864;
+		return e & 1025 ? e & 2 && t === 209006 || e & 1024 && t === 241771 ? !1 : (t & 12288) === 12288 : (t & 12288) === 12288 || (t & 36864) === 36864;
 	}
 	function Ge(e, t, n) {
-		(n & 537079808) == 537079808 && (t & 1 && e.report(119), e.flags |= 512), k$1(t, n) || e.report(0);
+		(n & 537079808) === 537079808 && (t & 1 && e.report(119), e.flags |= 512), k$1(t, n) || e.report(0);
 	}
 	function Ke(e, t) {
 		return Object.hasOwn(e, t) ? e[t] : void 0;
@@ -39279,33 +39985,33 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.tokenValue = e.source.slice(e.tokenIndex, e.index), e.currentChar !== 92 && e.currentChar <= 126 ? Ke(Fe, e.tokenValue) ?? 208897 : Ye(e, t, 0, n);
 	}
 	function Je(e, t) {
-		let n = Ze(e);
+		const n = Ze(e);
 		return _e(n) || e.report(5), e.tokenValue = String.fromCodePoint(n), Ye(e, t, 1, b$1[n] & 4);
 	}
 	function Ye(e, t, n, r) {
 		let i = e.index;
 		for (; e.index < e.end;) if (e.currentChar === 92) {
 			e.tokenValue += e.source.slice(i, e.index), n = 1;
-			let t = Ze(e);
+			const t = Ze(e);
 			ve(t) || e.report(5), r &&= b$1[t] & 4, e.tokenValue += String.fromCodePoint(t), i = e.index;
 		} else {
-			let t = de(e);
+			const t = de(e);
 			if (t > 0) ve(t) || e.report(20, String.fromCodePoint(t)), e.currentChar = t, e.index++, e.column++;
 			else if (!ve(e.currentChar)) break;
 			_$1(e);
 		}
 		e.index <= e.end && (e.tokenValue += e.source.slice(i, e.index));
-		let { length: a } = e.tokenValue;
+		const { length: a } = e.tokenValue;
 		if (r && a >= 2 && a <= 11) {
-			let r = Ke(Fe, e.tokenValue);
-			return r === void 0 ? 208897 | (n ? -2147483648 : 0) : n ? r === 209006 ? t & 2050 ? -2147483528 : r | -2147483648 : t & 1 ? r === 36970 || (r & 36864) == 36864 ? -2147483527 : (r & 20480) == 20480 ? t & 262144 && !(t & 8) ? r | -2147483648 : -2147483528 : -2147274630 : t & 262144 && !(t & 8) && (r & 20480) == 20480 ? r | -2147483648 : r === 241771 ? t & 262144 ? -2147274630 : t & 1024 ? -2147483528 : r | -2147483648 : r === 209005 ? -2147274630 : (r & 36864) == 36864 ? r | -2147471360 : -2147483528 : r;
+			const r = Ke(Fe, e.tokenValue);
+			return r === void 0 ? 208897 | (n ? -2147483648 : 0) : n ? r === 209006 ? t & 2050 ? -2147483528 : r | -2147483648 : t & 1 ? r === 36970 || (r & 36864) === 36864 ? -2147483527 : (r & 20480) === 20480 ? t & 262144 && !(t & 8) ? r | -2147483648 : -2147483528 : -2147274630 : t & 262144 && !(t & 8) && (r & 20480) === 20480 ? r | -2147483648 : r === 241771 ? t & 262144 ? -2147274630 : t & 1024 ? -2147483528 : r | -2147483648 : r === 209005 ? -2147274630 : (r & 36864) === 36864 ? r | -2147471360 : -2147483528 : r;
 		}
 		return 208897 | (n ? -2147483648 : 0);
 	}
 	function Xe(e) {
 		let t = _$1(e);
 		if (t === 92) return 130;
-		let n = de(e);
+		const n = de(e);
 		return n && (t = n), _e(t) || e.report(96), 130;
 	}
 	function Ze(e) {
@@ -39314,7 +40020,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function Qe(e) {
 		let t = 0, n = e.currentChar;
 		if (n === 123) {
-			let n = e.index - 2;
+			const n = e.index - 2;
 			for (; b$1[_$1(e)] & 64;) if (t = t << 4 | y$1(e.currentChar), t > 1114111) throw new C$1({
 				index: n,
 				line: e.line,
@@ -39328,11 +40034,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			return _$1(e), t;
 		}
 		b$1[n] & 64 || e.report(7);
-		let r = e.source.charCodeAt(e.index + 1);
+		const r = e.source.charCodeAt(e.index + 1);
 		b$1[r] & 64 || e.report(7);
-		let i = e.source.charCodeAt(e.index + 2);
+		const i = e.source.charCodeAt(e.index + 2);
 		b$1[i] & 64 || e.report(7);
-		let a = e.source.charCodeAt(e.index + 3);
+		const a = e.source.charCodeAt(e.index + 3);
 		return b$1[a] & 64 || e.report(7), t = y$1(n) << 12 | y$1(r) << 8 | y$1(i) << 4 | y$1(a), e.currentChar = e.source.charCodeAt(e.index += 4), e.column += 4, t;
 	}
 	var $e = [
@@ -39474,7 +40180,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			e.tokenIndex = e.index, e.tokenColumn = e.column, e.tokenLine = e.line;
 			let o = e.currentChar;
 			if (o <= 126) {
-				let s = $e[o];
+				const s = $e[o];
 				switch (s) {
 					case 67174411:
 					case 16:
@@ -39505,13 +40211,13 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 						fe(e, n), n = n & -5 | 1;
 						break;
 					case 8456256: {
-						let r = _$1(e);
+						const r = _$1(e);
 						if (e.index < e.end) {
 							if (r === 60) return e.index < e.end && _$1(e) === 61 ? (_$1(e), 4194332) : 8390978;
 							if (r === 61) return _$1(e), 8390718;
 							if (r === 33) {
-								let r = e.index + 1;
-								if (r + 1 < e.end && i.charCodeAt(r) === 45 && i.charCodeAt(r + 1) == 45) {
+								const r = e.index + 1;
+								if (r + 1 < e.end && i.charCodeAt(r) === 45 && i.charCodeAt(r + 1) === 45) {
 									e.column += 3, e.currentChar = i.charCodeAt(e.index += 3), n = xe(e, i, n, t, 2, e.tokenStart), a = e.tokenStart;
 									continue;
 								}
@@ -39522,25 +40228,25 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					}
 					case 1077936155: {
 						_$1(e);
-						let t = e.currentChar;
+						const t = e.currentChar;
 						return t === 61 ? _$1(e) === 61 ? (_$1(e), 8390458) : 8390460 : t === 62 ? (_$1(e), 10) : 1077936155;
 					}
 					case 16842798: return _$1(e) === 61 ? _$1(e) === 61 ? (_$1(e), 8390459) : 8390461 : 16842798;
 					case 8391477: return _$1(e) === 61 ? (_$1(e), 4194340) : 8391477;
 					case 8391476: {
 						if (_$1(e), e.index >= e.end) return 8391476;
-						let t = e.currentChar;
+						const t = e.currentChar;
 						return t === 61 ? (_$1(e), 4194338) : t === 42 ? _$1(e) === 61 ? (_$1(e), 4194335) : 8391735 : 8391476;
 					}
 					case 8389959: return _$1(e) === 61 ? (_$1(e), 4194341) : 8389959;
 					case 25233968: {
 						_$1(e);
-						let t = e.currentChar;
+						const t = e.currentChar;
 						return t === 43 ? (_$1(e), 33619993) : t === 61 ? (_$1(e), 4194336) : 25233968;
 					}
 					case 25233969: {
 						_$1(e);
-						let o = e.currentChar;
+						const o = e.currentChar;
 						if (o === 45) {
 							if (_$1(e), (n & 1 || r) && e.currentChar === 62) {
 								e.options.webcompat || e.report(112), _$1(e), n = xe(e, i, n, t, 3, a), a = e.tokenStart;
@@ -39552,7 +40258,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					}
 					case 8457014:
 						if (_$1(e), e.index < e.end) {
-							let r = e.currentChar;
+							const r = e.currentChar;
 							if (r === 47) {
 								_$1(e), n = Se(e, i, n, 0, e.tokenStart), a = e.tokenStart;
 								continue;
@@ -39566,26 +40272,26 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 						}
 						return 8457014;
 					case 67108877: {
-						let n = _$1(e);
+						const n = _$1(e);
 						if (n >= 48 && n <= 57) return Ne(e, t, 80);
 						if (n === 46) {
-							let t = e.index + 1;
+							const t = e.index + 1;
 							if (t < e.end && i.charCodeAt(t) === 46) return e.column += 2, e.currentChar = i.charCodeAt(e.index += 2), 14;
 						}
 						return 67108877;
 					}
 					case 8389702: {
 						_$1(e);
-						let t = e.currentChar;
+						const t = e.currentChar;
 						return t === 124 ? (_$1(e), e.currentChar === 61 ? (_$1(e), 4194344) : 8913465) : t === 61 ? (_$1(e), 4194342) : 8389702;
 					}
 					case 8390721: {
 						_$1(e);
-						let t = e.currentChar;
+						const t = e.currentChar;
 						if (t === 61) return _$1(e), 8390719;
 						if (t !== 62) return 8390721;
 						if (_$1(e), e.index < e.end) {
-							let t = e.currentChar;
+							const t = e.currentChar;
 							if (t === 62) return _$1(e) === 61 ? (_$1(e), 4194334) : 8390980;
 							if (t === 61) return _$1(e), 4194333;
 						}
@@ -39593,14 +40299,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					}
 					case 8390213: {
 						_$1(e);
-						let t = e.currentChar;
+						const t = e.currentChar;
 						return t === 38 ? (_$1(e), e.currentChar === 61 ? (_$1(e), 4194345) : 8913720) : t === 61 ? (_$1(e), 4194343) : 8390213;
 					}
 					case 22: {
 						let t = _$1(e);
 						if (t === 63) return _$1(e), e.currentChar === 61 ? (_$1(e), 4194346) : 276824445;
 						if (t === 46) {
-							let n = e.index + 1;
+							const n = e.index + 1;
 							if (n < e.end && (t = i.charCodeAt(n), !(t >= 48 && t <= 57))) return _$1(e), 67108990;
 						}
 						return 22;
@@ -39611,7 +40317,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					n = n & -5 | 1, v$1(e);
 					continue;
 				}
-				let r = de(e);
+				const r = de(e);
 				if (r > 0 && (o = r), ue(o)) return e.tokenValue = "", Ye(e, t, 0, 0);
 				if (pe(o)) {
 					_$1(e);
@@ -41782,7 +42488,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function rt(e) {
 		return e.replace(/&(?:[a-zA-Z]+|#[xX][\da-fA-F]+|#\d+);/g, (e) => {
 			if (e.charAt(1) === "#") {
-				let t = e.charAt(2);
+				const t = e.charAt(2);
 				return it(t === "X" || t === "x" ? parseInt(e.slice(3), 16) : parseInt(e.slice(2), 10));
 			}
 			return Ke(tt, e.slice(1, -1)) ?? e;
@@ -41814,15 +42520,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 		let t = 0;
 		for (; e.index < e.end;) {
-			let n = b$1[e.source.charCodeAt(e.index)];
+			const n = b$1[e.source.charCodeAt(e.index)];
 			if (n & 1024 ? (t |= 5, v$1(e)) : n & 2048 ? (fe(e, t), t = t & -5 | 1) : _$1(e), b$1[e.currentChar] & 16384) break;
 		}
 		e.tokenIndex === e.index && e.report(0);
-		let n = e.source.slice(e.tokenIndex, e.index);
+		const n = e.source.slice(e.tokenIndex, e.index);
 		e.options.raw && (e.tokenRaw = n), e.tokenValue = rt(n), e.setToken(137);
 	}
 	function st(e) {
-		if ((e.getToken() & 143360) == 143360) {
+		if ((e.getToken() & 143360) === 143360) {
 			let { index: t } = e, n = e.currentChar;
 			for (; b$1[n] & 32770;) n = _$1(e);
 			e.tokenValue += e.source.slice(t, e.index), e.setToken(208897, !0);
@@ -41847,7 +42553,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		addVarName(e, t, n) {
 			let { parser: r } = this, i = this;
 			for (; i && !(i.type & 128);) {
-				let { variableBindings: a } = i, o = a.get(t);
+				const { variableBindings: a } = i, o = a.get(t);
 				o && o & 248 && (r.options.webcompat && !(e & 1) && (n & 128 && o & 68 || o & 128 && n & 68) || r.report(145, t)), i === this && o && o & 1 && n & 1 && i.recordScopeError(145, t), o && (o & 256 || o & 512 && !r.options.webcompat) && r.report(145, t), i.variableBindings.set(t, n), i = i.parent;
 			}
 		}
@@ -41855,7 +42561,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			return this.variableBindings.has(e);
 		}
 		addBlockName(e, t, n, r) {
-			let { parser: i } = this, a = this.variableBindings.get(t);
+			const { parser: i } = this, a = this.variableBindings.get(t);
 			a && !(a & 2) && (n & 1 ? this.recordScopeError(145, t) : i.options.webcompat && !(e & 1) && r & 2 && a === 64 && n === 64 || i.report(145, t)), this.type & 64 && this.parent?.hasVariable(t) && !(this.parent.variableBindings.get(t) & 2) && i.report(145, t), this.type & 512 && a && !(a & 2) && n & 1 && this.recordScopeError(145, t), this.type & 32 && this.parent.variableBindings.get(t) & 768 && i.report(159, t), this.variableBindings.set(t, n);
 		}
 		recordScopeError(e, ...t) {
@@ -41867,12 +42573,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			};
 		}
 		reportScopeError() {
-			let { scopeError: e } = this;
+			const { scopeError: e } = this;
 			if (e) throw new C$1(e.start, e.end, e.type, ...e.params);
 		}
 	};
 	function lt(e, t, n) {
-		let r = e.createScope().createChildScope(512);
+		const r = e.createScope().createChildScope(512);
 		return r.addBlockName(t, n, 1, 0), r;
 	}
 	var ut = class {
@@ -41886,8 +42592,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		addPrivateIdentifier(e, t) {
 			let { privateIdentifiers: n } = this, r = t & 800;
 			r & 768 || (r |= 768);
-			let i = n.get(e);
-			this.hasPrivateIdentifier(e) && ((i & 32) != (r & 32) || i & r & 768) && this.parser.report(146, e), n.set(e, this.hasPrivateIdentifier(e) ? i | r : r);
+			const i = n.get(e);
+			this.hasPrivateIdentifier(e) && ((i & 32) !== (r & 32) || i & r & 768) && this.parser.report(146, e), n.set(e, this.hasPrivateIdentifier(e) ? i | r : r);
 		}
 		addPrivateIdentifierRef(e) {
 			this.refs[e] ??= [], this.refs[e].push(this.parser.tokenStart);
@@ -41896,8 +42602,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			return this.hasPrivateIdentifier(e) || !!this.parent?.isPrivateIdentifierDefined(e);
 		}
 		validatePrivateIdentifierRefs() {
-			for (let e in this.refs) if (!this.isPrivateIdentifierDefined(e)) {
-				let { index: t, line: n, column: r } = this.refs[e][0];
+			for (const e in this.refs) if (!this.isPrivateIdentifierDefined(e)) {
+				const { index: t, line: n, column: r } = this.refs[e][0];
 				throw new C$1({
 					index: t,
 					line: n,
@@ -41946,9 +42652,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 		setToken(e, t = !1) {
 			this.token = e;
-			let { onToken: n } = this.options;
+			const { onToken: n } = this.options;
 			if (n) if (e !== 1048576) {
-				let r = {
+				const r = {
 					start: {
 						line: this.tokenLine,
 						column: this.tokenColumn
@@ -41984,7 +42690,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		finishNode(e, t, n) {
 			if (this.options.ranges) {
 				e.start = t.index;
-				let r = n ? n.index : this.startIndex;
+				const r = n ? n.index : this.startIndex;
 				e.end = r, e.range = [t.index, r];
 			}
 			return this.options.loc && (e.loc = {
@@ -42005,7 +42711,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			this.exportedBindings.add(e);
 		}
 		declareUnboundVariable(e) {
-			let { exportedNames: t } = this;
+			const { exportedNames: t } = this;
 			t.has(e) && this.report(147, e), t.add(e);
 		}
 		report(e, ...t) {
@@ -42022,8 +42728,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 	};
 	function ft(e, t) {
-		return function(n, r, i, a, o) {
-			let s = {
+		return (n, r, i, a, o) => {
+			const s = {
 				type: n,
 				value: r
 			};
@@ -42031,23 +42737,23 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		};
 	}
 	function pt(e, t) {
-		return function(n, r, i, a) {
-			let o = { token: n };
+		return (n, r, i, a) => {
+			const o = { token: n };
 			t.ranges && (o.start = r, o.end = i, o.range = [r, i]), t.loc && (o.loc = a), e.push(o);
 		};
 	}
 	function mt(e) {
-		let t = { ...e };
+		const t = { ...e };
 		return t.onComment &&= Array.isArray(t.onComment) ? ft(t.onComment, t) : t.onComment, t.onToken &&= Array.isArray(t.onToken) ? pt(t.onToken, t) : t.onToken, t;
 	}
 	function ht(e, t = {}, n = 0) {
-		let r = mt(t);
+		const r = mt(t);
 		r.module && (n |= 3), r.globalReturn && (n |= 4096), r.impliedStrict && (n |= 1);
-		let i = new dt(e, r);
+		const i = new dt(e, r);
 		be(i);
 		let a = i.createScopeIfLexical(), o = [], s = "script";
 		if (n & 2) {
-			if (s = "module", o = _t(i, n | 8, a), a) for (let e of i.exportedBindings) a.hasVariable(e) || i.report(148, e);
+			if (s = "module", o = _t(i, n | 8, a), a) for (const e of i.exportedBindings) a.hasVariable(e) || i.report(148, e);
 		} else o = gt(i, n | 8, a);
 		return i.finishNode({
 			type: "Program",
@@ -42061,9 +42767,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function gt(e, t, n) {
 		A$1(e, t | 262176);
-		let r = [];
+		const r = [];
 		for (; e.getToken() === 134283267;) {
-			let { index: n, tokenValue: i, tokenStart: a, tokenIndex: o } = e, s = e.getToken(), c = q(e, t);
+			const { index: n, tokenValue: i, tokenStart: a, tokenIndex: o } = e, s = e.getToken(), c = q(e, t);
 			if (Ie(e, n, o, i)) {
 				if (t |= 1, e.flags & 64) throw new C$1(e.tokenStart, e.currentLocation, 9);
 				if (e.flags & 4096) throw new C$1(e.tokenStart, e.currentLocation, 15);
@@ -42075,9 +42781,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function _t(e, t, n) {
 		A$1(e, t | 32);
-		let r = [];
+		const r = [];
 		for (; e.getToken() === 134283267;) {
-			let { tokenStart: n } = e, i = e.getToken();
+			const { tokenStart: n } = e, i = e.getToken();
 			r.push(wt(e, t, q(e, t), i, n));
 		}
 		for (; e.getToken() !== 1048576;) r.push(vt(e, t, n));
@@ -42101,7 +42807,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.leadingDecorators?.decorators.length && e.report(170), r;
 	}
 	function M$1(e, t, n, r, i, a) {
-		let o = e.tokenStart;
+		const o = e.tokenStart;
 		switch (e.getToken()) {
 			case 86104: return J(e, t, n, r, i, 1, 0, 0, o);
 			case 132:
@@ -42154,7 +42860,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return l & 143360 && e.getToken() === 21 ? St(e, t, n, r, i, a, s, u, l, o, c) : (u = W(e, t, r, u, 0, 0, c), u = B$1(e, t, r, 0, 0, c, u), e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)), P$1(e, t, u, c));
 	}
 	function bt(e, t, n, r, i, a = e.tokenStart, o = "BlockStatement") {
-		let s = [];
+		const s = [];
 		for (D$1(e, t | 32, 2162700); e.getToken() !== 1074790415;) s.push(M$1(e, t, n, r, 2, { $: i }));
 		return D$1(e, t | 32, 1074790415), e.finishNode({
 			type: o,
@@ -42163,9 +42869,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function xt(e, t, n) {
 		t & 4096 || e.report(92);
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t | 32);
-		let i = e.flags & 1 || e.getToken() & 1048576 ? null : z$1(e, t, n, 0, 1, e.tokenStart);
+		const i = e.flags & 1 || e.getToken() & 1048576 ? null : z$1(e, t, n, 0, 1, e.tokenStart);
 		return T$1(e, t | 32), e.finishNode({
 			type: "ReturnStatement",
 			argument: i
@@ -42179,7 +42885,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function St(e, t, n, r, i, a, o, s, c, l, u) {
 		Re(e, t, 0, c, 1), Ue(e, a, o), A$1(e, t | 32);
-		let d = l && !(t & 1) && e.options.webcompat && e.getToken() === 86104 ? J(e, t, n?.createChildScope(), r, i, 0, 0, 0, e.tokenStart) : N$1(e, t, n, r, i, a, l);
+		const d = l && !(t & 1) && e.options.webcompat && e.getToken() === 86104 ? J(e, t, n?.createChildScope(), r, i, 0, 0, 0, e.tokenStart) : N$1(e, t, n, r, i, a, l);
 		return e.finishNode({
 			type: "LabeledStatement",
 			label: s,
@@ -42189,39 +42895,39 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function Ct(e, t, n, r, i, a, o) {
 		let { tokenValue: s, tokenStart: c } = e, l = e.getToken(), u = K(e, t);
 		if (e.getToken() === 21) return St(e, t, n, r, i, a, s, u, l, 1, c);
-		let d = e.flags & 1;
+		const d = e.flags & 1;
 		if (!d) {
 			if (e.getToken() === 86104) return o || e.report(123), J(e, t, n, r, i, 1, 0, 1, c);
 			if (k$1(t, e.getToken())) return u = Bn(e, t, r, 1, c), e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)), P$1(e, t, u, c);
 		}
-		return e.getToken() === 67174411 ? u = Vn(e, t, r, u, 1, 1, 0, d, c) : (e.getToken() === 10 && (Ge(e, t, l), (l & 36864) == 36864 && (e.flags |= 256), u = Nn(e, t | 2048, r, e.tokenValue, u, 0, 1, 0, c)), e.assignable = 1), u = W(e, t, r, u, 0, 0, c), u = B$1(e, t, r, 0, 0, c, u), e.assignable = 1, e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)), P$1(e, t, u, c);
+		return e.getToken() === 67174411 ? u = Vn(e, t, r, u, 1, 1, 0, d, c) : (e.getToken() === 10 && (Ge(e, t, l), (l & 36864) === 36864 && (e.flags |= 256), u = Nn(e, t | 2048, r, e.tokenValue, u, 0, 1, 0, c)), e.assignable = 1), u = W(e, t, r, u, 0, 0, c), u = B$1(e, t, r, 0, 0, c, u), e.assignable = 1, e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)), P$1(e, t, u, c);
 	}
 	function wt(e, t, n, r, i) {
-		let a = e.startIndex;
+		const a = e.startIndex;
 		r !== 1074790417 && (e.assignable = 2, n = W(e, t, void 0, n, 0, 0, i), e.getToken() !== 1074790417 && (n = B$1(e, t, void 0, 0, 0, i, n), e.getToken() === 18 && (n = R$1(e, t, void 0, 0, i, n))), T$1(e, t | 32));
-		let o = {
+		const o = {
 			type: "ExpressionStatement",
 			expression: n
 		};
-		return n.type === "Literal" && typeof n.value == "string" && (o.directive = e.source.slice(i.index + 1, a - 1)), e.finishNode(o, i);
+		return n.type === "Literal" && typeof n.value === "string" && (o.directive = e.source.slice(i.index + 1, a - 1)), e.finishNode(o, i);
 	}
 	function Tt(e, t) {
-		let n = e.tokenStart;
+		const n = e.tokenStart;
 		return A$1(e, t | 32), e.finishNode({ type: "EmptyStatement" }, n);
 	}
 	function Et(e, t, n) {
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t | 32), e.flags & 1 && e.report(90);
-		let i = z$1(e, t, n, 0, 1, e.tokenStart);
+		const i = z$1(e, t, n, 0, 1, e.tokenStart);
 		return T$1(e, t | 32), e.finishNode({
 			type: "ThrowStatement",
 			argument: i
 		}, r);
 	}
 	function Dt(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t), D$1(e, t | 32, 67174411), e.assignable = 1;
-		let o = z$1(e, t, r, 0, 1, e.tokenStart);
+		const o = z$1(e, t, r, 0, 1, e.tokenStart);
 		D$1(e, t | 32, 16);
 		let s = Ot(e, t, n, r, i), c = null;
 		return e.getToken() === 20563 && (A$1(e, t | 32), c = Ot(e, t, n, r, i)), e.finishNode({
@@ -42232,13 +42938,13 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function Ot(e, t, n, r, i) {
-		let { tokenStart: a } = e;
+		const { tokenStart: a } = e;
 		return t & 1 || !e.options.webcompat || e.getToken() !== 86104 ? N$1(e, t, n, r, 0, { $: i }, 0) : J(e, t, n?.createChildScope(), r, 0, 0, 0, 0, a);
 	}
 	function kt(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t), D$1(e, t | 32, 67174411);
-		let o = z$1(e, t, r, 0, 1, e.tokenStart);
+		const o = z$1(e, t, r, 0, 1, e.tokenStart);
 		D$1(e, t, 16), D$1(e, t, 2162700);
 		let s = [], c = 0;
 		for (n = n?.createChildScope(8); e.getToken() !== 1074790415;) {
@@ -42257,11 +42963,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function At(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t), D$1(e, t | 32, 67174411);
-		let o = z$1(e, t, r, 0, 1, e.tokenStart);
+		const o = z$1(e, t, r, 0, 1, e.tokenStart);
 		D$1(e, t | 32, 16);
-		let s = F(e, t, n, r, i);
+		const s = F(e, t, n, r, i);
 		return e.finishNode({
 			type: "WhileStatement",
 			test: o,
@@ -42276,11 +42982,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function jt(e, t, n) {
 		t & 128 || e.report(68);
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t);
 		let i = null;
 		if (!(e.flags & 1) && e.getToken() & 143360) {
-			let { tokenValue: r } = e;
+			const { tokenValue: r } = e;
 			i = K(e, t | 32), He(e, n, r, 1) || e.report(138, r);
 		}
 		return T$1(e, t | 32), e.finishNode({
@@ -42289,11 +42995,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function Mt(e, t, n) {
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t | 32);
 		let i = null;
 		if (!(e.flags & 1) && e.getToken() & 143360) {
-			let { tokenValue: r } = e;
+			const { tokenValue: r } = e;
 			i = K(e, t | 32), He(e, n, r, 0) || e.report(138, r);
 		} else t & 132 || e.report(69);
 		return T$1(e, t | 32), e.finishNode({
@@ -42302,11 +43008,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function Nt(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t), t & 1 && e.report(91), D$1(e, t | 32, 67174411);
-		let o = z$1(e, t, r, 0, 1, e.tokenStart);
+		const o = z$1(e, t, r, 0, 1, e.tokenStart);
 		D$1(e, t | 32, 16);
-		let s = N$1(e, t, n, r, 2, i, 0);
+		const s = N$1(e, t, n, r, 2, i, 0);
 		return e.finishNode({
 			type: "WithStatement",
 			object: o,
@@ -42314,16 +43020,16 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function Pt(e, t) {
-		let n = e.tokenStart;
+		const n = e.tokenStart;
 		return A$1(e, t | 32), T$1(e, t | 32), e.finishNode({ type: "DebuggerStatement" }, n);
 	}
 	function Ft(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t | 32);
 		let o = n?.createChildScope(16), s = bt(e, t, o, r, { $: i }), { tokenStart: c } = e, l = E$1(e, t | 32, 20557) ? It(e, t, n, r, i, c) : null, u = null;
 		if (e.getToken() === 20566) {
 			A$1(e, t | 32);
-			let a = n?.createChildScope(4);
+			const a = n?.createChildScope(4);
 			u = bt(e, t, a, r, { $: i });
 		}
 		return !l && !u && e.report(88), e.finishNode({
@@ -42335,8 +43041,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function It(e, t, n, r, i, a) {
 		let o = null, s = n;
-		E$1(e, t, 67174411) && (n = n?.createChildScope(4), o = Zn(e, t, n, r, (e.getToken() & 2097152) == 2097152 ? 256 : 512, 0), e.getToken() === 18 ? e.report(86) : e.getToken() === 1077936155 && e.report(87), D$1(e, t | 32, 16)), s = n?.createChildScope(32);
-		let c = bt(e, t, s, r, { $: i });
+		E$1(e, t, 67174411) && (n = n?.createChildScope(4), o = Zn(e, t, n, r, (e.getToken() & 2097152) === 2097152 ? 256 : 512, 0), e.getToken() === 18 ? e.report(86) : e.getToken() === 1077936155 && e.report(87), D$1(e, t | 32, 16)), s = n?.createChildScope(32);
+		const c = bt(e, t, s, r, { $: i });
 		return e.finishNode({
 			type: "CatchClause",
 			param: o,
@@ -42345,15 +43051,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function Lt(e, t, n, r, i) {
 		n = n?.createChildScope();
-		let a = 5764;
+		const a = 5764;
 		return t = (t | a) ^ a | 592128, bt(e, t, n, r, {}, i, "StaticBlock");
 	}
 	function Rt(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t | 32);
-		let o = F(e, t, n, r, i);
+		const o = F(e, t, n, r, i);
 		D$1(e, t, 20578), D$1(e, t | 32, 67174411);
-		let s = z$1(e, t, r, 0, 1, e.tokenStart);
+		const s = z$1(e, t, r, 0, 1, e.tokenStart);
 		return D$1(e, t | 32, 16), E$1(e, t | 32, 1074790417), e.finishNode({
 			type: "DoWhileStatement",
 			body: o,
@@ -42363,7 +43069,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function zt(e, t, n, r, i) {
 		let { tokenValue: a, tokenStart: o } = e, s = e.getToken(), c = K(e, t);
 		if (e.getToken() & 2240512) {
-			let i = I$1(e, t, n, r, 8, 0);
+			const i = I$1(e, t, n, r, 8, 0);
 			return T$1(e, t | 32), e.finishNode({
 				type: "VariableDeclaration",
 				kind: "let",
@@ -42378,9 +43084,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.getToken() === 18 && (c = R$1(e, t, r, 0, o, c)), P$1(e, t, c, o);
 	}
 	function Bt(e, t, n, r, i, a) {
-		let o = e.tokenStart;
+		const o = e.tokenStart;
 		A$1(e, t);
-		let s = I$1(e, t, n, r, i, a);
+		const s = I$1(e, t, n, r, i, a);
 		return T$1(e, t | 32), e.finishNode({
 			type: "VariableDeclaration",
 			kind: i & 8 ? "let" : "const",
@@ -42388,9 +43094,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, o);
 	}
 	function Vt(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t);
-		let o = I$1(e, t, n, r, 4, i);
+		const o = I$1(e, t, n, r, 4, i);
 		return T$1(e, t | 32), e.finishNode({
 			type: "VariableDeclaration",
 			kind: "var",
@@ -42406,7 +43112,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let { tokenStart: o } = e, s = e.getToken(), c = null, l = Zn(e, t, n, r, i, a);
 		if (e.getToken() === 1077936155) {
 			if (A$1(e, t | 32), c = L$1(e, t, r, 1, 0, e.tokenStart), (a & 32 || !(s & 2097152)) && (e.getToken() === 471156 || e.getToken() === 8673330 && (s & 2097152 || !(i & 4) || t & 1))) throw new C$1(o, e.currentLocation, 60, e.getToken() === 471156 ? "of" : "in");
-		} else (i & 16 || (s & 2097152) > 0) && (e.getToken() & 262144) != 262144 && e.report(59, i & 16 ? "const" : "destructuring");
+		} else (i & 16 || (s & 2097152) > 0) && (e.getToken() & 262144) !== 262144 && e.report(59, i & 16 ? "const" : "destructuring");
 		return e.finishNode({
 			type: "VariableDeclarator",
 			id: l,
@@ -42414,9 +43120,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, o);
 	}
 	function Ut(e, t, n, r, i) {
-		let a = e.tokenStart;
+		const a = e.tokenStart;
 		A$1(e, t);
-		let o = ((t & 2048) > 0 || (t & 2) > 0 && (t & 8) > 0) && E$1(e, t, 209006);
+		const o = ((t & 2048) > 0 || (t & 2) > 0 && (t & 8) > 0) && E$1(e, t, 209006);
 		D$1(e, t | 32, 67174411), n = n?.createChildScope(1);
 		let s = null, c = null, l = 0, u = null, d = e.getToken() === 86088 || e.getToken() === 241737 || e.getToken() === 86090, f, { tokenStart: p } = e, m = e.getToken();
 		if (d) m === 241737 ? (u = K(e, t), e.getToken() & 2240512 ? (e.getToken() === 8673330 ? t & 1 && e.report(67) : u = e.finishNode({
@@ -42433,14 +43139,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			declarations: I$1(e, t | 131072, n, r, 16, 32)
 		}, p), e.assignable = 1);
 		else if (m === 1074790417) o && e.report(82);
-		else if ((m & 2097152) == 2097152) {
-			let n = e.tokenStart;
+		else if ((m & 2097152) === 2097152) {
+			const n = e.tokenStart;
 			u = m === 2162700 ? Q(e, t, void 0, r, 1, 0, 0, 2, 32) : Y(e, t, void 0, r, 1, 0, 0, 2, 32), l = e.destructible, l & 64 && e.report(63), e.assignable = l & 16 ? 2 : 1, u = W(e, t | 131072, r, u, 0, 0, n);
 		} else u = U(e, t | 131072, r, 1, 0, 1);
-		if ((e.getToken() & 262144) == 262144) {
+		if ((e.getToken() & 262144) === 262144) {
 			if (e.getToken() === 471156) {
 				e.assignable & 2 && e.report(80, o ? "await" : "of"), O(e, u), A$1(e, t | 32), f = L$1(e, t, r, 1, 0, e.tokenStart), D$1(e, t | 32, 16);
-				let s = F(e, t, n, r, i);
+				const s = F(e, t, n, r, i);
 				return e.finishNode({
 					type: "ForOfStatement",
 					left: u,
@@ -42450,7 +43156,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				}, a);
 			}
 			e.assignable & 2 && e.report(80, "in"), O(e, u), A$1(e, t | 32), o && e.report(82), f = z$1(e, t, r, 0, 1, e.tokenStart), D$1(e, t | 32, 16);
-			let s = F(e, t, n, r, i);
+			const s = F(e, t, n, r, i);
 			return e.finishNode({
 				type: "ForInStatement",
 				body: s,
@@ -42459,7 +43165,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}, a);
 		}
 		o && e.report(82), d || (l & 8 && e.getToken() !== 1077936155 && e.report(80, "loop"), u = B$1(e, t | 131072, r, 0, 0, p, u)), e.getToken() === 18 && (u = R$1(e, t, r, 0, p, u)), D$1(e, t | 32, 1074790417), e.getToken() !== 1074790417 && (s = z$1(e, t, r, 0, 1, e.tokenStart)), D$1(e, t | 32, 1074790417), e.getToken() !== 16 && (c = z$1(e, t, r, 0, 1, e.tokenStart)), D$1(e, t | 32, 16);
-		let h = F(e, t, n, r, i);
+		const h = F(e, t, n, r, i);
 		return e.finishNode({
 			type: "ForStatement",
 			init: u,
@@ -42469,16 +43175,16 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function Wt(e, t, n) {
-		return k$1(t, e.getToken()) || e.report(118), (e.getToken() & 537079808) == 537079808 && e.report(119), n?.addBlockName(t, e.tokenValue, 8, 0), K(e, t);
+		return k$1(t, e.getToken()) || e.report(118), (e.getToken() & 537079808) === 537079808 && e.report(119), n?.addBlockName(t, e.tokenValue, 8, 0), K(e, t);
 	}
 	function Gt(e, t, n) {
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t);
 		let i = null, { tokenStart: a } = e, o = [];
 		if (e.getToken() === 134283267) i = q(e, t);
 		else {
 			if (e.getToken() & 143360) {
-				let r = Wt(e, t, n);
+				const r = Wt(e, t, n);
 				if (o = [e.finishNode({
 					type: "ImportDefaultSpecifier",
 					local: r
@@ -42504,7 +43210,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			i = qt(e, t);
 		}
-		let s = pn(e, t), c = {
+		const s = pn(e, t), c = {
 			type: "ImportDeclaration",
 			specifiers: o,
 			source: i,
@@ -42513,8 +43219,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return T$1(e, t | 32), e.finishNode(c, r);
 	}
 	function Kt(e, t, n) {
-		let { tokenStart: r } = e;
-		if (A$1(e, t), D$1(e, t, 77932), (e.getToken() & 134217728) == 134217728) throw new C$1(r, e.currentLocation, 30, w$1[e.getToken() & 255]);
+		const { tokenStart: r } = e;
+		if (A$1(e, t), D$1(e, t, 77932), (e.getToken() & 134217728) === 134217728) throw new C$1(r, e.currentLocation, 30, w$1[e.getToken() & 255]);
 		return e.finishNode({
 			type: "ImportNamespaceSpecifier",
 			local: Wt(e, t, n)
@@ -42526,7 +43232,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function Jt(e, t, n, r) {
 		for (A$1(e, t); e.getToken() & 143360 || e.getToken() === 134283267;) {
 			let { tokenValue: i, tokenStart: a } = e, o = e.getToken(), s = _n(e, t), c;
-			E$1(e, t, 77932) ? ((e.getToken() & 134217728) == 134217728 || e.getToken() === 18 ? e.report(106) : Re(e, t, 16, e.getToken(), 0), i = e.tokenValue, c = K(e, t)) : s.type === "Identifier" ? (Re(e, t, 16, o, 0), c = s) : e.report(25, w$1[108]), n?.addBlockName(t, i, 8, 0), r.push(e.finishNode({
+			E$1(e, t, 77932) ? ((e.getToken() & 134217728) === 134217728 || e.getToken() === 18 ? e.report(106) : Re(e, t, 16, e.getToken(), 0), i = e.tokenValue, c = K(e, t)) : s.type === "Identifier" ? (Re(e, t, 16, o, 0), c = s) : e.report(25, w$1[108]), n?.addBlockName(t, i, 8, 0), r.push(e.finishNode({
 				type: "ImportSpecifier",
 				local: c,
 				imported: s
@@ -42546,7 +43252,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return i = W(e, t, n, i, 0, 0, r), e.getToken() === 18 && (i = R$1(e, t, n, 0, r, i)), P$1(e, t, i, r);
 	}
 	function Zt(e, t, n) {
-		let r = e.leadingDecorators.decorators.length ? e.leadingDecorators.start : e.tokenStart;
+		const r = e.leadingDecorators.decorators.length ? e.leadingDecorators.start : e.tokenStart;
 		A$1(e, t | 32);
 		let i = [], a = null, o = null, s = [];
 		if (E$1(e, t | 32, 20561)) {
@@ -42559,9 +43265,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					a = Un(e, t, n, void 0, 1);
 					break;
 				case 209005: {
-					let { tokenStart: r } = e;
+					const { tokenStart: r } = e;
 					a = K(e, t);
-					let { flags: i } = e;
+					const { flags: i } = e;
 					i & 1 || (e.getToken() === 86104 ? a = J(e, t, n, void 0, 4, 1, 1, 1, r) : e.getToken() === 67174411 ? (a = Vn(e, t, void 0, a, 1, 1, 0, i, r), a = W(e, t, void 0, a, 0, 0, r), a = B$1(e, t, void 0, 0, 0, r, a)) : e.getToken() & 143360 && (n &&= lt(e, t, e.tokenValue), a = K(e, t), a = Fn(e, t, n, void 0, [a], 1, r)));
 					break;
 				}
@@ -42577,7 +43283,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				A$1(e, t);
 				let i = null;
 				E$1(e, t, 77932) && (n && e.declareUnboundVariable(e.tokenValue), i = _n(e, t)), D$1(e, t, 209011), e.getToken() !== 134283267 && e.report(105, "Export"), o = q(e, t);
-				let a = pn(e, t), s = {
+				const a = pn(e, t), s = {
 					type: "ExportAllDeclaration",
 					source: o,
 					exported: i,
@@ -42589,7 +43295,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				A$1(e, t);
 				let r = [], a = [], c = 0;
 				for (; e.getToken() & 143360 || e.getToken() === 134283267;) {
-					let { tokenStart: o, tokenValue: s } = e, l = _n(e, t);
+					const { tokenStart: o, tokenValue: s } = e, l = _n(e, t);
 					l.type === "Literal" && (c = 1);
 					let u;
 					e.getToken() === 77932 ? (A$1(e, t), !(e.getToken() & 143360) && e.getToken() !== 134283267 && e.report(106), n && (r.push(e.tokenValue), a.push(s)), u = _n(e, t)) : (n && (r.push(e.tokenValue), a.push(e.tokenValue)), u = l), i.push(e.finishNode({
@@ -42618,7 +43324,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				a = Vt(e, t, n, void 0, 64);
 				break;
 			case 209005: {
-				let { tokenStart: r } = e;
+				const { tokenStart: r } = e;
 				if (A$1(e, t), !(e.flags & 1) && e.getToken() === 86104) {
 					a = J(e, t, n, void 0, 4, 1, 2, 1, r);
 					break;
@@ -42626,7 +43332,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			default: e.report(30, w$1[e.getToken() & 255]);
 		}
-		let c = {
+		const c = {
 			type: "ExportNamedDeclaration",
 			declaration: a,
 			specifiers: i,
@@ -42640,7 +43346,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return o = W(e, t, n, o, i, 0, a), B$1(e, t, n, i, 0, a, o);
 	}
 	function R$1(e, t, n, r, i, a) {
-		let o = [a];
+		const o = [a];
 		for (; E$1(e, t | 32, 18);) o.push(L$1(e, t, n, 1, r, e.tokenStart));
 		return e.finishNode({
 			type: "SequenceExpression",
@@ -42648,14 +43354,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, i);
 	}
 	function z$1(e, t, n, r, i, a) {
-		let o = L$1(e, t, n, i, r, a);
+		const o = L$1(e, t, n, i, r, a);
 		return e.getToken() === 18 ? R$1(e, t, n, r, a, o) : o;
 	}
 	function B$1(e, t, n, r, i, a, o) {
-		let s = e.getToken();
-		if ((s & 4194304) == 4194304) {
+		const s = e.getToken();
+		if ((s & 4194304) === 4194304) {
 			e.assignable & 2 && e.report(26), (!i && s === 1077936155 && o.type === "ArrayExpression" || o.type === "ObjectExpression") && O(e, o), A$1(e, t | 32);
-			let c = L$1(e, t, n, 1, r, e.tokenStart);
+			const c = L$1(e, t, n, 1, r, e.tokenStart);
 			return e.assignable = 2, e.finishNode(i ? {
 				type: "AssignmentPattern",
 				left: o,
@@ -42667,12 +43373,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				right: c
 			}, a);
 		}
-		return (s & 8388608) == 8388608 && (o = H$1(e, t, n, r, a, 4, s, o)), E$1(e, t | 32, 22) && (o = V$1(e, t, n, o, a)), o;
+		return (s & 8388608) === 8388608 && (o = H$1(e, t, n, r, a, 4, s, o)), E$1(e, t | 32, 22) && (o = V$1(e, t, n, o, a)), o;
 	}
 	function Qt(e, t, n, r, i, a, o) {
-		let s = e.getToken();
+		const s = e.getToken();
 		A$1(e, t | 32);
-		let c = L$1(e, t, n, 1, r, e.tokenStart);
+		const c = L$1(e, t, n, 1, r, e.tokenStart);
 		return o = e.finishNode(i ? {
 			type: "AssignmentPattern",
 			left: o,
@@ -42685,9 +43391,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a), e.assignable = 2, o;
 	}
 	function V$1(e, t, n, r, i) {
-		let a = L$1(e, (t | 131072) ^ 131072, n, 1, 0, e.tokenStart);
+		const a = L$1(e, (t | 131072) ^ 131072, n, 1, 0, e.tokenStart);
 		D$1(e, t | 32, 21), e.assignable = 1;
-		let o = L$1(e, t, n, 1, 0, e.tokenStart);
+		const o = L$1(e, t, n, 1, 0, e.tokenStart);
 		return e.assignable = 2, e.finishNode({
 			type: "ConditionalExpression",
 			test: r,
@@ -42707,9 +43413,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function $t(e, t, n, r, i) {
 		r || e.report(0);
-		let { tokenStart: a } = e, o = e.getToken();
+		const { tokenStart: a } = e, o = e.getToken();
 		A$1(e, t | 32);
-		let s = U(e, t, n, 0, i, 1);
+		const s = U(e, t, n, 0, i, 1);
 		return e.getToken() === 8391735 && e.report(33), t & 1 && o === 16863276 && (s.type === "Identifier" ? e.report(121) : Ve(s) && e.report(127)), e.assignable = 2, e.finishNode({
 			type: "UnaryExpression",
 			operator: w$1[o & 255],
@@ -42718,12 +43424,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function en(e, t, n, r, i, a, o, s) {
-		let c = e.getToken(), l = K(e, t), { flags: u } = e;
+		const c = e.getToken(), l = K(e, t), { flags: u } = e;
 		if (!(u & 1)) {
 			if (e.getToken() === 86104) return En(e, t, n, 1, r, s);
-			if (k$1(t, e.getToken())) return i || e.report(0), (e.getToken() & 36864) == 36864 && (e.flags |= 256), Bn(e, t, n, a, s);
+			if (k$1(t, e.getToken())) return i || e.report(0), (e.getToken() & 36864) === 36864 && (e.flags |= 256), Bn(e, t, n, a, s);
 		}
-		return !o && e.getToken() === 67174411 ? Vn(e, t, n, l, a, 1, 0, u, s) : e.getToken() === 10 ? (Ge(e, t, c), o && e.report(51), (c & 36864) == 36864 && (e.flags |= 256), Nn(e, t, n, e.tokenValue, l, o, a, 0, s)) : (e.assignable = 1, l);
+		return !o && e.getToken() === 67174411 ? Vn(e, t, n, l, a, 1, 0, u, s) : e.getToken() === 10 ? (Ge(e, t, c), o && e.report(51), (c & 36864) === 36864 && (e.flags |= 256), Nn(e, t, n, e.tokenValue, l, o, a, 0, s)) : (e.assignable = 1, l);
 	}
 	function tn(e, t, n, r, i, a) {
 		if (r && (e.destructible |= 256), t & 1024) {
@@ -42739,7 +43445,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function nn(e, t, n, r, i, a) {
 		i && (e.destructible |= 128), t & 524288 && e.report(177);
-		let o = Mn(e, t, n);
+		const o = Mn(e, t, n);
 		if (o.type === "ArrowFunctionExpression" || !(e.getToken() & 65536)) {
 			if (t & 2048) throw new C$1(a, {
 				index: e.startIndex,
@@ -42764,7 +43470,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				line: e.startLine,
 				column: e.startColumn
 			}, 0);
-			let i = U(e, t, n, 0, 0, 1);
+			const i = U(e, t, n, 0, 0, 1);
 			return e.getToken() === 8391735 && e.report(33), e.assignable = 2, e.finishNode({
 				type: "AwaitExpression",
 				argument: i
@@ -42778,12 +43484,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return o;
 	}
 	function rn(e, t, n, r, i, a, o) {
-		let { tokenStart: s } = e;
+		const { tokenStart: s } = e;
 		D$1(e, t | 32, 2162700);
-		let c = [];
+		const c = [];
 		if (e.getToken() !== 1074790415) {
 			for (; e.getToken() === 134283267;) {
-				let { index: n, tokenStart: r, tokenIndex: i, tokenValue: a } = e, s = e.getToken(), l = q(e, t);
+				const { index: n, tokenStart: r, tokenIndex: i, tokenValue: a } = e, s = e.getToken(), l = q(e, t);
 				if (Ie(e, n, i, a)) {
 					if (t |= 1, e.flags & 128) throw new C$1(r, e.currentLocation, 66);
 					if (e.flags & 64) throw new C$1(r, e.currentLocation, 9);
@@ -42792,7 +43498,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				}
 				c.push(wt(e, t, l, s, r));
 			}
-			t & 1 && (a && ((a & 537079808) == 537079808 && e.report(119), (a & 36864) == 36864 && e.report(40)), e.flags & 512 && e.report(119), e.flags & 256 && e.report(118));
+			t & 1 && (a && ((a & 537079808) === 537079808 && e.report(119), (a & 36864) === 36864 && e.report(40)), e.flags & 512 && e.report(119), e.flags & 256 && e.report(118));
 		}
 		for (e.flags = (e.flags | 4928) ^ 4928, e.destructible = (e.destructible | 256) ^ 256; e.getToken() !== 1074790415;) c.push(M$1(e, t, n, r, 4, {}));
 		return D$1(e, i & 24 ? t | 32 : t, 1074790415), e.flags &= -4289, e.getToken() === 1077936155 && e.report(26), e.finishNode({
@@ -42801,7 +43507,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, s);
 	}
 	function an(e, t) {
-		let { tokenStart: n } = e;
+		const { tokenStart: n } = e;
 		switch (A$1(e, t), e.getToken()) {
 			case 67108990: e.report(167);
 			case 67174411:
@@ -42816,12 +43522,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.finishNode({ type: "Super" }, n);
 	}
 	function U(e, t, n, r, i, a) {
-		let o = e.tokenStart;
+		const o = e.tokenStart;
 		return W(e, t, n, G(e, t, n, 2, 0, r, i, a, o), i, 0, o);
 	}
 	function on(e, t, n, r) {
 		e.assignable & 2 && e.report(55);
-		let i = e.getToken();
+		const i = e.getToken();
 		return A$1(e, t), e.assignable = 2, e.finishNode({
 			type: "UpdateExpression",
 			argument: n,
@@ -42830,12 +43536,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function W(e, t, n, r, i, a, o) {
-		if ((e.getToken() & 33619968) == 33619968 && !(e.flags & 1)) r = on(e, t, r, o);
-		else if ((e.getToken() & 67108864) == 67108864) {
+		if ((e.getToken() & 33619968) === 33619968 && !(e.flags & 1)) r = on(e, t, r, o);
+		else if ((e.getToken() & 67108864) === 67108864) {
 			switch (t = (t | 131072) ^ 131072, e.getToken()) {
 				case 67108877: {
 					A$1(e, (t | 262152) ^ 8), t & 16 && e.getToken() === 130 && e.tokenValue === "super" && e.report(173), e.assignable = 1;
-					let i = cn(e, t | 64, n);
+					const i = cn(e, t | 64, n);
 					r = e.finishNode({
 						type: "MemberExpression",
 						object: r,
@@ -42847,8 +43553,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				}
 				case 69271571: {
 					let a = !1;
-					(e.flags & 2048) == 2048 && (a = !0, e.flags = (e.flags | 2048) ^ 2048), A$1(e, t | 32);
-					let { tokenStart: s } = e, c = z$1(e, t, n, i, 1, s);
+					(e.flags & 2048) === 2048 && (a = !0, e.flags = (e.flags | 2048) ^ 2048), A$1(e, t | 32);
+					const { tokenStart: s } = e, c = z$1(e, t, n, i, 1, s);
 					D$1(e, t, 20), e.assignable = 1, r = e.finishNode({
 						type: "MemberExpression",
 						object: r,
@@ -42859,10 +43565,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					break;
 				}
 				case 67174411: {
-					if ((e.flags & 1024) == 1024) return e.flags = (e.flags | 1024) ^ 1024, r;
+					if ((e.flags & 1024) === 1024) return e.flags = (e.flags | 1024) ^ 1024, r;
 					let a = !1;
-					(e.flags & 2048) == 2048 && (a = !0, e.flags = (e.flags | 2048) ^ 2048);
-					let s = Cn(e, t, n, i);
+					(e.flags & 2048) === 2048 && (a = !0, e.flags = (e.flags | 2048) ^ 2048);
+					const s = Cn(e, t, n, i);
 					e.assignable = 2, r = e.finishNode({
 						type: "CallExpression",
 						callee: r,
@@ -42874,7 +43580,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				case 67108990:
 					A$1(e, (t | 262152) ^ 8), e.flags |= 2048, e.assignable = 2, r = sn(e, t, n, r, o);
 					break;
-				default: (e.flags & 2048) == 2048 && e.report(166), e.assignable = 2, r = e.finishNode({
+				default: (e.flags & 2048) === 2048 && e.report(166), e.assignable = 2, r = e.finishNode({
 					type: "TaggedTemplateExpression",
 					tag: r,
 					quasi: e.getToken() === 67174408 ? bn(e, t | 64, n) : yn(e, t)
@@ -42882,16 +43588,16 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			r = W(e, t, n, r, 0, 1, o);
 		}
-		return a === 0 && (e.flags & 2048) == 2048 && (e.flags = (e.flags | 2048) ^ 2048, r = e.finishNode({
+		return a === 0 && (e.flags & 2048) === 2048 && (e.flags = (e.flags | 2048) ^ 2048, r = e.finishNode({
 			type: "ChainExpression",
 			expression: r
 		}, o)), r;
 	}
 	function sn(e, t, n, r, i) {
 		let a = !1, o;
-		if ((e.getToken() === 69271571 || e.getToken() === 67174411) && (e.flags & 2048) == 2048 && (a = !0, e.flags = (e.flags | 2048) ^ 2048), e.getToken() === 69271571) {
+		if ((e.getToken() === 69271571 || e.getToken() === 67174411) && (e.flags & 2048) === 2048 && (a = !0, e.flags = (e.flags | 2048) ^ 2048), e.getToken() === 69271571) {
 			A$1(e, t | 32);
-			let { tokenStart: a } = e, s = z$1(e, t, n, 0, 1, a);
+			const { tokenStart: a } = e, s = z$1(e, t, n, 0, 1, a);
 			D$1(e, t, 20), e.assignable = 2, o = e.finishNode({
 				type: "MemberExpression",
 				object: r,
@@ -42900,7 +43606,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				property: s
 			}, i);
 		} else if (e.getToken() === 67174411) {
-			let a = Cn(e, t, n, 0);
+			const a = Cn(e, t, n, 0);
 			e.assignable = 2, o = e.finishNode({
 				type: "CallExpression",
 				callee: r,
@@ -42908,7 +43614,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				optional: !0
 			}, i);
 		} else {
-			let a = cn(e, t, n);
+			const a = cn(e, t, n);
 			e.assignable = 2, o = e.finishNode({
 				type: "MemberExpression",
 				object: r,
@@ -42924,9 +43630,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function ln(e, t, n, r, i, a) {
 		r && e.report(56), i || e.report(0);
-		let o = e.getToken();
+		const o = e.getToken();
 		A$1(e, t | 32);
-		let s = U(e, t, n, 0, 0, 1);
+		const s = U(e, t, n, 0, 0, 1);
 		return e.assignable & 2 && e.report(55), e.assignable = 2, e.finishNode({
 			type: "UpdateExpression",
 			argument: s,
@@ -42935,16 +43641,16 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function G(e, t, n, r, i, a, o, s, c) {
-		if ((e.getToken() & 143360) == 143360) {
+		if ((e.getToken() & 143360) === 143360) {
 			switch (e.getToken()) {
 				case 209006: return nn(e, t, n, i, o, c);
 				case 241771: return tn(e, t, n, o, a, c);
 				case 209005: return en(e, t, n, o, s, a, i, c);
 			}
-			let { tokenValue: l } = e, u = e.getToken(), d = K(e, t | 64);
-			return e.getToken() === 10 ? (s || e.report(0), Ge(e, t, u), (u & 36864) == 36864 && (e.flags |= 256), Nn(e, t, n, l, d, i, a, 0, c)) : (t & 16 && !(t & 32768) && !(t & 8192) && e.tokenValue === "arguments" && e.report(130), (u & 255) == 73 && (t & 1 && e.report(113), r & 24 && e.report(100)), e.assignable = t & 1 && (u & 537079808) == 537079808 ? 2 : 1, d);
+			const { tokenValue: l } = e, u = e.getToken(), d = K(e, t | 64);
+			return e.getToken() === 10 ? (s || e.report(0), Ge(e, t, u), (u & 36864) === 36864 && (e.flags |= 256), Nn(e, t, n, l, d, i, a, 0, c)) : (t & 16 && !(t & 32768) && !(t & 8192) && e.tokenValue === "arguments" && e.report(130), (u & 255) === 73 && (t & 1 && e.report(113), r & 24 && e.report(100)), e.assignable = t & 1 && (u & 537079808) === 537079808 ? 2 : 1, d);
 		}
-		if ((e.getToken() & 134217728) == 134217728) return q(e, t);
+		if ((e.getToken() & 134217728) === 134217728) return q(e, t);
 		switch (e.getToken()) {
 			case 33619993:
 			case 33619994: return ln(e, t, n, i, s, c);
@@ -42985,7 +43691,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function dn(e, t, n, r) {
 		t & 2 || e.report(169), A$1(e, t);
-		let i = e.getToken();
+		const i = e.getToken();
 		return i !== 209030 && e.tokenValue !== "meta" ? e.report(174) : i & -2147483648 && e.report(175), e.assignable = 2, e.finishNode({
 			type: "MetaProperty",
 			meta: n,
@@ -42996,7 +43702,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		D$1(e, t | 32, 67174411), e.getToken() === 14 && e.report(143);
 		let a = L$1(e, t, n, 1, r, e.tokenStart), o = null;
 		e.getToken() === 18 && (D$1(e, t, 18), e.getToken() !== 16 && (o = L$1(e, (t | 131072) ^ 131072, n, 1, r, e.tokenStart)), E$1(e, t, 18));
-		let s = {
+		const s = {
 			type: "ImportExpression",
 			source: a,
 			options: o
@@ -43006,11 +43712,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function pn(e, t) {
 		if (!E$1(e, t, 20579)) return [];
 		D$1(e, t, 2162700);
-		let n = [], r = new Set();
+		const n = [], r = new Set();
 		for (; e.getToken() !== 1074790415;) {
-			let i = e.tokenStart, a = hn(e, t);
+			const i = e.tokenStart, a = hn(e, t);
 			D$1(e, t, 21);
-			let o = mn(e, t), s = a.type === "Literal" ? a.value : a.name;
+			const o = mn(e, t), s = a.type === "Literal" ? a.value : a.name;
 			r.has(s) && e.report(145, `${s}`), r.add(s), n.push(e.finishNode({
 				type: "ImportAttribute",
 				key: a,
@@ -43029,10 +43735,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		e.report(30, w$1[e.getToken() & 255]);
 	}
 	function gn(e, t) {
-		let n = t.length;
+		const n = t.length;
 		for (let r = 0; r < n; r++) {
-			let i = t.charCodeAt(r);
-			(i & 64512) == 55296 && (i > 56319 || ++r >= n || (t.charCodeAt(r) & 64512) != 56320) && e.report(171, JSON.stringify(t.charAt(r--)));
+			const i = t.charCodeAt(r);
+			(i & 64512) === 55296 && (i > 56319 || ++r >= n || (t.charCodeAt(r) & 64512) !== 56320) && e.report(171, JSON.stringify(t.charAt(r--)));
 		}
 	}
 	function _n(e, t) {
@@ -43041,9 +43747,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		e.report(30, w$1[e.getToken() & 255]);
 	}
 	function vn(e, t) {
-		let { tokenRaw: n, tokenValue: r, tokenStart: i } = e;
+		const { tokenRaw: n, tokenValue: r, tokenStart: i } = e;
 		A$1(e, t), e.assignable = 2;
-		let a = {
+		const a = {
 			type: "Literal",
 			value: r,
 			bigint: String(r)
@@ -43052,9 +43758,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function yn(e, t) {
 		e.assignable = 2;
-		let { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
+		const { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
 		D$1(e, t, 67174409);
-		let a = [xn(e, n, r, i, !0)];
+		const a = [xn(e, n, r, i, !0)];
 		return e.finishNode({
 			type: "TemplateLiteral",
 			expressions: [],
@@ -43063,15 +43769,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function bn(e, t, n) {
 		t = (t | 131072) ^ 131072;
-		let { tokenValue: r, tokenRaw: i, tokenStart: a } = e;
+		const { tokenValue: r, tokenRaw: i, tokenStart: a } = e;
 		D$1(e, t & -65 | 32, 67174408);
-		let o = [xn(e, r, i, a, !1)], s = [z$1(e, t & -65, n, 0, 1, e.tokenStart)];
+		const o = [xn(e, r, i, a, !1)], s = [z$1(e, t & -65, n, 0, 1, e.tokenStart)];
 		for (e.getToken() !== 1074790415 && e.report(83); e.setToken(je(e, t), !0) !== 67174409;) {
-			let { tokenValue: r, tokenRaw: i, tokenStart: a } = e;
+			const { tokenValue: r, tokenRaw: i, tokenStart: a } = e;
 			D$1(e, t & -65 | 32, 67174408), o.push(xn(e, r, i, a, !1)), s.push(z$1(e, t, n, 0, 1, e.tokenStart)), e.getToken() !== 1074790415 && e.report(83);
 		}
 		{
-			let { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
+			const { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
 			D$1(e, t, 67174409), o.push(xn(e, n, r, i, !0));
 		}
 		return e.finishNode({
@@ -43081,7 +43787,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function xn(e, t, n, r, i) {
-		let a = e.finishNode({
+		const a = e.finishNode({
 			type: "TemplateElement",
 			value: {
 				cooked: t,
@@ -43092,9 +43798,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.options.ranges && (a.start += 1, a.range[0] += 1, a.end -= o, a.range[1] -= o), e.options.loc && (a.loc.start.column += 1, a.loc.end.column -= o), a;
 	}
 	function Sn(e, t, n) {
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		t = (t | 131072) ^ 131072, D$1(e, t | 32, 14);
-		let i = L$1(e, t, n, 1, 0, e.tokenStart);
+		const i = L$1(e, t, n, 1, 0, e.tokenStart);
 		return e.assignable = 1, e.finishNode({
 			type: "SpreadElement",
 			argument: i
@@ -43102,20 +43808,20 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function Cn(e, t, n, r) {
 		A$1(e, t | 32);
-		let i = [];
+		const i = [];
 		if (e.getToken() === 16) return A$1(e, t | 64), i;
 		for (; e.getToken() !== 16 && (e.getToken() === 14 ? i.push(Sn(e, t, n)) : i.push(L$1(e, t, n, 1, r, e.tokenStart)), !(e.getToken() !== 18 || (A$1(e, t | 32), e.getToken() === 16))););
 		return D$1(e, t | 64, 16), i;
 	}
 	function K(e, t) {
-		let { tokenValue: n, tokenStart: r } = e;
+		const { tokenValue: n, tokenStart: r } = e;
 		return A$1(e, t | (n === "await" && !(e.getToken() & -2147483648) ? 32 : 0)), e.finishNode({
 			type: "Identifier",
 			name: n
 		}, r);
 	}
 	function q(e, t) {
-		let { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
+		const { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
 		return e.getToken() === 134283388 ? vn(e, t) : (A$1(e, t), e.assignable = 2, e.finishNode(e.options.raw ? {
 			type: "Literal",
 			value: n,
@@ -43126,7 +43832,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, i));
 	}
 	function wn(e, t) {
-		let n = e.tokenStart, r = w$1[e.getToken() & 255], i = e.getToken() === 86023 ? null : r === "true";
+		const n = e.tokenStart, r = w$1[e.getToken() & 255], i = e.getToken() === 86023 ? null : r === "true";
 		return A$1(e, t), e.assignable = 2, e.finishNode(e.options.raw ? {
 			type: "Literal",
 			value: i,
@@ -43137,7 +43843,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, n);
 	}
 	function Tn(e, t) {
-		let { tokenStart: n } = e;
+		const { tokenStart: n } = e;
 		return A$1(e, t), e.assignable = 2, e.finishNode({ type: "ThisExpression" }, n);
 	}
 	function J(e, t, n, r, i, a, o, s, c) {
@@ -43145,15 +43851,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let l = a ? Le(e, t, 8391476) : 0, u = null, d, f = n ? e.createScope() : void 0;
 		if (e.getToken() === 67174411) o & 1 || e.report(39, "Function");
 		else {
-			let r = i & 4 && (!(t & 8) || !(t & 2)) ? 4 : 64 | (s ? 1024 : 0) | (l ? 1024 : 0);
+			const r = i & 4 && (!(t & 8) || !(t & 2)) ? 4 : 64 | (s ? 1024 : 0) | (l ? 1024 : 0);
 			ze(e, t, e.getToken()), n && (r & 4 ? n.addVarName(t, e.tokenValue, r) : n.addBlockName(t, e.tokenValue, r, i), f = f?.createChildScope(128), o && o & 2 && e.declareUnboundVariable(e.tokenValue)), d = e.getToken(), e.getToken() & 143360 ? u = K(e, t) : e.report(30, w$1[e.getToken() & 255]);
 		}
 		{
-			let e = 28416;
+			const e = 28416;
 			t = (t | e) ^ e | 65536 | (s ? 2048 : 0) | (l ? 1024 : 0) | (l ? 0 : 262144);
 		}
 		f = f?.createChildScope(256);
-		let p = In(e, (t | 8192) & -524289, f, r, 0, 1), m = 524428, h = rn(e, (t | m) ^ m | 36864, f?.createChildScope(64), r, 8, d, f);
+		const p = In(e, (t | 8192) & -524289, f, r, 0, 1), m = 524428, h = rn(e, (t | m) ^ m | 36864, f?.createChildScope(64), r, 8, d, f);
 		return e.finishNode({
 			type: "FunctionDeclaration",
 			id: u,
@@ -43167,7 +43873,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		A$1(e, t | 32);
 		let o = Le(e, t, 8391476), s = (r ? 2048 : 0) | (o ? 1024 : 0), c = null, l, u = e.createScopeIfLexical(), d = 552704;
 		e.getToken() & 143360 && (ze(e, (t | d) ^ d | s, e.getToken()), u = u?.createChildScope(128), l = e.getToken(), c = K(e, t)), t = (t | d) ^ d | 65536 | s | (o ? 0 : 262144), u = u?.createChildScope(256);
-		let f = In(e, (t | 8192) & -524289, u, n, i, 1), p = rn(e, t & -131229 | 36864, u?.createChildScope(64), n, 0, l, u);
+		const f = In(e, (t | 8192) & -524289, u, n, i, 1), p = rn(e, t & -131229 | 36864, u?.createChildScope(64), n, 0, l, u);
 		return e.assignable = 2, e.finishNode({
 			type: "FunctionExpression",
 			id: c,
@@ -43178,11 +43884,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function Dn(e, t, n, r, i) {
-		let a = Y(e, t, void 0, n, r, i, 0, 2, 0);
+		const a = Y(e, t, void 0, n, r, i, 0, 2, 0);
 		return e.destructible & 64 && e.report(63), e.destructible & 8 && e.report(62), a;
 	}
 	function Y(e, t, n, r, i, a, o, s, c) {
-		let { tokenStart: l } = e;
+		const { tokenStart: l } = e;
 		A$1(e, t | 32);
 		let u = [], d = 0;
 		for (t = (t | 131072) ^ 131072; e.getToken() !== 20;) if (E$1(e, t | 32, 18)) u.push(null);
@@ -43190,7 +43896,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			let i, { tokenStart: l, tokenValue: f } = e, p = e.getToken();
 			if (p & 143360) if (i = G(e, t, r, s, 0, 1, a, 1, l), e.getToken() === 1077936155) {
 				e.assignable & 2 && e.report(26), A$1(e, t | 32), n?.addVarOrBlock(t, f, s, c);
-				let u = L$1(e, t, r, 1, a, e.tokenStart);
+				const u = L$1(e, t, r, 1, a, e.tokenStart);
 				i = e.finishNode(o ? {
 					type: "AssignmentPattern",
 					left: i,
@@ -43208,7 +43914,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			} else break;
 		}
 		D$1(e, t, 20);
-		let f = e.finishNode({
+		const f = e.finishNode({
 			type: o ? "ArrayPattern" : "ArrayExpression",
 			elements: u
 		}, l);
@@ -43216,7 +43922,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function On(e, t, n, r, i, a, o, s) {
 		e.getToken() !== 1077936155 && e.report(26), A$1(e, t | 32), r & 16 && e.report(26), a || O(e, s);
-		let { tokenStart: c } = e, l = L$1(e, t, n, 1, i, c);
+		const { tokenStart: c } = e, l = L$1(e, t, n, 1, i, c);
 		return e.destructible = (r | 72) ^ 72 | (e.destructible & 128 ? 128 : 0) | (e.destructible & 256 ? 256 : 0), e.finishNode(a ? {
 			type: "AssignmentPattern",
 			left: s,
@@ -43229,15 +43935,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, o);
 	}
 	function X(e, t, n, r, i, a, o, s, c, l) {
-		let { tokenStart: u } = e;
+		const { tokenStart: u } = e;
 		A$1(e, t | 32);
 		let d = null, f = 0, { tokenValue: p, tokenStart: m } = e, h = e.getToken();
 		if (h & 143360) e.assignable = 1, d = G(e, t, r, a, 0, 1, c, 1, m), h = e.getToken(), d = W(e, t, r, d, c, 0, m), e.getToken() !== 18 && e.getToken() !== i && (e.assignable & 2 && e.getToken() === 1077936155 && e.report(71), f |= 16, d = B$1(e, t, r, c, l, m, d)), e.assignable & 2 ? f |= 16 : h === i || h === 18 ? n?.addVarOrBlock(t, p, a, o) : f |= 32, f |= e.destructible & 128 ? 128 : 0;
 		else if (h === i) e.report(41);
-		else if (h & 2097152) d = e.getToken() === 2162700 ? Q(e, t, n, r, 1, c, l, a, o) : Y(e, t, n, r, 1, c, l, a, o), h = e.getToken(), h !== 1077936155 && h !== i && h !== 18 ? (e.destructible & 8 && e.report(71), d = W(e, t, r, d, c, 0, m), f |= e.assignable & 2 ? 16 : 0, (e.getToken() & 4194304) == 4194304 ? (e.getToken() !== 1077936155 && (f |= 16), d = B$1(e, t, r, c, l, m, d)) : ((e.getToken() & 8388608) == 8388608 && (d = H$1(e, t, r, 1, m, 4, h, d)), E$1(e, t | 32, 22) && (d = V$1(e, t, r, d, m)), f |= e.assignable & 2 ? 16 : 32)) : f |= i === 1074790415 && h !== 1077936155 ? 16 : e.destructible;
+		else if (h & 2097152) d = e.getToken() === 2162700 ? Q(e, t, n, r, 1, c, l, a, o) : Y(e, t, n, r, 1, c, l, a, o), h = e.getToken(), h !== 1077936155 && h !== i && h !== 18 ? (e.destructible & 8 && e.report(71), d = W(e, t, r, d, c, 0, m), f |= e.assignable & 2 ? 16 : 0, (e.getToken() & 4194304) === 4194304 ? (e.getToken() !== 1077936155 && (f |= 16), d = B$1(e, t, r, c, l, m, d)) : ((e.getToken() & 8388608) === 8388608 && (d = H$1(e, t, r, 1, m, 4, h, d)), E$1(e, t | 32, 22) && (d = V$1(e, t, r, d, m)), f |= e.assignable & 2 ? 16 : 32)) : f |= i === 1074790415 && h !== 1077936155 ? 16 : e.destructible;
 		else {
 			f |= 32, d = U(e, t, r, 1, c, 1);
-			let { tokenStart: n } = e, a = e.getToken();
+			const { tokenStart: n } = e, a = e.getToken();
 			return a === 1077936155 ? (e.assignable & 2 && e.report(26), d = B$1(e, t, r, c, l, n, d), f |= 16) : (a === 18 ? f |= 16 : a !== i && (d = B$1(e, t, r, c, l, n, d)), f |= e.assignable & 1 ? 32 : 16), e.destructible = f, e.getToken() !== i && e.getToken() !== 18 && e.report(161), e.finishNode({
 				type: l ? "RestElement" : "SpreadElement",
 				argument: d
@@ -43245,7 +43951,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 		if (e.getToken() !== i) if (a & 1 && (f |= s ? 16 : 32), E$1(e, t | 32, 1077936155)) {
 			f & 16 && e.report(26), O(e, d);
-			let n = L$1(e, t, r, 1, c, e.tokenStart);
+			const n = L$1(e, t, r, 1, c, e.tokenStart);
 			d = e.finishNode(l ? {
 				type: "AssignmentPattern",
 				left: d,
@@ -43263,11 +43969,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, u);
 	}
 	function Z$1(e, t, n, r, i, a) {
-		let o = 11264 | (r & 64 ? 0 : 16896);
+		const o = 11264 | (r & 64 ? 0 : 16896);
 		t = (t | o) ^ o | (r & 8 ? 1024 : 0) | (r & 16 ? 2048 : 0) | (r & 64 ? 16384 : 0) | 98560;
 		let s = e.createScopeIfLexical(256), c = An(e, (t | 8192) & -524289, s, n, r, 1, i);
 		s = s?.createChildScope(64);
-		let l = rn(e, t & -655373 | 36864, s, n, 0, void 0, s?.parent);
+		const l = rn(e, t & -655373 | 36864, s, n, 0, void 0, s?.parent);
 		return e.finishNode({
 			type: "FunctionExpression",
 			params: c,
@@ -43278,21 +43984,21 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, a);
 	}
 	function kn(e, t, n, r, i) {
-		let a = Q(e, t, void 0, n, r, i, 0, 2, 0);
+		const a = Q(e, t, void 0, n, r, i, 0, 2, 0);
 		return e.destructible & 64 && e.report(63), e.destructible & 8 && e.report(62), a;
 	}
 	function Q(e, t, n, r, i, a, o, s, c) {
-		let { tokenStart: l } = e;
+		const { tokenStart: l } = e;
 		A$1(e, t);
 		let u = [], d = 0, f = 0;
 		for (t = (t | 131072) ^ 131072; e.getToken() !== 1074790415;) {
-			let { tokenValue: i, tokenStart: l } = e, p = e.getToken();
+			const { tokenValue: i, tokenStart: l } = e, p = e.getToken();
 			if (p === 14) u.push(X(e, t, n, r, 1074790415, s, c, 0, a, o));
 			else {
 				let m = 0, h = null, g;
-				if (e.getToken() & 143360 || e.getToken() === -2147483528 || e.getToken() === -2147483527) if (e.getToken() === -2147483527 && (d |= 16), h = K(e, t), e.getToken() === 18 || e.getToken() === 1074790415 || e.getToken() === 1077936155) if (m |= 4, t & 1 && (p & 537079808) == 537079808 ? d |= 16 : Re(e, t, s, p, 0), n?.addVarOrBlock(t, i, s, c), E$1(e, t | 32, 1077936155)) {
+				if (e.getToken() & 143360 || e.getToken() === -2147483528 || e.getToken() === -2147483527) if (e.getToken() === -2147483527 && (d |= 16), h = K(e, t), e.getToken() === 18 || e.getToken() === 1074790415 || e.getToken() === 1077936155) if (m |= 4, t & 1 && (p & 537079808) === 537079808 ? d |= 16 : Re(e, t, s, p, 0), n?.addVarOrBlock(t, i, s, c), E$1(e, t | 32, 1077936155)) {
 					d |= 8;
-					let n = L$1(e, t, r, 1, a, e.tokenStart);
+					const n = L$1(e, t, r, 1, a, e.tokenStart);
 					d |= e.destructible & 256 ? 256 : 0 | e.destructible & 128 ? 128 : 0, g = e.finishNode({
 						type: "AssignmentPattern",
 						left: e.options.uniqueKeyInPattern ? Object.assign({}, h) : h,
@@ -43300,37 +44006,37 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					}, l);
 				} else d |= (p === 209006 ? 128 : 0) | (p === -2147483528 ? 16 : 0), g = e.options.uniqueKeyInPattern ? Object.assign({}, h) : h;
 				else if (E$1(e, t | 32, 21)) {
-					let { tokenStart: l } = e;
+					const { tokenStart: l } = e;
 					if (i === "__proto__" && f++, e.getToken() & 143360) {
-						let i = e.getToken(), u = e.tokenValue;
+						const i = e.getToken(), u = e.tokenValue;
 						g = G(e, t, r, s, 0, 1, a, 1, l);
-						let f = e.getToken();
-						g = W(e, t, r, g, a, 0, l), e.getToken() === 18 || e.getToken() === 1074790415 ? f === 1077936155 || f === 1074790415 || f === 18 ? (d |= e.destructible & 128 ? 128 : 0, e.assignable & 2 ? d |= 16 : (i & 143360) == 143360 && n?.addVarOrBlock(t, u, s, c)) : d |= e.assignable & 1 ? 32 : 16 : (e.getToken() & 4194304) == 4194304 ? (e.assignable & 2 ? d |= 16 : f === 1077936155 ? n?.addVarOrBlock(t, u, s, c) : d |= 32, g = B$1(e, t, r, a, o, l, g)) : (d |= 16, (e.getToken() & 8388608) == 8388608 && (g = H$1(e, t, r, 1, l, 4, f, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)));
-					} else (e.getToken() & 2097152) == 2097152 ? (g = e.getToken() === 69271571 ? Y(e, t, n, r, 0, a, o, s, c) : Q(e, t, n, r, 0, a, o, s, c), d = e.destructible, e.assignable = d & 16 ? 2 : 1, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : e.destructible & 8 ? e.report(71) : (g = W(e, t, r, g, a, 0, l), d = e.assignable & 2 ? 16 : 0, (e.getToken() & 4194304) == 4194304 ? g = Qt(e, t, r, a, o, l, g) : ((e.getToken() & 8388608) == 8388608 && (g = H$1(e, t, r, 1, l, 4, p, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)), d |= e.assignable & 2 ? 16 : 32))) : (g = U(e, t, r, 1, a, 1), d |= e.assignable & 1 ? 32 : 16, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (g = W(e, t, r, g, a, 0, l), d = e.assignable & 2 ? 16 : 0, e.getToken() !== 18 && p !== 1074790415 && (e.getToken() !== 1077936155 && (d |= 16), g = B$1(e, t, r, a, o, l, g))));
-				} else e.getToken() === 69271571 ? (d |= 16, p === 209005 && (m |= 16), m |= (p === 209008 ? 256 : p === 209009 ? 512 : 1) | 2, h = $$1(e, t, r, a), d |= e.assignable, g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() & 143360 ? (d |= 16, p === -2147483528 && e.report(95), p === 209005 ? (e.flags & 1 && e.report(132), m |= 17) : p === 209008 ? m |= 256 : p === 209009 ? m |= 512 : e.report(0), h = K(e, t), g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() === 67174411 ? (d |= 16, m |= 1, g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() === 8391476 ? (d |= 16, p === 209008 ? e.report(42) : p === 209009 ? e.report(43) : p !== 209005 && e.report(30, w$1[52]), A$1(e, t), m |= 9 | (p === 209005 ? 16 : 0), e.getToken() & 143360 ? h = K(e, t) : (e.getToken() & 134217728) == 134217728 ? h = q(e, t) : e.getToken() === 69271571 ? (m |= 2, h = $$1(e, t, r, a), d |= e.assignable) : e.report(30, w$1[e.getToken() & 255]), g = Z$1(e, t, r, m, a, e.tokenStart)) : (e.getToken() & 134217728) == 134217728 ? (p === 209005 && (m |= 16), m |= p === 209008 ? 256 : p === 209009 ? 512 : 1, d |= 16, h = q(e, t), g = Z$1(e, t, r, m, a, e.tokenStart)) : e.report(133);
-				else if ((e.getToken() & 134217728) == 134217728) if (h = q(e, t), e.getToken() === 21) {
+						const f = e.getToken();
+						g = W(e, t, r, g, a, 0, l), e.getToken() === 18 || e.getToken() === 1074790415 ? f === 1077936155 || f === 1074790415 || f === 18 ? (d |= e.destructible & 128 ? 128 : 0, e.assignable & 2 ? d |= 16 : (i & 143360) === 143360 && n?.addVarOrBlock(t, u, s, c)) : d |= e.assignable & 1 ? 32 : 16 : (e.getToken() & 4194304) === 4194304 ? (e.assignable & 2 ? d |= 16 : f === 1077936155 ? n?.addVarOrBlock(t, u, s, c) : d |= 32, g = B$1(e, t, r, a, o, l, g)) : (d |= 16, (e.getToken() & 8388608) === 8388608 && (g = H$1(e, t, r, 1, l, 4, f, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)));
+					} else (e.getToken() & 2097152) === 2097152 ? (g = e.getToken() === 69271571 ? Y(e, t, n, r, 0, a, o, s, c) : Q(e, t, n, r, 0, a, o, s, c), d = e.destructible, e.assignable = d & 16 ? 2 : 1, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : e.destructible & 8 ? e.report(71) : (g = W(e, t, r, g, a, 0, l), d = e.assignable & 2 ? 16 : 0, (e.getToken() & 4194304) === 4194304 ? g = Qt(e, t, r, a, o, l, g) : ((e.getToken() & 8388608) === 8388608 && (g = H$1(e, t, r, 1, l, 4, p, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)), d |= e.assignable & 2 ? 16 : 32))) : (g = U(e, t, r, 1, a, 1), d |= e.assignable & 1 ? 32 : 16, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (g = W(e, t, r, g, a, 0, l), d = e.assignable & 2 ? 16 : 0, e.getToken() !== 18 && p !== 1074790415 && (e.getToken() !== 1077936155 && (d |= 16), g = B$1(e, t, r, a, o, l, g))));
+				} else e.getToken() === 69271571 ? (d |= 16, p === 209005 && (m |= 16), m |= (p === 209008 ? 256 : p === 209009 ? 512 : 1) | 2, h = $$1(e, t, r, a), d |= e.assignable, g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() & 143360 ? (d |= 16, p === -2147483528 && e.report(95), p === 209005 ? (e.flags & 1 && e.report(132), m |= 17) : p === 209008 ? m |= 256 : p === 209009 ? m |= 512 : e.report(0), h = K(e, t), g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() === 67174411 ? (d |= 16, m |= 1, g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() === 8391476 ? (d |= 16, p === 209008 ? e.report(42) : p === 209009 ? e.report(43) : p !== 209005 && e.report(30, w$1[52]), A$1(e, t), m |= 9 | (p === 209005 ? 16 : 0), e.getToken() & 143360 ? h = K(e, t) : (e.getToken() & 134217728) === 134217728 ? h = q(e, t) : e.getToken() === 69271571 ? (m |= 2, h = $$1(e, t, r, a), d |= e.assignable) : e.report(30, w$1[e.getToken() & 255]), g = Z$1(e, t, r, m, a, e.tokenStart)) : (e.getToken() & 134217728) === 134217728 ? (p === 209005 && (m |= 16), m |= p === 209008 ? 256 : p === 209009 ? 512 : 1, d |= 16, h = q(e, t), g = Z$1(e, t, r, m, a, e.tokenStart)) : e.report(133);
+				else if ((e.getToken() & 134217728) === 134217728) if (h = q(e, t), e.getToken() === 21) {
 					D$1(e, t | 32, 21);
-					let { tokenStart: l } = e;
+					const { tokenStart: l } = e;
 					if (i === "__proto__" && f++, e.getToken() & 143360) {
 						g = G(e, t, r, s, 0, 1, a, 1, l);
-						let { tokenValue: i } = e, u = e.getToken();
+						const { tokenValue: i } = e, u = e.getToken();
 						g = W(e, t, r, g, a, 0, l), e.getToken() === 18 || e.getToken() === 1074790415 ? u === 1077936155 || u === 1074790415 || u === 18 ? e.assignable & 2 ? d |= 16 : n?.addVarOrBlock(t, i, s, c) : d |= e.assignable & 1 ? 32 : 16 : e.getToken() === 1077936155 ? (e.assignable & 2 && (d |= 16), g = B$1(e, t, r, a, o, l, g)) : (d |= 16, g = B$1(e, t, r, a, o, l, g));
-					} else (e.getToken() & 2097152) == 2097152 ? (g = e.getToken() === 69271571 ? Y(e, t, n, r, 0, a, o, s, c) : Q(e, t, n, r, 0, a, o, s, c), d = e.destructible, e.assignable = d & 16 ? 2 : 1, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (e.destructible & 8) != 8 && (g = W(e, t, r, g, a, 0, l), d = e.assignable & 2 ? 16 : 0, (e.getToken() & 4194304) == 4194304 ? g = Qt(e, t, r, a, o, l, g) : ((e.getToken() & 8388608) == 8388608 && (g = H$1(e, t, r, 1, l, 4, p, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)), d |= e.assignable & 2 ? 16 : 32))) : (g = U(e, t, r, 1, 0, 1), d |= e.assignable & 1 ? 32 : 16, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (g = W(e, t, r, g, a, 0, l), d = e.assignable & 1 ? 0 : 16, e.getToken() !== 18 && e.getToken() !== 1074790415 && (e.getToken() !== 1077936155 && (d |= 16), g = B$1(e, t, r, a, o, l, g))));
+					} else (e.getToken() & 2097152) === 2097152 ? (g = e.getToken() === 69271571 ? Y(e, t, n, r, 0, a, o, s, c) : Q(e, t, n, r, 0, a, o, s, c), d = e.destructible, e.assignable = d & 16 ? 2 : 1, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (e.destructible & 8) !== 8 && (g = W(e, t, r, g, a, 0, l), d = e.assignable & 2 ? 16 : 0, (e.getToken() & 4194304) === 4194304 ? g = Qt(e, t, r, a, o, l, g) : ((e.getToken() & 8388608) === 8388608 && (g = H$1(e, t, r, 1, l, 4, p, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)), d |= e.assignable & 2 ? 16 : 32))) : (g = U(e, t, r, 1, 0, 1), d |= e.assignable & 1 ? 32 : 16, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (g = W(e, t, r, g, a, 0, l), d = e.assignable & 1 ? 0 : 16, e.getToken() !== 18 && e.getToken() !== 1074790415 && (e.getToken() !== 1077936155 && (d |= 16), g = B$1(e, t, r, a, o, l, g))));
 				} else e.getToken() === 67174411 ? (m |= 1, g = Z$1(e, t, r, m, a, e.tokenStart), d = e.assignable | 16) : e.report(134);
 				else if (e.getToken() === 69271571) if (h = $$1(e, t, r, a), d |= e.destructible & 256 ? 256 : 0, m |= 2, e.getToken() === 21) {
 					A$1(e, t | 32);
-					let { tokenStart: i, tokenValue: l } = e, u = e.getToken();
+					const { tokenStart: i, tokenValue: l } = e, u = e.getToken();
 					if (e.getToken() & 143360) {
 						g = G(e, t, r, s, 0, 1, a, 1, i);
-						let f = e.getToken();
-						g = W(e, t, r, g, a, 0, i), (e.getToken() & 4194304) == 4194304 ? (d |= e.assignable & 2 ? 16 : f === 1077936155 ? 0 : 32, g = Qt(e, t, r, a, o, i, g)) : e.getToken() === 18 || e.getToken() === 1074790415 ? f === 1077936155 || f === 1074790415 || f === 18 ? e.assignable & 2 ? d |= 16 : (u & 143360) == 143360 && n?.addVarOrBlock(t, l, s, c) : d |= e.assignable & 1 ? 32 : 16 : (d |= 16, g = B$1(e, t, r, a, o, i, g));
-					} else (e.getToken() & 2097152) == 2097152 ? (g = e.getToken() === 69271571 ? Y(e, t, n, r, 0, a, o, s, c) : Q(e, t, n, r, 0, a, o, s, c), d = e.destructible, e.assignable = d & 16 ? 2 : 1, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : d & 8 ? e.report(62) : (g = W(e, t, r, g, a, 0, i), d = e.assignable & 2 ? d | 16 : 0, (e.getToken() & 4194304) == 4194304 ? (e.getToken() !== 1077936155 && (d |= 16), g = Qt(e, t, r, a, o, i, g)) : ((e.getToken() & 8388608) == 8388608 && (g = H$1(e, t, r, 1, i, 4, p, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, i)), d |= e.assignable & 2 ? 16 : 32))) : (g = U(e, t, r, 1, 0, 1), d |= e.assignable & 1 ? 32 : 16, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (g = W(e, t, r, g, a, 0, i), d = e.assignable & 1 ? 0 : 16, e.getToken() !== 18 && e.getToken() !== 1074790415 && (e.getToken() !== 1077936155 && (d |= 16), g = B$1(e, t, r, a, o, i, g))));
+						const f = e.getToken();
+						g = W(e, t, r, g, a, 0, i), (e.getToken() & 4194304) === 4194304 ? (d |= e.assignable & 2 ? 16 : f === 1077936155 ? 0 : 32, g = Qt(e, t, r, a, o, i, g)) : e.getToken() === 18 || e.getToken() === 1074790415 ? f === 1077936155 || f === 1074790415 || f === 18 ? e.assignable & 2 ? d |= 16 : (u & 143360) === 143360 && n?.addVarOrBlock(t, l, s, c) : d |= e.assignable & 1 ? 32 : 16 : (d |= 16, g = B$1(e, t, r, a, o, i, g));
+					} else (e.getToken() & 2097152) === 2097152 ? (g = e.getToken() === 69271571 ? Y(e, t, n, r, 0, a, o, s, c) : Q(e, t, n, r, 0, a, o, s, c), d = e.destructible, e.assignable = d & 16 ? 2 : 1, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : d & 8 ? e.report(62) : (g = W(e, t, r, g, a, 0, i), d = e.assignable & 2 ? d | 16 : 0, (e.getToken() & 4194304) === 4194304 ? (e.getToken() !== 1077936155 && (d |= 16), g = Qt(e, t, r, a, o, i, g)) : ((e.getToken() & 8388608) === 8388608 && (g = H$1(e, t, r, 1, i, 4, p, g)), E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, i)), d |= e.assignable & 2 ? 16 : 32))) : (g = U(e, t, r, 1, 0, 1), d |= e.assignable & 1 ? 32 : 16, e.getToken() === 18 || e.getToken() === 1074790415 ? e.assignable & 2 && (d |= 16) : (g = W(e, t, r, g, a, 0, i), d = e.assignable & 1 ? 0 : 16, e.getToken() !== 18 && e.getToken() !== 1074790415 && (e.getToken() !== 1077936155 && (d |= 16), g = B$1(e, t, r, a, o, i, g))));
 				} else e.getToken() === 67174411 ? (m |= 1, g = Z$1(e, t, r, m, a, e.tokenStart), d = 16) : e.report(44);
 				else if (p === 8391476) if (D$1(e, t | 32, 8391476), m |= 8, e.getToken() & 143360) {
-					let n = e.getToken();
+					const n = e.getToken();
 					if (h = K(e, t), m |= 1, e.getToken() === 67174411) d |= 16, g = Z$1(e, t, r, m, a, e.tokenStart);
 					else throw new C$1(e.tokenStart, e.currentLocation, n === 209005 ? 46 : n === 209008 || e.getToken() === 209009 ? 45 : 47, w$1[n & 255]);
-				} else (e.getToken() & 134217728) == 134217728 ? (d |= 16, h = q(e, t), m |= 1, g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() === 69271571 ? (d |= 16, m |= 3, h = $$1(e, t, r, a), g = Z$1(e, t, r, m, a, e.tokenStart)) : e.report(126);
+				} else (e.getToken() & 134217728) === 134217728 ? (d |= 16, h = q(e, t), m |= 1, g = Z$1(e, t, r, m, a, e.tokenStart)) : e.getToken() === 69271571 ? (d |= 16, m |= 3, h = $$1(e, t, r, a), g = Z$1(e, t, r, m, a, e.tokenStart)) : e.report(126);
 				else e.report(30, w$1[p & 255]);
 				d |= e.destructible & 128 ? 128 : 0, e.destructible = d, u.push(e.finishNode({
 					type: "Property",
@@ -43346,7 +44052,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			A$1(e, t);
 		}
 		D$1(e, t, 1074790415), f > 1 && (d |= 64);
-		let p = e.finishNode({
+		const p = e.finishNode({
 			type: o ? "ObjectPattern" : "ObjectExpression",
 			properties: u
 		}, l);
@@ -43354,15 +44060,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function An(e, t, n, r, i, a, o) {
 		D$1(e, t, 67174411);
-		let s = [];
+		const s = [];
 		if (e.flags = (e.flags | 128) ^ 128, e.getToken() === 16) return i & 512 && e.report(37, "Setter", "one", ""), A$1(e, t), s;
 		i & 256 && e.report(37, "Getter", "no", "s"), i & 512 && e.getToken() === 14 && e.report(38), t = (t | 131072) ^ 131072;
 		let c = 0, l = 0;
 		for (; e.getToken() !== 18;) {
 			let u = null, { tokenStart: d } = e;
-			if (e.getToken() & 143360 ? (t & 1 || ((e.getToken() & 36864) == 36864 && (e.flags |= 256), (e.getToken() & 537079808) == 537079808 && (e.flags |= 512)), u = Qn(e, t, n, i | 1, 0)) : (e.getToken() === 2162700 ? u = Q(e, t, n, r, 1, o, 1, a, 0) : e.getToken() === 69271571 ? u = Y(e, t, n, r, 1, o, 1, a, 0) : e.getToken() === 14 && (u = X(e, t, n, r, 16, a, 0, 0, o, 1)), l = 1, e.destructible & 48 && e.report(50)), e.getToken() === 1077936155) {
+			if (e.getToken() & 143360 ? (t & 1 || ((e.getToken() & 36864) === 36864 && (e.flags |= 256), (e.getToken() & 537079808) === 537079808 && (e.flags |= 512)), u = Qn(e, t, n, i | 1, 0)) : (e.getToken() === 2162700 ? u = Q(e, t, n, r, 1, o, 1, a, 0) : e.getToken() === 69271571 ? u = Y(e, t, n, r, 1, o, 1, a, 0) : e.getToken() === 14 && (u = X(e, t, n, r, 16, a, 0, 0, o, 1)), l = 1, e.destructible & 48 && e.report(50)), e.getToken() === 1077936155) {
 				A$1(e, t | 32), l = 1;
-				let n = L$1(e, t, r, 1, 0, e.tokenStart);
+				const n = L$1(e, t, r, 1, 0, e.tokenStart);
 				u = e.finishNode({
 					type: "AssignmentPattern",
 					left: u,
@@ -43375,22 +44081,22 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function $$1(e, t, n, r) {
 		A$1(e, t | 32);
-		let i = L$1(e, (t | 131072) ^ 131072, n, 1, r, e.tokenStart);
+		const i = L$1(e, (t | 131072) ^ 131072, n, 1, r, e.tokenStart);
 		return D$1(e, t, 20), i;
 	}
 	function jn(e, t, n, r, i, a, o) {
 		e.flags = (e.flags | 128) ^ 128;
-		let s = e.tokenStart;
+		const s = e.tokenStart;
 		A$1(e, t | 262176);
-		let c = e.createScopeIfLexical()?.createChildScope(512);
+		const c = e.createScopeIfLexical()?.createChildScope(512);
 		if (t = (t | 131072) ^ 131072, E$1(e, t, 16)) return Pn(e, t, c, n, [], r, 0, o);
 		let l = 0;
 		e.destructible &= -385;
 		let u, d = [], f = 0, p = 0, m = 0, h = e.tokenStart;
 		for (e.assignable = 1; e.getToken() !== 16;) {
-			let { tokenStart: r } = e, o = e.getToken();
-			if (o & 143360) c?.addBlockName(t, e.tokenValue, 1, 0), (o & 537079808) == 537079808 ? p = 1 : (o & 36864) == 36864 && (m = 1), u = G(e, t, n, i, 0, 1, 1, 1, r), e.getToken() === 16 || e.getToken() === 18 ? e.assignable & 2 && (l |= 16, p = 1) : (e.getToken() === 1077936155 ? p = 1 : l |= 16, u = W(e, t, n, u, 1, 0, r), e.getToken() !== 16 && e.getToken() !== 18 && (u = B$1(e, t, n, 1, 0, r, u)));
-			else if ((o & 2097152) == 2097152) u = o === 2162700 ? Q(e, t | 262144, c, n, 0, 1, 0, i, a) : Y(e, t | 262144, c, n, 0, 1, 0, i, a), l |= e.destructible, p = 1, e.assignable = 2, e.getToken() !== 16 && e.getToken() !== 18 && (l & 8 && e.report(122), u = W(e, t, n, u, 0, 0, r), l |= 16, e.getToken() !== 16 && e.getToken() !== 18 && (u = B$1(e, t, n, 0, 0, r, u)));
+			const { tokenStart: r } = e, o = e.getToken();
+			if (o & 143360) c?.addBlockName(t, e.tokenValue, 1, 0), (o & 537079808) === 537079808 ? p = 1 : (o & 36864) === 36864 && (m = 1), u = G(e, t, n, i, 0, 1, 1, 1, r), e.getToken() === 16 || e.getToken() === 18 ? e.assignable & 2 && (l |= 16, p = 1) : (e.getToken() === 1077936155 ? p = 1 : l |= 16, u = W(e, t, n, u, 1, 0, r), e.getToken() !== 16 && e.getToken() !== 18 && (u = B$1(e, t, n, 1, 0, r, u)));
+			else if ((o & 2097152) === 2097152) u = o === 2162700 ? Q(e, t | 262144, c, n, 0, 1, 0, i, a) : Y(e, t | 262144, c, n, 0, 1, 0, i, a), l |= e.destructible, p = 1, e.assignable = 2, e.getToken() !== 16 && e.getToken() !== 18 && (l & 8 && e.report(122), u = W(e, t, n, u, 0, 0, r), l |= 16, e.getToken() !== 16 && e.getToken() !== 18 && (u = B$1(e, t, n, 0, 0, r, u)));
 			else if (o === 14) {
 				u = X(e, t, c, n, 16, i, a, 0, 1, 0), e.destructible & 16 && e.report(74), p = 1, f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u), l |= 8;
 				break;
@@ -43423,10 +44129,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function Mn(e, t, n) {
 		let { tokenStart: r } = e, { tokenValue: i } = e, a = 0, o = 0;
-		(e.getToken() & 537079808) == 537079808 ? a = 1 : (e.getToken() & 36864) == 36864 && (o = 1);
-		let s = K(e, t);
+		(e.getToken() & 537079808) === 537079808 ? a = 1 : (e.getToken() & 36864) === 36864 && (o = 1);
+		const s = K(e, t);
 		if (e.assignable = 1, e.getToken() === 10) {
-			let c = e.options.lexical ? lt(e, t, i) : void 0;
+			const c = e.options.lexical ? lt(e, t, i) : void 0;
 			return a && (e.flags |= 128), o && (e.flags |= 256), Fn(e, t, c, n, [s], 0, r);
 		}
 		return s;
@@ -43441,13 +44147,13 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function Fn(e, t, n, r, i, a, o) {
 		e.flags & 1 && e.report(48), D$1(e, t | 32, 10);
-		let s = 535552;
+		const s = 535552;
 		t = (t | s) ^ s | (a ? 2048 : 0);
 		let c = e.getToken() !== 2162700, l;
 		if (n?.reportScopeError(), c) e.flags = (e.flags | 4928) ^ 4928, l = L$1(e, t, r, 1, 0, e.tokenStart);
 		else {
 			n = n?.createChildScope(64);
-			let i = 131084;
+			const i = 131084;
 			switch (l = rn(e, (t | i) ^ i | 4096, n, r, 16, void 0, void 0), e.getToken()) {
 				case 69271571:
 					e.flags & 1 || e.report(116);
@@ -43457,7 +44163,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				case 22: e.report(117);
 				case 67174411: e.flags & 1 || e.report(116), e.flags |= 1024;
 			}
-			(e.getToken() & 8388608) == 8388608 && !(e.flags & 1) && e.report(30, w$1[e.getToken() & 255]), (e.getToken() & 33619968) == 33619968 && e.report(125);
+			(e.getToken() & 8388608) === 8388608 && !(e.flags & 1) && e.report(30, w$1[e.getToken() & 255]), (e.getToken() & 33619968) === 33619968 && e.report(125);
 		}
 		return e.assignable = 2, e.finishNode({
 			type: "ArrowFunctionExpression",
@@ -43470,15 +44176,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function In(e, t, n, r, i, a) {
 		D$1(e, t, 67174411), e.flags = (e.flags | 128) ^ 128;
-		let o = [];
+		const o = [];
 		if (E$1(e, t, 16)) return o;
 		t = (t | 131072) ^ 131072;
 		let s = 0;
 		for (; e.getToken() !== 18;) {
 			let c, { tokenStart: l } = e, u = e.getToken();
-			if (u & 143360 ? (t & 1 || ((u & 36864) == 36864 && (e.flags |= 256), (u & 537079808) == 537079808 && (e.flags |= 512)), c = Qn(e, t, n, a | 1, 0)) : (u === 2162700 ? c = Q(e, t, n, r, 1, i, 1, a, 0) : u === 69271571 ? c = Y(e, t, n, r, 1, i, 1, a, 0) : u === 14 ? c = X(e, t, n, r, 16, a, 0, 0, i, 1) : e.report(30, w$1[u & 255]), s = 1, e.destructible & 48 && e.report(50)), e.getToken() === 1077936155) {
+			if (u & 143360 ? (t & 1 || ((u & 36864) === 36864 && (e.flags |= 256), (u & 537079808) === 537079808 && (e.flags |= 512)), c = Qn(e, t, n, a | 1, 0)) : (u === 2162700 ? c = Q(e, t, n, r, 1, i, 1, a, 0) : u === 69271571 ? c = Y(e, t, n, r, 1, i, 1, a, 0) : u === 14 ? c = X(e, t, n, r, 16, a, 0, 0, i, 1) : e.report(30, w$1[u & 255]), s = 1, e.destructible & 48 && e.report(50)), e.getToken() === 1077936155) {
 				A$1(e, t | 32), s = 1;
-				let n = L$1(e, t, r, 1, i, e.tokenStart);
+				const n = L$1(e, t, r, 1, i, e.tokenStart);
 				c = e.finishNode({
 					type: "AssignmentPattern",
 					left: c,
@@ -43490,11 +44196,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return s && (e.flags |= 128), (s || t & 1) && n?.reportScopeError(), D$1(e, t, 16), o;
 	}
 	function Ln(e, t, n, r, i, a) {
-		let o = e.getToken();
+		const o = e.getToken();
 		if (o & 67108864) {
 			if (o === 67108877) {
 				A$1(e, t | 262144), e.assignable = 1;
-				let i = cn(e, t, n);
+				const i = cn(e, t, n);
 				return Ln(e, t, n, e.finishNode({
 					type: "MemberExpression",
 					object: r,
@@ -43505,7 +44211,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			if (o === 69271571) {
 				A$1(e, t | 32);
-				let { tokenStart: o } = e, s = z$1(e, t, n, i, 1, o);
+				const { tokenStart: o } = e, s = z$1(e, t, n, i, 1, o);
 				return D$1(e, t, 20), e.assignable = 1, Ln(e, t, n, e.finishNode({
 					type: "MemberExpression",
 					object: r,
@@ -43523,15 +44229,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return r;
 	}
 	function Rn(e, t, n, r) {
-		let { tokenStart: i } = e, a = K(e, t | 32), { tokenStart: o } = e;
+		const { tokenStart: i } = e, a = K(e, t | 32), { tokenStart: o } = e;
 		if (E$1(e, t, 67108877)) {
 			if (t & 65536 && e.getToken() === 209029) return e.assignable = 2, zn(e, t, a, i);
 			e.report(94);
 		}
-		e.assignable = 2, (e.getToken() & 16842752) == 16842752 && e.report(65, w$1[e.getToken() & 255]);
-		let s = G(e, t, n, 2, 1, 0, r, 1, o);
+		e.assignable = 2, (e.getToken() & 16842752) === 16842752 && e.report(65, w$1[e.getToken() & 255]);
+		const s = G(e, t, n, 2, 1, 0, r, 1, o);
 		t = (t | 131072) ^ 131072, e.getToken() === 67108990 && e.report(168);
-		let c = Ln(e, t, n, s, r, o);
+		const c = Ln(e, t, n, s, r, o);
 		return e.assignable = 2, e.finishNode({
 			type: "NewExpression",
 			callee: c,
@@ -43539,7 +44245,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, i);
 	}
 	function zn(e, t, n, r) {
-		let i = K(e, t);
+		const i = K(e, t);
 		return e.finishNode({
 			type: "MetaProperty",
 			meta: n,
@@ -43547,11 +44253,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function Bn(e, t, n, r, i) {
-		return e.getToken() === 209006 && e.report(31), t & 1025 && e.getToken() === 241771 && e.report(32), Ge(e, t, e.getToken()), (e.getToken() & 36864) == 36864 && (e.flags |= 256), Nn(e, t & -524289 | 2048, n, e.tokenValue, K(e, t), 0, r, 1, i);
+		return e.getToken() === 209006 && e.report(31), t & 1025 && e.getToken() === 241771 && e.report(32), Ge(e, t, e.getToken()), (e.getToken() & 36864) === 36864 && (e.flags |= 256), Nn(e, t & -524289 | 2048, n, e.tokenValue, K(e, t), 0, r, 1, i);
 	}
 	function Vn(e, t, n, r, i, a, o, s, c) {
 		A$1(e, t | 32);
-		let l = e.createScopeIfLexical()?.createChildScope(512);
+		const l = e.createScopeIfLexical()?.createChildScope(512);
 		if (t = (t | 131072) ^ 131072, E$1(e, t, 16)) return e.getToken() === 10 ? (s & 1 && e.report(48), Pn(e, t, l, n, [], i, 1, c)) : e.finishNode({
 			type: "CallExpression",
 			callee: r,
@@ -43560,11 +44266,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, c);
 		let u = 0, d = null, f = 0;
 		e.destructible = (e.destructible | 384) ^ 384;
-		let p = [];
+		const p = [];
 		for (; e.getToken() !== 16;) {
-			let { tokenStart: i } = e, s = e.getToken();
-			if (s & 143360) l?.addBlockName(t, e.tokenValue, a, 0), (s & 537079808) == 537079808 ? e.flags |= 512 : (s & 36864) == 36864 && (e.flags |= 256), d = G(e, t, n, a, 0, 1, 1, 1, i), e.getToken() === 16 || e.getToken() === 18 ? e.assignable & 2 && (u |= 16, f = 1) : (e.getToken() === 1077936155 ? f = 1 : u |= 16, d = W(e, t, n, d, 1, 0, i), e.getToken() !== 16 && e.getToken() !== 18 && (d = B$1(e, t, n, 1, 0, i, d)));
-			else if (s & 2097152) d = s === 2162700 ? Q(e, t, l, n, 0, 1, 0, a, o) : Y(e, t, l, n, 0, 1, 0, a, o), u |= e.destructible, f = 1, e.getToken() !== 16 && e.getToken() !== 18 && (u & 8 && e.report(122), d = W(e, t, n, d, 0, 0, i), u |= 16, (e.getToken() & 8388608) == 8388608 && (d = H$1(e, t, n, 1, c, 4, s, d)), E$1(e, t | 32, 22) && (d = V$1(e, t, n, d, c)));
+			const { tokenStart: i } = e, s = e.getToken();
+			if (s & 143360) l?.addBlockName(t, e.tokenValue, a, 0), (s & 537079808) === 537079808 ? e.flags |= 512 : (s & 36864) === 36864 && (e.flags |= 256), d = G(e, t, n, a, 0, 1, 1, 1, i), e.getToken() === 16 || e.getToken() === 18 ? e.assignable & 2 && (u |= 16, f = 1) : (e.getToken() === 1077936155 ? f = 1 : u |= 16, d = W(e, t, n, d, 1, 0, i), e.getToken() !== 16 && e.getToken() !== 18 && (d = B$1(e, t, n, 1, 0, i, d)));
+			else if (s & 2097152) d = s === 2162700 ? Q(e, t, l, n, 0, 1, 0, a, o) : Y(e, t, l, n, 0, 1, 0, a, o), u |= e.destructible, f = 1, e.getToken() !== 16 && e.getToken() !== 18 && (u & 8 && e.report(122), d = W(e, t, n, d, 0, 0, i), u |= 16, (e.getToken() & 8388608) === 8388608 && (d = H$1(e, t, n, 1, c, 4, s, d)), E$1(e, t | 32, 22) && (d = V$1(e, t, n, d, c)));
 			else if (s === 14) d = X(e, t, l, n, 16, a, o, 1, 1, 0), u |= (e.getToken() === 16 ? 0 : 16) | e.destructible, f = 1;
 			else {
 				for (d = L$1(e, t, n, 1, 0, i), u = e.assignable, p.push(d); E$1(e, t | 32, 18);) p.push(L$1(e, t, n, 1, 0, i));
@@ -43585,9 +44291,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, c));
 	}
 	function Hn(e, t) {
-		let { tokenRaw: n, tokenRegExp: r, tokenValue: i, tokenStart: a } = e;
+		const { tokenRaw: n, tokenRegExp: r, tokenValue: i, tokenStart: a } = e;
 		A$1(e, t), e.assignable = 2;
-		let o = {
+		const o = {
 			type: "Literal",
 			value: i,
 			regex: r
@@ -43598,10 +44304,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let a, o;
 		e.leadingDecorators.decorators.length ? (e.getToken() === 132 && e.report(30, "@"), a = e.leadingDecorators.start, o = [...e.leadingDecorators.decorators], e.leadingDecorators.decorators.length = 0) : (a = e.tokenStart, o = Gn(e, t, r)), t = (t | 16385) ^ 16384, A$1(e, t);
 		let s = null, c = null, { tokenValue: l } = e;
-		e.getToken() & 4096 && e.getToken() !== 20565 ? (Be(e, t, e.getToken()) && e.report(118), (e.getToken() & 537079808) == 537079808 && e.report(119), n && (n.addBlockName(t, l, 32, 0), i && i & 2 && e.declareUnboundVariable(l)), s = K(e, t)) : i & 1 || e.report(39, "Class");
+		e.getToken() & 4096 && e.getToken() !== 20565 ? (Be(e, t, e.getToken()) && e.report(118), (e.getToken() & 537079808) === 537079808 && e.report(119), n && (n.addBlockName(t, l, 32, 0), i && i & 2 && e.declareUnboundVariable(l)), s = K(e, t)) : i & 1 || e.report(39, "Class");
 		let u = t;
 		E$1(e, t | 32, 20565) ? (c = U(e, t, r, 0, 0, 0), u |= 512) : u = (u | 512) ^ 512;
-		let d = qn(e, u, t, n, r, 2, 8, 0);
+		const d = qn(e, u, t, n, r, 2, 8, 0);
 		return e.finishNode({
 			type: "ClassDeclaration",
 			id: s,
@@ -43612,10 +44318,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function Wn(e, t, n, r, i) {
 		let a = null, o = null, s = Gn(e, t, n);
-		t = (t | 16385) ^ 16384, A$1(e, t), e.getToken() & 4096 && e.getToken() !== 20565 && (Be(e, t, e.getToken()) && e.report(118), (e.getToken() & 537079808) == 537079808 && e.report(119), a = K(e, t));
+		t = (t | 16385) ^ 16384, A$1(e, t), e.getToken() & 4096 && e.getToken() !== 20565 && (Be(e, t, e.getToken()) && e.report(118), (e.getToken() & 537079808) === 537079808 && e.report(119), a = K(e, t));
 		let c = t;
 		E$1(e, t | 32, 20565) ? (o = U(e, t, n, 0, r, 0), c |= 512) : c = (c | 512) ^ 512;
-		let l = qn(e, c, t, void 0, n, 2, 0, r);
+		const l = qn(e, c, t, void 0, n, 2, 0, r);
 		return e.assignable = 2, e.finishNode({
 			type: "ClassExpression",
 			id: a,
@@ -43625,12 +44331,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, i);
 	}
 	function Gn(e, t, n) {
-		let r = [];
+		const r = [];
 		if (e.options.next) for (; e.getToken() === 132;) r.push(Kn(e, t, n));
 		return r;
 	}
 	function Kn(e, t, n) {
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t | 32);
 		let i = G(e, t, n, 2, 0, 1, 0, 1, r);
 		return i = W(e, t, n, i, 0, 0, e.tokenStart), e.finishNode({
@@ -43639,15 +44345,15 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function qn(e, t, n, r, i, a, o, s) {
-		let { tokenStart: c } = e, l = e.createPrivateScopeIfLexical(i);
+		const { tokenStart: c } = e, l = e.createPrivateScopeIfLexical(i);
 		D$1(e, t | 32, 2162700);
-		let u = 655360;
+		const u = 655360;
 		t = (t | u) ^ u;
-		let d = e.flags & 32;
+		const d = e.flags & 32;
 		e.flags = (e.flags | 32) ^ 32;
-		let f = [];
+		const f = [];
 		for (; e.getToken() !== 1074790415;) {
-			let i = e.tokenStart, o = Gn(e, t, l);
+			const i = e.tokenStart, o = Gn(e, t, l);
 			if (o.length > 0 && e.tokenValue === "constructor" && e.report(109), e.getToken() === 1074790415 && e.report(108), E$1(e, t, 1074790417)) {
 				o.length > 0 && e.report(120);
 				continue;
@@ -43663,40 +44369,40 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let u = s ? 32 : 0, d = null, f = e.getToken();
 		if (f & 176128 || f === -2147483528) switch (d = K(e, t), f) {
 			case 36970:
-				if (!s && e.getToken() !== 67174411 && (e.getToken() & 1048576) != 1048576 && e.getToken() !== 1077936155) return Jn(e, t, n, r, i, a, o, 1, c, l);
+				if (!s && e.getToken() !== 67174411 && (e.getToken() & 1048576) !== 1048576 && e.getToken() !== 1077936155) return Jn(e, t, n, r, i, a, o, 1, c, l);
 				break;
 			case 209005:
 				if (e.getToken() !== 67174411 && !(e.flags & 1)) {
-					if ((e.getToken() & 1073741824) == 1073741824) return Xn(e, t, r, d, u, o, l);
+					if ((e.getToken() & 1073741824) === 1073741824) return Xn(e, t, r, d, u, o, l);
 					u |= 16 | (Le(e, t, 8391476) ? 8 : 0);
 				}
 				break;
 			case 209008:
 				if (e.getToken() !== 67174411) {
-					if ((e.getToken() & 1073741824) == 1073741824) return Xn(e, t, r, d, u, o, l);
+					if ((e.getToken() & 1073741824) === 1073741824) return Xn(e, t, r, d, u, o, l);
 					u |= 256;
 				}
 				break;
 			case 209009:
 				if (e.getToken() !== 67174411) {
-					if ((e.getToken() & 1073741824) == 1073741824) return Xn(e, t, r, d, u, o, l);
+					if ((e.getToken() & 1073741824) === 1073741824) return Xn(e, t, r, d, u, o, l);
 					u |= 512;
 				}
 				break;
 			case 12402: if (e.getToken() !== 67174411 && !(e.flags & 1)) {
-				if ((e.getToken() & 1073741824) == 1073741824) return Xn(e, t, r, d, u, o, l);
+				if ((e.getToken() & 1073741824) === 1073741824) return Xn(e, t, r, d, u, o, l);
 				e.options.next && (u |= 1024);
 			}
 		}
 		else if (f === 69271571) u |= 2, d = $$1(e, i, r, c);
-		else if ((f & 134217728) == 134217728) d = q(e, t);
+		else if ((f & 134217728) === 134217728) d = q(e, t);
 		else if (f === 8391476) u |= 8, A$1(e, t);
 		else if (e.getToken() === 130) u |= 8192, d = Yn(e, t | 16, r, 768);
-		else if ((e.getToken() & 1073741824) == 1073741824) u |= 128;
+		else if ((e.getToken() & 1073741824) === 1073741824) u |= 128;
 		else if (s && f === 2162700) return Lt(e, t | 16, n, r, l);
 		else f === -2147483527 ? (d = K(e, t), e.getToken() !== 67174411 && e.report(30, w$1[e.getToken() & 255])) : e.report(30, w$1[e.getToken() & 255]);
-		if (u & 1816 && (e.getToken() & 143360 || e.getToken() === -2147483528 || e.getToken() === -2147483527 ? d = K(e, t) : (e.getToken() & 134217728) == 134217728 ? d = q(e, t) : e.getToken() === 69271571 ? (u |= 2, d = $$1(e, t, r, 0)) : e.getToken() === 130 ? (u |= 8192, d = Yn(e, t, r, u)) : e.report(135)), u & 2 || (e.tokenValue === "constructor" ? ((e.getToken() & 1073741824) == 1073741824 ? e.report(129) : !(u & 32) && e.getToken() === 67174411 && (u & 920 ? e.report(53, "accessor") : t & 512 || (e.flags & 32 ? e.report(54) : e.flags |= 32)), u |= 64) : !(u & 8192) && u & 32 && e.tokenValue === "prototype" && e.report(52)), u & 1024 || e.getToken() !== 67174411 && !(u & 768)) return Xn(e, t, r, d, u, o, l);
-		let p = Z$1(e, t | 16, r, u, c, e.tokenStart);
+		if (u & 1816 && (e.getToken() & 143360 || e.getToken() === -2147483528 || e.getToken() === -2147483527 ? d = K(e, t) : (e.getToken() & 134217728) === 134217728 ? d = q(e, t) : e.getToken() === 69271571 ? (u |= 2, d = $$1(e, t, r, 0)) : e.getToken() === 130 ? (u |= 8192, d = Yn(e, t, r, u)) : e.report(135)), u & 2 || (e.tokenValue === "constructor" ? ((e.getToken() & 1073741824) === 1073741824 ? e.report(129) : !(u & 32) && e.getToken() === 67174411 && (u & 920 ? e.report(53, "accessor") : t & 512 || (e.flags & 32 ? e.report(54) : e.flags |= 32)), u |= 64) : !(u & 8192) && u & 32 && e.tokenValue === "prototype" && e.report(52)), u & 1024 || e.getToken() !== 67174411 && !(u & 768)) return Xn(e, t, r, d, u, o, l);
+		const p = Z$1(e, t | 16, r, u, c, e.tokenStart);
 		return e.finishNode({
 			type: "MethodDefinition",
 			kind: !(u & 32) && u & 64 ? "constructor" : u & 256 ? "get" : u & 512 ? "set" : "method",
@@ -43708,9 +44414,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, l);
 	}
 	function Yn(e, t, n, r) {
-		let { tokenStart: i } = e;
+		const { tokenStart: i } = e;
 		A$1(e, t);
-		let { tokenValue: a } = e;
+		const { tokenValue: a } = e;
 		return a === "constructor" && e.report(128), e.options.lexical && (n || e.report(4, a), r ? n.addPrivateIdentifier(a, r) : n.addPrivateIdentifierRef(a)), A$1(e, t), e.finishNode({
 			type: "PrivateIdentifier",
 			name: a
@@ -43720,10 +44426,10 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let s = null;
 		if (i & 8 && e.report(0), e.getToken() === 1077936155) {
 			A$1(e, t | 32);
-			let { tokenStart: r } = e;
+			const { tokenStart: r } = e;
 			e.getToken() === 537079927 && e.report(119);
-			let a = 11264 | (i & 64 ? 0 : 16896);
-			t = (t | a) ^ a | (i & 8 ? 1024 : 0) | (i & 16 ? 2048 : 0) | (i & 64 ? 16384 : 0) | 65792, s = G(e, t | 16, n, 2, 0, 1, 0, 1, r), ((e.getToken() & 1073741824) != 1073741824 || (e.getToken() & 4194304) == 4194304) && (s = W(e, t | 16, n, s, 0, 0, r), s = B$1(e, t | 16, n, 0, 0, r, s));
+			const a = 11264 | (i & 64 ? 0 : 16896);
+			t = (t | a) ^ a | (i & 8 ? 1024 : 0) | (i & 16 ? 2048 : 0) | (i & 64 ? 16384 : 0) | 65792, s = G(e, t | 16, n, 2, 0, 1, 0, 1, r), ((e.getToken() & 1073741824) !== 1073741824 || (e.getToken() & 4194304) === 4194304) && (s = W(e, t | 16, n, s, 0, 0, r), s = B$1(e, t | 16, n, 0, 0, r, s));
 		}
 		return T$1(e, t), e.finishNode({
 			type: i & 1024 ? "AccessorProperty" : "PropertyDefinition",
@@ -43736,14 +44442,14 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function Zn(e, t, n, r, i, a) {
 		if (e.getToken() & 143360 || !(t & 1) && e.getToken() === -2147483527) return Qn(e, t, n, i, a);
-		(e.getToken() & 2097152) != 2097152 && e.report(30, w$1[e.getToken() & 255]);
-		let o = e.getToken() === 69271571 ? Y(e, t, n, r, 1, 0, 1, i, a) : Q(e, t, n, r, 1, 0, 1, i, a);
+		(e.getToken() & 2097152) !== 2097152 && e.report(30, w$1[e.getToken() & 255]);
+		const o = e.getToken() === 69271571 ? Y(e, t, n, r, 1, 0, 1, i, a) : Q(e, t, n, r, 1, 0, 1, i, a);
 		return e.destructible & 16 && e.report(50), e.destructible & 32 && e.report(50), o;
 	}
 	function Qn(e, t, n, r, i) {
-		let a = e.getToken();
-		t & 1 && ((a & 537079808) == 537079808 ? e.report(119) : ((a & 36864) == 36864 || a === -2147483527) && e.report(118)), (a & 20480) == 20480 && e.report(102), a === 241771 && (t & 1024 && e.report(32), t & 2 && e.report(111)), (a & 255) == 73 && r & 24 && e.report(100), a === 209006 && (t & 2048 && e.report(176), t & 2 && e.report(110));
-		let { tokenValue: o, tokenStart: s } = e;
+		const a = e.getToken();
+		t & 1 && ((a & 537079808) === 537079808 ? e.report(119) : ((a & 36864) === 36864 || a === -2147483527) && e.report(118)), (a & 20480) === 20480 && e.report(102), a === 241771 && (t & 1024 && e.report(32), t & 2 && e.report(111)), (a & 255) === 73 && r & 24 && e.report(100), a === 209006 && (t & 2048 && e.report(176), t & 2 && e.report(110));
+		const { tokenValue: o, tokenStart: s } = e;
 		return A$1(e, t), n?.addVarOrBlock(t, o, r, i), e.finishNode({
 			type: "Identifier",
 			name: o
@@ -43751,7 +44457,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function $n(e, t, n, r, i) {
 		if (r || D$1(e, t, 8456256), e.getToken() === 8390721) {
-			let a = er(e, i), [o, s] = ir(e, t, n, r);
+			const a = er(e, i), [o, s] = ir(e, t, n, r);
 			return e.finishNode({
 				type: "JSXFragment",
 				openingFragment: a,
@@ -43763,7 +44469,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		let a = null, o = [], s = cr(e, t, n, r, i);
 		if (!s.selfClosing) {
 			[o, a] = rr(e, t, n, r);
-			let i = We(a.name);
+			const i = We(a.name);
 			We(s.name) !== i && e.report(155, i);
 		}
 		return e.finishNode({
@@ -43778,7 +44484,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function tr(e, t, n, r) {
 		D$1(e, t, 8457014);
-		let i = lr(e, t);
+		const i = lr(e, t);
 		return e.getToken() !== 8390721 && e.report(25, w$1[65]), n ? j(e) : A$1(e, t), e.finishNode({
 			type: "JSXClosingElement",
 			name: i
@@ -43788,17 +44494,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return D$1(e, t, 8457014), e.getToken() !== 8390721 && e.report(25, w$1[65]), n ? j(e) : A$1(e, t), e.finishNode({ type: "JSXClosingFragment" }, r);
 	}
 	function rr(e, t, n, r) {
-		let i = [];
+		const i = [];
 		for (;;) {
-			let a = ar(e, t, n, r);
+			const a = ar(e, t, n, r);
 			if (a.type === "JSXClosingElement") return [i, a];
 			i.push(a);
 		}
 	}
 	function ir(e, t, n, r) {
-		let i = [];
+		const i = [];
 		for (;;) {
-			let a = or(e, t, n, r);
+			const a = or(e, t, n, r);
 			if (a.type === "JSXClosingFragment") return [i, a];
 			i.push(a);
 		}
@@ -43807,7 +44513,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		if (e.getToken() === 137) return sr(e, t);
 		if (e.getToken() === 2162700) return hr(e, t, n, 1, 0);
 		if (e.getToken() === 8456256) {
-			let { tokenStart: i } = e;
+			const { tokenStart: i } = e;
 			return A$1(e, t), e.getToken() === 8457014 ? tr(e, t, r, i) : $n(e, t, n, 1, i);
 		}
 		e.report(0);
@@ -43816,23 +44522,23 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		if (e.getToken() === 137) return sr(e, t);
 		if (e.getToken() === 2162700) return hr(e, t, n, 1, 0);
 		if (e.getToken() === 8456256) {
-			let { tokenStart: i } = e;
+			const { tokenStart: i } = e;
 			return A$1(e, t), e.getToken() === 8457014 ? nr(e, t, r, i) : $n(e, t, n, 1, i);
 		}
 		e.report(0);
 	}
 	function sr(e, t) {
-		let n = e.tokenStart;
+		const n = e.tokenStart;
 		A$1(e, t);
-		let r = {
+		const r = {
 			type: "JSXText",
 			value: e.tokenValue
 		};
 		return e.options.raw && (r.raw = e.tokenRaw), e.finishNode(r, n);
 	}
 	function cr(e, t, n, r, i) {
-		(e.getToken() & 143360) != 143360 && (e.getToken() & 4096) != 4096 && e.report(0);
-		let a = lr(e, t), o = dr(e, t, n), s = e.getToken() === 8457014;
+		(e.getToken() & 143360) !== 143360 && (e.getToken() & 4096) !== 4096 && e.report(0);
+		const a = lr(e, t), o = dr(e, t, n), s = e.getToken() === 8457014;
 		return s && D$1(e, t, 8457014), e.getToken() !== 8390721 && e.report(25, w$1[65]), r || !s ? j(e) : A$1(e, t), e.finishNode({
 			type: "JSXOpeningElement",
 			name: a,
@@ -43841,7 +44547,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, i);
 	}
 	function lr(e, t) {
-		let { tokenStart: n } = e;
+		const { tokenStart: n } = e;
 		st(e);
 		let r = vr(e, t);
 		if (e.getToken() === 21) return mr(e, t, r, n);
@@ -43849,7 +44555,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return r;
 	}
 	function ur(e, t, n, r) {
-		let i = vr(e, t);
+		const i = vr(e, t);
 		return e.finishNode({
 			type: "JSXMemberExpression",
 			object: n,
@@ -43857,21 +44563,21 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function dr(e, t, n) {
-		let r = [];
+		const r = [];
 		for (; e.getToken() !== 8457014 && e.getToken() !== 8390721 && e.getToken() !== 1048576;) r.push(pr(e, t, n));
 		return r;
 	}
 	function fr(e, t, n) {
-		let r = e.tokenStart;
+		const r = e.tokenStart;
 		A$1(e, t), D$1(e, t, 14);
-		let i = L$1(e, t, n, 1, 0, e.tokenStart);
+		const i = L$1(e, t, n, 1, 0, e.tokenStart);
 		return D$1(e, t, 1074790415), e.finishNode({
 			type: "JSXSpreadAttribute",
 			argument: i
 		}, r);
 	}
 	function pr(e, t, n) {
-		let { tokenStart: r } = e;
+		const { tokenStart: r } = e;
 		if (e.getToken() === 2162700) return fr(e, t, n);
 		st(e);
 		let i = null, a = vr(e, t);
@@ -43895,7 +44601,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function mr(e, t, n, r) {
 		D$1(e, t, 21);
-		let i = vr(e, t);
+		const i = vr(e, t);
 		return e.finishNode({
 			type: "JSXNamespacedName",
 			namespace: n,
@@ -43903,9 +44609,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, r);
 	}
 	function hr(e, t, n, r, i) {
-		let { tokenStart: a } = e;
+		const { tokenStart: a } = e;
 		A$1(e, t | 32);
-		let { tokenStart: o } = e;
+		const { tokenStart: o } = e;
 		if (e.getToken() === 14) return gr(e, t, n, a);
 		let s = null;
 		return e.getToken() === 1074790415 ? (i && e.report(157), s = _r(e, {
@@ -43919,7 +44625,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	function gr(e, t, n, r) {
 		D$1(e, t, 14);
-		let i = L$1(e, t, n, 1, 0, e.tokenStart);
+		const i = L$1(e, t, n, 1, 0, e.tokenStart);
 		return D$1(e, t, 1074790415), e.finishNode({
 			type: "JSXSpreadChild",
 			expression: i
@@ -43929,9 +44635,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		return e.finishNode({ type: "JSXEmptyExpression" }, t, e.tokenStart);
 	}
 	function vr(e, t) {
-		let n = e.tokenStart;
+		const n = e.tokenStart;
 		e.getToken() & 143360 || e.report(30, w$1[e.getToken() & 255]);
-		let { tokenValue: r } = e;
+		const { tokenValue: r } = e;
 		return A$1(e, t), e.finishNode({
 			type: "JSXIdentifier",
 			name: r
@@ -43947,17 +44653,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	function Sr(e, t) {
 		return ht(e, t);
 	}
-	var prepareYouTubePlayer = (function(e, t) {
+	var prepareYouTubePlayer = ((e, t) => {
 		function n(e, t) {
 			if (Array.isArray(t)) return Array.isArray(e) ? t.length === e.length && t.every((t, r) => n(e[r], t)) : !1;
-			if (typeof t == "object") {
+			if (typeof t === "object") {
 				if (!e) return !t;
 				if ("or" in t) return t.or.some((t) => n(e, t));
 				if ("anykey" in t && Array.isArray(t.anykey)) {
-					let r = Array.isArray(e) ? e : Object.values(e);
+					const r = Array.isArray(e) ? e : Object.values(e);
 					return t.anykey.every((e) => r.some((t) => n(t, e)));
 				}
-				for (let [r, i] of Object.entries(t)) if (!n(e[r], i)) return !1;
+				for (const [r, i] of Object.entries(t)) if (!n(e[r], i)) return !1;
 				return !0;
 			}
 			return t === e;
@@ -43965,7 +44671,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		function r(t) {
 			return e.parse(t).body[0].expression;
 		}
-		let i = { or: [
+		const i = { or: [
 			{
 				type: "ExpressionStatement",
 				expression: {
@@ -44015,28 +44721,28 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		};
 		function o(e) {
 			if (!n(e, i)) return null;
-			let t = [];
+			const t = [];
 			if (e.type === "FunctionDeclaration") {
-				let n = e.body?.body;
+				const n = e.body?.body;
 				e.id && n && t.push({
 					name: e.id,
 					statements: n
 				});
 			} else if (e.type === "ExpressionStatement") {
 				if (e.expression.type !== "AssignmentExpression") return null;
-				let n = e.expression.left, r = e.expression.right?.body?.body;
+				const n = e.expression.left, r = e.expression.right?.body?.body;
 				n && r && t.push({
 					name: n,
 					statements: r
 				});
-			} else if (e.type === "VariableDeclaration") for (let n of e.declarations) {
-				let e = n.id, r = n.init?.body?.body;
+			} else if (e.type === "VariableDeclaration") for (const n of e.declarations) {
+				const e = n.id, r = n.init?.body?.body;
 				e && r && t.push({
 					name: e,
 					statements: r
 				});
 			}
-			for (let { name: e, statements: r } of t) if (n(r, { anykey: [a] })) return s(e);
+			for (const { name: e, statements: r } of t) if (n(r, { anykey: [a] })) return s(e);
 			return null;
 		}
 		function s(e) {
@@ -44061,8 +44767,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 `);
 		}
 		function c(n) {
-			let r = e.parse(n), i = l(r), a = u(i);
-			for (let [e, t] of Object.entries(a)) i.push({
+			const r = e.parse(n), i = l(r), a = u(i);
+			for (const [e, t] of Object.entries(a)) i.push({
 				type: "ExpressionStatement",
 				expression: {
 					type: "AssignmentExpression",
@@ -44086,17 +44792,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			return t.generate(r);
 		}
 		function l(e) {
-			let t = e.body, n = (() => {
+			const t = e.body, n = (() => {
 				switch (t.length) {
 					case 1: {
-						let e = t[0];
+						const e = t[0];
 						if (e?.type === "ExpressionStatement" && e.expression.type === "CallExpression" && e.expression.callee.type === "MemberExpression" && e.expression.callee.object.type === "FunctionExpression") return e.expression.callee.object.body;
 						break;
 					}
 					case 2: {
-						let e = t[1];
+						const e = t[1];
 						if (e?.type === "ExpressionStatement" && e.expression.type === "CallExpression" && e.expression.callee.type === "FunctionExpression") {
-							let t = e.expression.callee.body;
+							const t = e.expression.callee.body;
 							return t.body.splice(0, 1), t;
 						}
 						break;
@@ -44107,12 +44813,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			return n.body = n.body.filter((e) => e.type !== "ExpressionStatement" || e.expression.type === "AssignmentExpression" || e.expression.type === "Literal"), n.body;
 		}
 		function u(e) {
-			let t = {
+			const t = {
 				n: [],
 				sig: []
 			};
-			for (let n of e) {
-				let e = o(n);
+			for (const n of e) {
+				const e = o(n);
 				e && (t.n.push(d(e, {
 					type: "Identifier",
 					name: "n"
@@ -44893,12 +45599,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	var WEB_ABR_TRANSPORTS = [
 		"parallel_4",
 		"4mb",
-		"parallel_2",
 		"parallel_8",
 		"8mb",
+		"parallel_2",
 		"2mb",
-		"original",
-		"stream"
+		"stream",
+		"original"
 	];
 	function makeFixedRanges(contentLength, chunkSize) {
 		const ranges = [];
@@ -45030,7 +45736,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			pendingState.size = 0;
 		}
 	}
-	async function* downloadRangesSequential(targetWindow, streamUrl, contentLength, signal, refreshUrl, ranges) {
+	async function* downloadRangesSequential(targetWindow, streamUrl, _contentLength, signal, refreshUrl, ranges) {
 		const urlState = {
 			value: streamUrl,
 			refreshPromise: null,
@@ -45208,7 +45914,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}
 		throw lastError instanceof Error ? lastError : new Error("Audio downloader. All web ABR transports failed");
 	}
-	async function* getWebAbrAudioChunks(targetWindow, videoId, signal, transportStartIndex = 0) {
+	var WEB_ABR_DOWNLOAD_QUEUE = new Map();
+	async function* getWebAbrAudioChunksImpl(targetWindow, videoId, signal, transportStartIndex = 0) {
 		const config = await resolveYtcfg(targetWindow, signal);
 		const apiKey = getConfigValue(config, "INNERTUBE_API_KEY");
 		if (typeof apiKey !== "string") throw new Error("Audio downloader. web ABR config is unavailable");
@@ -45335,6 +46042,38 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		const fallbackError = lastError instanceof Error ? lastError : new Error("Audio downloader. no playable audio formats");
 		if (/LOGIN_REQUIRED|UNPLAYABLE/.test(fallbackError.message)) throw new Error(`${fallbackError.message}. Sign in to YouTube with an age-verified account and retry from the youtube.com watch page`, { cause: fallbackError });
 		throw fallbackError;
+	}
+	async function* getWebAbrAudioChunks(targetWindow, videoId, signal, transportStartIndex = 0) {
+		const queueKey = String(videoId);
+		const previousEntry = WEB_ABR_DOWNLOAD_QUEUE.get(queueKey);
+		const hadPrevious = Boolean(previousEntry);
+		const previous = previousEntry ?? Promise.resolve();
+		let releaseCurrent;
+		const current = new Promise((resolve) => {
+			releaseCurrent = resolve;
+		});
+		WEB_ABR_DOWNLOAD_QUEUE.set(queueKey, current);
+		debug.log("Audio downloader. web ABR queued", {
+			videoId,
+			hasPrevious: hadPrevious,
+			transportStartIndex
+		});
+		try {
+			await previous;
+			signal.throwIfAborted();
+			debug.log("Audio downloader. web ABR queue entered", {
+				videoId,
+				transportStartIndex
+			});
+			yield* getWebAbrAudioChunksImpl(targetWindow, videoId, signal, transportStartIndex);
+		} finally {
+			releaseCurrent?.();
+			if (WEB_ABR_DOWNLOAD_QUEUE.get(queueKey) === current) WEB_ABR_DOWNLOAD_QUEUE.delete(queueKey);
+			debug.log("Audio downloader. web ABR queue released", {
+				videoId,
+				transportStartIndex
+			});
+		}
 	}
 	var WEB_ABR_STRATEGY = "web_abr";
 	var WEB_MSE_PROXY_STRATEGY = "web_mse_proxy";
@@ -46021,8 +46760,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		const message = event.data;
 		const source = event.source;
 		if (!source || !message.messageId) return;
+		const messageId = message.messageId;
 		if (message.isAborted) {
-			const session = topSessions.get(message.messageId);
+			const session = topSessions.get(messageId);
 			if (session?.source === source && session.origin === event.origin) {
 				session.iframe.contentWindow?.postMessage(message, "*");
 				session.cleanup();
@@ -46062,7 +46802,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			active = false;
 			if (timeout) clearTimeout(timeout);
 			targetWindow.removeEventListener("message", onMessage);
-			if (topSessions.get(message.messageId)?.iframe === iframe) topSessions.delete(message.messageId);
+			if (topSessions.get(messageId)?.iframe === iframe) topSessions.delete(messageId);
 			iframe.remove();
 		};
 		const onMessage = (responseEvent) => {
@@ -46130,516 +46870,6 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		}, "*");
 	}
 	initMseProxyHandler();
-	function makeDouyinFileId(videoId, size, chunkSize) {
-		return `douyin_${videoId}_${size}_${chunkSize}`;
-	}
-	async function fetchDouyinMedia(src, signal) {
-		try {
-			const res = await fetch(src, { signal });
-			if (res.ok) return res;
-		} catch {}
-		const gmRes = await GM_fetch(src, {
-			signal,
-			timeout: 0,
-			forceGmXhr: true
-		});
-		if (!gmRes.ok) throw new Error(`[VOT] Douyin: failed to fetch media: ${gmRes.status}`);
-		return gmRes;
-	}
-	async function getAudioFromDouyin({ videoId, signal, preferredVideo }) {
-		const video = preferredVideo instanceof HTMLVideoElement ? preferredVideo : document.querySelector("video");
-		if (!(video instanceof HTMLVideoElement)) throw new Error("[VOT] Douyin: video element not found");
-		const src = video.currentSrc || video.src;
-		debug.log("[VOT] Douyin strategy src:", src);
-		debug.log("[VOT] Douyin strategy videoId:", videoId);
-		if (!src) throw new Error("[VOT] Douyin: empty video src");
-		const buffer = await (await fetchDouyinMedia(src, signal)).arrayBuffer();
-		const bytes = new Uint8Array(buffer);
-		if (!bytes.byteLength) throw new Error("[VOT] Douyin: empty media bytes");
-		const chunkSize = 256 * 1024;
-		const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-		return {
-			fileId: makeDouyinFileId(videoId, bytes.byteLength, chunkSize),
-			mediaPartsLength,
-			async *getMediaBuffers() {
-				for (let start = 0; start < bytes.byteLength; start += chunkSize) yield bytes.subarray(start, Math.min(start + chunkSize, bytes.byteLength));
-			}
-		};
-	}
-	function makeSimpleFileId$2(size, chunkSize) {
-		return `local_${size}_${chunkSize}_${Date.now()}`;
-	}
-	async function fetchLocalMedia(src, signal) {
-		if (!src) throw new Error("[VOT] Local file: empty media src");
-		if (src.startsWith("blob:")) {
-			const res = await fetch(src, { signal });
-			if (!res.ok) throw new Error(`[VOT] Local file: failed to fetch blob media: ${res.status}`);
-			return res;
-		}
-		try {
-			const res = await fetch(src, { signal });
-			if (res.ok) return res;
-		} catch {}
-		const gmRes = await GM_fetch(src, {
-			signal,
-			timeout: 0
-		});
-		if (!gmRes.ok) throw new Error(`[VOT] Local file: failed to fetch media source: ${gmRes.status}`);
-		return gmRes;
-	}
-	function getContentLength(response) {
-		const raw = response.headers.get("content-length") || response.headers.get("Content-Length");
-		if (!raw) return null;
-		const value = Number.parseInt(raw, 10);
-		return Number.isFinite(value) && value > 0 ? value : null;
-	}
-	async function getAudioFromLocalFile({ signal }) {
-		const video = document.querySelector("video");
-		if (!(video instanceof HTMLVideoElement)) throw new Error("[VOT] Local file: video element not found");
-		const sourceEl = video.querySelector("source");
-		const src = video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "";
-		if (!src) throw new Error("[VOT] Local file: empty video src");
-		const response = await fetchLocalMedia(src, signal);
-		const chunkSize = 256 * 1024;
-		const contentLength = getContentLength(response);
-		if (response.body && contentLength) {
-			const mediaPartsLength = Math.max(1, Math.ceil(contentLength / chunkSize));
-			return {
-				fileId: makeSimpleFileId$2(contentLength, chunkSize),
-				mediaPartsLength,
-				async *getMediaBuffers() {
-					const reader = response.body?.getReader();
-					let pending = new Uint8Array(0);
-					try {
-						while (true) {
-							const { done, value } = await reader.read();
-							if (done) break;
-							if (!value?.byteLength) continue;
-							let merged;
-							if (pending.byteLength === 0) merged = value;
-							else {
-								merged = new Uint8Array(pending.byteLength + value.byteLength);
-								merged.set(pending, 0);
-								merged.set(value, pending.byteLength);
-							}
-							let offset = 0;
-							while (merged.byteLength - offset >= chunkSize) {
-								yield merged.subarray(offset, offset + chunkSize);
-								offset += chunkSize;
-							}
-							pending = offset < merged.byteLength ? merged.slice(offset) : new Uint8Array(0);
-						}
-						if (pending.byteLength) yield pending;
-					} finally {
-						reader.releaseLock();
-					}
-				}
-			};
-		}
-		const buffer = await response.arrayBuffer();
-		const bytes = new Uint8Array(buffer);
-		if (!bytes.byteLength) throw new Error("[VOT] Local file: empty media bytes");
-		const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-		return {
-			fileId: makeSimpleFileId$2(bytes.byteLength, chunkSize),
-			mediaPartsLength,
-			async *getMediaBuffers() {
-				for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-					const end = Math.min(start + chunkSize, bytes.byteLength);
-					yield bytes.subarray(start, end);
-				}
-			}
-		};
-	}
-	var manifestPatterns = [
-		/\.m3u8(?:$|[?#])/i,
-		/master\.m3u8/i,
-		/manifest/i,
-		/dashplaylist/i,
-		/\.mp4(?:$|[?#])/i
-	];
-	function isManifestUrl(url) {
-		return manifestPatterns.some((re) => re.test(url));
-	}
-	var bestManifest = null;
-	var installed$1 = false;
-	function normalizeUrl$1(input) {
-		try {
-			return new URL(input, globalThis.location.href).href;
-		} catch {
-			return input;
-		}
-	}
-	function isDirectMediaCandidate(url) {
-		return /\.m3u8(?:$|[?#])/i.test(url) || /master\.m3u8/i.test(url) || /dashplaylist/i.test(url) || /\.mp4(?:$|[?#])/i.test(url);
-	}
-	function isBadSegmentUrl(url) {
-		const lower = url.toLowerCase();
-		if (isDirectMediaCandidate(lower)) return false;
-		return lower.includes("okcdn.ru/?") || /[?&]bytes=\d+-\d+/i.test(lower) || /[?&]type=\d+/i.test(lower);
-	}
-	function rememberManifest(url) {
-		const normalized = normalizeUrl$1(url);
-		if (isBadSegmentUrl(normalized)) return;
-		if (!isManifestUrl(normalized)) return;
-		console.log("[VOT][manifestSniffer] candidate", normalized);
-		if (!bestManifest) {
-			bestManifest = {
-				url: normalized,
-				seenAt: Date.now()
-			};
-			console.log("[VOT][manifestSniffer] selected", bestManifest.url);
-			return;
-		}
-		const currentScore = scoreManifestUrl(bestManifest.url);
-		if (scoreManifestUrl(normalized) >= currentScore) {
-			bestManifest = {
-				url: normalized,
-				seenAt: Date.now()
-			};
-			console.log("[VOT][manifestSniffer] selected", bestManifest.url);
-		}
-	}
-	function scoreManifestUrl(url) {
-		let score = 0;
-		if (/\.mp4(?:$|[?#])/i.test(url)) score += 5;
-		if (/\.m3u8(?:$|[?#])/i.test(url)) score += 4;
-		if (/master\.m3u8/i.test(url)) score += 3;
-		if (/\.mpd(?:$|[?#])/i.test(url)) return Number.NEGATIVE_INFINITY;
-		if (/manifest/i.test(url)) score += 1;
-		if (/dashplaylist/i.test(url)) score += 1;
-		if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(url)) score += 2;
-		return score;
-	}
-	function getLastManifestUrl() {
-		return bestManifest?.url ?? "";
-	}
-	var DIRECT_SOURCES_KEY = "__VOT_DIRECT_SOURCES__";
-	function tryInjectDirectSources(text) {
-		try {
-			const data = JSON.parse(text);
-			if (!data || typeof data !== "object") return;
-			if (!("unitedVideoId" in data || "video" in data && typeof data.video === "object")) return;
-			const existing = globalThis[DIRECT_SOURCES_KEY];
-			if (existing && typeof existing === "object") return;
-			globalThis[DIRECT_SOURCES_KEY] = data;
-			console.log("[VOT][manifestSniffer] injected __VOT_DIRECT_SOURCES__", data);
-		} catch {}
-	}
-	function installManifestSniffer() {
-		if (installed$1) return;
-		installed$1 = true;
-		const originalFetch = globalThis.fetch.bind(globalThis);
-		globalThis.fetch = async (...args) => {
-			const input = args[0];
-			rememberManifest(typeof input === "string" ? input : input instanceof Request ? input.url : String(input ?? ""));
-			const response = await originalFetch(...args);
-			if (response.headers.get("content-type")?.includes("application/json")) response.clone().text().then(tryInjectDirectSources).catch(() => {});
-			return response;
-		};
-		const originalOpen = XMLHttpRequest.prototype.open;
-		XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-			rememberManifest(String(url));
-			this.addEventListener("load", function() {
-				const ct = this.getResponseHeader("content-type") ?? "";
-				if (!ct.includes("application/json") && !ct.includes("text/javascript")) return;
-				if (this.responseType !== "" && this.responseType !== "text") return;
-				try {
-					if (typeof this.responseText === "string") tryInjectDirectSources(this.responseText);
-				} catch {}
-			});
-			return originalOpen.call(this, method, url, ...rest);
-		};
-	}
-	var VK_PLAYER_SELECTOR = ".videoplayer_media, vk-video-player";
-	function makeSimpleFileId$1(size, chunkSize) {
-		return `vk_${size}_${chunkSize}_${Date.now()}`;
-	}
-	function isM3u8(url) {
-		return /\.m3u8(?:$|[?#])/i.test(url);
-	}
-	function isMpd(url) {
-		return /\.mpd(?:$|[?#])/i.test(url);
-	}
-	function resolveUrl(url, baseUrl) {
-		return new URL(url, baseUrl).toString();
-	}
-	function getVideoSrc(video) {
-		const sourceEl = video.querySelector("source");
-		return String(video.currentSrc || video.src || sourceEl?.src || sourceEl?.getAttribute("src") || "").trim();
-	}
-	function isVisibleVideo(video) {
-		const rect = video.getBoundingClientRect();
-		return rect.width > 64 && rect.height > 64;
-	}
-	function collectVideoCandidates(preferredVideo) {
-		const seen = new Set();
-		const result = [];
-		const push = (video) => {
-			if (!(video instanceof HTMLVideoElement) || seen.has(video)) return;
-			seen.add(video);
-			result.push(video);
-		};
-		push(preferredVideo);
-		for (const video of Array.from(document.querySelectorAll("video"))) push(video);
-		return result;
-	}
-	function scoreVideoCandidate(video, preferredVideo) {
-		let score = 0;
-		const src = getVideoSrc(video);
-		if (video === preferredVideo) score += 100;
-		if (video.isConnected) score += 10;
-		if (isVisibleVideo(video)) score += 25;
-		if (video.closest(VK_PLAYER_SELECTOR)) score += 20;
-		if (!video.paused) score += 8;
-		if (video.readyState > 0) score += 8;
-		if (src) score += 4;
-		if (src && !src.startsWith("blob:")) score += 6;
-		return score;
-	}
-	function normalizeCandidateUrl(url) {
-		try {
-			return new URL(url, globalThis.location.href).toString();
-		} catch {
-			return String(url || "").trim();
-		}
-	}
-	function scoreVkMediaUrl(url) {
-		const normalized = normalizeCandidateUrl(url);
-		if (!normalized) return Number.NEGATIVE_INFINITY;
-		const lower = normalized.toLowerCase();
-		let score = 0;
-		if (lower.startsWith("blob:")) score -= 100;
-		if (/\.mp4(?:$|[?#])/i.test(normalized)) score += 50;
-		if (/\.webm(?:$|[?#])/i.test(normalized)) score += 55;
-		if (/\.m3u8(?:$|[?#])/i.test(normalized)) score += 45;
-		if (/master\.m3u8/i.test(normalized)) score += 35;
-		if (/\.mpd(?:$|[?#])/i.test(normalized)) score += 70;
-		if (/manifest/i.test(normalized)) score += 15;
-		if (/dashplaylist/i.test(normalized)) score += 15;
-		if (/vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(normalized)) score += 10;
-		if (/\.okcdn\.ru/i.test(normalized)) {
-			if (/[?&]ct=22(?:[&#]|$)/i.test(normalized)) score += 100;
-			if (/[?&]ct=21(?:[&#]|$)/i.test(normalized)) score -= 50;
-		}
-		if (/[?&]bytes=\d+-\d+/i.test(normalized)) score -= 60;
-		if (/[?&]subid=/i.test(lower)) score -= 80;
-		if (/[?&]type=2(?:[&#]|$)/i.test(normalized)) score -= 80;
-		return score;
-	}
-	function pickBestVkMediaUrl(candidates) {
-		let best = "";
-		let bestScore = Number.NEGATIVE_INFINITY;
-		for (const candidate of candidates) {
-			const normalized = normalizeCandidateUrl(String(candidate || "").trim());
-			const score = scoreVkMediaUrl(normalized);
-			if (score > bestScore) {
-				best = normalized;
-				bestScore = score;
-			}
-		}
-		return best;
-	}
-	function stripBytesParam(url) {
-		try {
-			const u = new URL(url);
-			u.searchParams.delete("bytes");
-			return u.toString();
-		} catch {
-			return url;
-		}
-	}
-	function getPerformanceMediaUrl() {
-		try {
-			return pickBestVkMediaUrl(performance.getEntriesByType("resource").map((entry) => {
-				const raw = String(entry?.name || "").trim();
-				return /[?&]bytes=\d+-\d+/i.test(raw) ? stripBytesParam(raw) : raw;
-			}).filter((candidate) => /vkvd\d+\.okcdn\.ru|\.okcdn\.ru|vkvideo\.ru/i.test(candidate)).filter((candidate) => /\.mp4(?:$|[?#])|\.webm(?:$|[?#])|\.m3u8(?:$|[?#])|\.mpd(?:$|[?#])|[?&]type=1(?:[&#]|$)/i.test(candidate)).filter(Boolean));
-		} catch {
-			return "";
-		}
-	}
-	async function fetchVkMedia(src, signal) {
-		if (/(?:^|\.)okcdn\.ru/i.test(src) || /vkvd\d+\.okcdn\.ru/i.test(src) || /vkvideo\.ru/i.test(src)) {
-			const gmRes = await GM_fetch(src, {
-				signal,
-				timeout: 0
-			});
-			if (!gmRes.ok) throw new Error(`[VOT] VK: failed to fetch media source via GM_fetch: ${gmRes.status}`);
-			return gmRes;
-		}
-		try {
-			const res = await fetch(src, {
-				signal,
-				credentials: "include"
-			});
-			if (res.ok) return res;
-		} catch {}
-		const gmRes = await GM_fetch(src, {
-			signal,
-			timeout: 0
-		});
-		if (!gmRes.ok) throw new Error(`[VOT] VK: failed to fetch media source: ${gmRes.status}`);
-		return gmRes;
-	}
-	async function fetchText(src, signal) {
-		return await (await fetchVkMedia(src, signal)).text();
-	}
-	async function fetchBytes(src, signal) {
-		const buffer = await (await fetchVkMedia(src, signal)).arrayBuffer();
-		return new Uint8Array(buffer);
-	}
-	function parseM3u8Urls(text, baseUrl) {
-		return text.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")).map((line) => resolveUrl(line, baseUrl));
-	}
-	async function resolveM3u8Segments(manifestUrl, signal) {
-		const urls = parseM3u8Urls(await fetchText(manifestUrl, signal), manifestUrl);
-		const nestedManifest = urls.find((url) => isM3u8(url));
-		if (nestedManifest) return parseM3u8Urls(await fetchText(nestedManifest, signal), nestedManifest).filter((url) => !isM3u8(url));
-		return urls.filter((url) => !isM3u8(url));
-	}
-	async function resolveMpdAudioSegments(manifestUrl, signal) {
-		const manifestText = await fetchText(manifestUrl, signal);
-		const xml = new DOMParser().parseFromString(manifestText, "application/xml");
-		if (xml.querySelector("parsererror")) throw new Error("[VOT] VK: failed to parse MPD");
-		const audioSet = Array.from(xml.querySelectorAll("AdaptationSet")).find((set) => {
-			const contentType = set.getAttribute("contentType") || "";
-			const mimeType = set.getAttribute("mimeType") || "";
-			return contentType.toLowerCase() === "audio" || mimeType.toLowerCase().startsWith("audio/");
-		});
-		if (!audioSet) throw new Error("[VOT] VK: MPD audio AdaptationSet not found");
-		const representations = Array.from(audioSet.querySelectorAll(":scope > Representation"));
-		if (!representations.length) throw new Error("[VOT] VK: MPD audio Representation not found");
-		representations.sort((a, b) => {
-			return Number(a.getAttribute("bandwidth") || Number.MAX_SAFE_INTEGER) - Number(b.getAttribute("bandwidth") || Number.MAX_SAFE_INTEGER);
-		});
-		const representation = representations[0];
-		const segmentTemplate = representation.querySelector(":scope > SegmentTemplate") || audioSet.querySelector(":scope > SegmentTemplate");
-		if (!segmentTemplate) throw new Error("[VOT] VK: MPD audio SegmentTemplate not found");
-		const initialization = segmentTemplate.getAttribute("initialization");
-		const media = segmentTemplate.getAttribute("media");
-		if (!initialization || !media) throw new Error("[VOT] VK: invalid MPD audio SegmentTemplate");
-		let segmentNumber = Number(segmentTemplate.getAttribute("startNumber") || "1");
-		const result = [];
-		const replaceTemplate = (template, number) => {
-			let value = template;
-			if (number !== void 0) value = value.replace(/\$Number(?:%0\d+d)?\$/g, String(number));
-			const representationId = representation.getAttribute("id");
-			if (representationId) value = value.replace(/\$RepresentationID\$/g, representationId);
-			return resolveUrl(value, manifestUrl);
-		};
-		result.push(replaceTemplate(initialization));
-		const timeline = segmentTemplate.querySelector("SegmentTimeline");
-		if (!timeline) throw new Error("[VOT] VK: MPD SegmentTimeline not found");
-		const segments = Array.from(timeline.querySelectorAll(":scope > S"));
-		for (const segment of segments) {
-			const repeat = Number(segment.getAttribute("r") || "0");
-			const count = repeat >= 0 ? repeat + 1 : 1;
-			for (let i = 0; i < count; i++) {
-				result.push(replaceTemplate(media, segmentNumber));
-				segmentNumber++;
-			}
-		}
-		return result;
-	}
-	async function getAudioFromVkVideo({ videoId, signal, preferredVideo }) {
-		const videos = collectVideoCandidates(preferredVideo).sort((left, right) => scoreVideoCandidate(right, preferredVideo) - scoreVideoCandidate(left, preferredVideo));
-		const video = videos[0];
-		if (!(video instanceof HTMLVideoElement)) throw new Error("[VOT] VK: video element not found");
-		const sniffedManifestUrl = getLastManifestUrl();
-		const performanceMediaUrl = getPerformanceMediaUrl();
-		const selectedVideoSrc = getVideoSrc(video);
-		const src = pickBestVkMediaUrl([
-			sniffedManifestUrl,
-			performanceMediaUrl,
-			...videos.map((candidate) => getVideoSrc(candidate)).filter((candidate) => candidate && !candidate.startsWith("blob:")),
-			selectedVideoSrc
-		]);
-		debug.log("[VOT] VK strategy videoId:", videoId);
-		debug.log("[VOT] VK strategy manifest:", sniffedManifestUrl);
-		debug.log("[VOT] VK strategy performance media:", performanceMediaUrl);
-		debug.log("[VOT] VK strategy currentSrc:", video.currentSrc);
-		debug.log("[VOT] VK strategy src:", video.src);
-		debug.log("[VOT] VK strategy selected video src:", selectedVideoSrc);
-		debug.log("[VOT] VK strategy candidate videos:", videos.map((candidate) => ({
-			src: getVideoSrc(candidate),
-			visible: isVisibleVideo(candidate),
-			paused: candidate.paused,
-			readyState: candidate.readyState,
-			score: scoreVideoCandidate(candidate, preferredVideo)
-		})));
-		debug.log("[VOT] VK strategy selected src:", src);
-		if (!src) throw new Error("[VOT] VK: empty video src");
-		if (src.startsWith("blob:")) throw new Error("[VOT] VK: blob source detected; need direct mp4/webm/m3u8/mpd URL from player/network");
-		const chunkSize = 256 * 1024;
-		if (isMpd(src)) {
-			const segmentUrls = await resolveMpdAudioSegments(src, signal);
-			if (!segmentUrls.length) throw new Error("[VOT] VK: empty MPD audio segment list");
-			debug.log("[VOT] VK strategy MPD audio segments:", segmentUrls.length);
-			debug.log("[VOT] VK strategy MPD first segment:", segmentUrls[0]);
-			debug.log("[VOT] VK strategy MPD last segment:", segmentUrls[segmentUrls.length - 1]);
-			const parts = [];
-			let totalLength = 0;
-			for (let i = 0; i < segmentUrls.length; i++) {
-				const segmentUrl = segmentUrls[i];
-				const bytes = await fetchBytes(segmentUrl, signal);
-				if (!bytes.byteLength) throw new Error(`[VOT] VK: empty MPD audio segment ${i}/${segmentUrls.length}`);
-				parts.push(bytes);
-				totalLength += bytes.byteLength;
-				debug.log(`[VOT] VK strategy MPD downloaded ${i + 1}/${segmentUrls.length}`);
-			}
-			if (!totalLength) throw new Error("[VOT] VK: empty combined MPD audio");
-			const combined = new Uint8Array(totalLength);
-			let offset = 0;
-			for (const part of parts) {
-				combined.set(part, offset);
-				offset += part.byteLength;
-			}
-			const fileId = `vk_dash_audio_${totalLength}_${Date.now()}`;
-			debug.log("[VOT] VK strategy MPD combined bytes:", totalLength);
-			debug.log("[VOT] VK strategy MPD combined fileId:", fileId);
-			return {
-				fileId,
-				mediaPartsLength: 1,
-				async *getMediaBuffers() {
-					yield combined;
-				}
-			};
-		}
-		if (isM3u8(src)) {
-			const segmentUrls = await resolveM3u8Segments(src, signal);
-			if (!segmentUrls.length) throw new Error("[VOT] VK: empty m3u8 segment list");
-			const fileId = `vk_hls_${Date.now()}`;
-			debug.log("[VOT] VK strategy m3u8 segments:", segmentUrls.length);
-			return {
-				fileId,
-				mediaPartsLength: segmentUrls.length,
-				async *getMediaBuffers() {
-					for (const segmentUrl of segmentUrls) {
-						const bytes = await fetchBytes(segmentUrl, signal);
-						if (!bytes.byteLength) throw new Error("[VOT] VK: empty m3u8 segment");
-						yield bytes;
-					}
-				}
-			};
-		}
-		const bytes = await fetchBytes(src, signal);
-		if (!bytes.byteLength) throw new Error("[VOT] VK: empty media bytes");
-		const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
-		const fileId = makeSimpleFileId$1(bytes.byteLength, chunkSize);
-		debug.log("[VOT] VK strategy bytes:", bytes.byteLength);
-		debug.log("[VOT] VK strategy mediaPartsLength:", mediaPartsLength);
-		return {
-			fileId,
-			mediaPartsLength,
-			async *getMediaBuffers() {
-				for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-					const end = Math.min(start + chunkSize, bytes.byteLength);
-					yield bytes.subarray(start, end);
-				}
-			}
-		};
-	}
 	function makeSimpleFileId(size, chunkSize) {
 		return `yadisk_${size}_${chunkSize}_${Date.now()}`;
 	}
@@ -47747,7 +47977,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			}
 			return true;
 		}
-		static AUDIO_UPLOAD_MAX_RETRIES = 2;
+		static AUDIO_UPLOAD_MAX_RETRIES = 15;
 		static AUDIO_UPLOAD_RETRY_DELAY_MS = 1500;
 		async retryAudioUpload(fn) {
 			const maxRetries = VOTTranslationHandler.AUDIO_UPLOAD_MAX_RETRIES;
@@ -53612,7 +53842,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			return this;
 		}
 		setVoiceModeMenuOpen(open) {
-			if (!this.voiceModeMenu || !(this.votButton instanceof VOTRail)) return;
+			if (!this.voiceModeMenu || !this.votMenu || !(this.votButton instanceof VOTRail)) return;
 			if (open) {
 				this.votMenu.hidden = true;
 				this.votButton.menuButton.setAttribute("aria-expanded", "false");
@@ -54416,9 +54646,9 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				});
 				return;
 			}
-			if (this.votOverlayView.votButton.status === "disabled") this.transformBtn("none", localizationProvider.get("translateVideo"));
-			if (this.votOverlayView.votButton.status === "error") this.transformBtn("none", localizationProvider.get("translateVideo"));
-			else if (this.votOverlayView.votButton.status !== "disabled" && this.votOverlayView.votButton.status !== "none" && !videoHandler.hasActiveSource()) {
+			if (this.votOverlayView?.votButton.status === "disabled") this.transformBtn("none", localizationProvider.get("translateVideo"));
+			if (this.votOverlayView?.votButton.status === "error") this.transformBtn("none", localizationProvider.get("translateVideo"));
+			else if (this.votOverlayView?.votButton.status !== "disabled" && this.votOverlayView?.votButton.status !== "none" && !videoHandler.hasActiveSource()) {
 				debug.log("[startTranslationFlow] reset stale button state");
 				this.transformBtn("none", localizationProvider.get("translateVideo"));
 			}
@@ -54572,8 +54802,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				const videoSlider = overlayView.videoVolumeSlider;
 				const translationSlider = overlayView.translationVolumeSlider;
 				if (!videoSlider || !translationSlider) return;
-				this.videoHandler.syncTranslationPlaybackVolume();
-				this.videoHandler.resetVolumeLinkState(Number(videoSlider.value), Number(translationSlider.value));
+				this.videoHandler?.syncTranslationPlaybackVolume();
+				this.videoHandler?.resetVolumeLinkState(Number(videoSlider.value), Number(translationSlider.value));
 			});
 		}
 		applyDriveShowVideoSlider(checked) {
@@ -58140,7 +58370,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 	}
 	async function resumePlayerAudioContextIfNeeded(handler) {
 		const ctx = handler.audioPlayer?.audioContext;
-		if (!ctx || ctx.state !== "suspended") return "not-needed";
+		if (ctx?.state !== "suspended") return "not-needed";
 		const RESUME_TIMEOUT_MS = 1500;
 		const resumePromise = (async () => {
 			try {

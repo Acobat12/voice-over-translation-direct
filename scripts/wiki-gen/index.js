@@ -426,7 +426,7 @@ function extractDomainsFromRegex(regex) {
 }
 
 function parseRegexLiteral(literal) {
-  if (!literal || literal[0] !== "/") {
+  if (literal?.[0] !== "/") {
     return null;
   }
 

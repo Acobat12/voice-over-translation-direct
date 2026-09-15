@@ -735,8 +735,6 @@ export class OverlayView {
         style.top = "12.5vh";
         style.transform = "";
         break;
-      case "top":
-      case "default":
       default:
         style.left = "50%";
         style.right = "";
@@ -760,12 +758,16 @@ export class OverlayView {
   }
 
   private setVoiceModeMenuOpen(open: boolean): void {
-    if (!this.voiceModeMenu || !(this.votButton instanceof VOTRail)) {
+    if (
+      !this.voiceModeMenu ||
+      !this.votMenu ||
+      !(this.votButton instanceof VOTRail)
+    ) {
       return;
     }
 
     if (open) {
-      this.votMenu!.hidden = true;
+      this.votMenu.hidden = true;
       this.votButton.menuButton.setAttribute("aria-expanded", "false");
       this.syncVoiceModeUi();
       this.voiceModeMenu.hidden = false;

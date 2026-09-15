@@ -141,8 +141,7 @@ export const extraSites: ServiceConf[] = [
     host: VideoService.custom,
     url: "stub",
     match: /(^|\.)kinopoisk\.ru$/i,
-    selector:
-      ".ott-player, [class*='player'], .yp-player, " + GENERIC_PLAYER_SELECTOR,
+    selector: `.ott-player, [class*='player'], .yp-player, ${GENERIC_PLAYER_SELECTOR}`,
     rawResult: true,
   },
   {
@@ -165,7 +164,7 @@ export const extraSites: ServiceConf[] = [
     host: VideoService.custom,
     url: "stub",
     match: /(^|\.)kodik\.(fun|pw|io|online|me)$/i,
-    selector: ".fp-player, " + GENERIC_PLAYER_SELECTOR,
+    selector: `.fp-player, ${GENERIC_PLAYER_SELECTOR}`,
     rawResult: true,
   },
   // Wink (Rostelecom streaming)

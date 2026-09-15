@@ -893,7 +893,7 @@ export class VOTVideoManager {
       const shouldPreserveBilibiliSiteRoute =
         this.videoHandler.site.host === "bilibili" &&
         isBilibiliSupportedPageHost(hostname);
-      const shouldPreserveDouyinSiteRoute =
+      const _shouldPreserveDouyinSiteRoute =
         this.videoHandler.site.host === "douyin" &&
         /(^|\.)douyin\.com$/i.test(hostname);
       const fallbackUrl = pickPreferredVideoUrl(
