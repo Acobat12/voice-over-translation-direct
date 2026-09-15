@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.11
+// @version         1.11.6.12
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -23486,7 +23486,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.11"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.12"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -45187,7 +45187,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			};
 			return rank(a.itag) - rank(b.itag) || (b.bitrate ?? 0) - (a.bitrate ?? 0);
 		};
-		const selected = audioOnly.sort(byPreference)[0] ?? withUrl.find(({ itag }) => itag === 18) ?? withUrl.filter(({ mimeType }) => /mp4a\.|opus/i.test(mimeType ?? "")).sort((a, b) => (a.bitrate ?? 0) - (b.bitrate ?? 0))[0];
+		const defaultAudioOnly = audioOnly.filter(({ audioTrack }) => audioTrack?.audioIsDefault === true);
+		const selected = (defaultAudioOnly.length > 0 ? defaultAudioOnly : audioOnly).sort(byPreference)[0] ?? withUrl.find(({ itag }) => itag === 18) ?? withUrl.filter(({ mimeType }) => /mp4a\.|opus/i.test(mimeType ?? "")).sort((a, b) => (a.bitrate ?? 0) - (b.bitrate ?? 0))[0];
 		if (!selected) {
 			debug.log("Audio downloader. no direct audio formats", JSON.stringify(formats.map((format) => ({
 				itag: format.itag,
@@ -48505,23 +48506,6 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 							this.samePayloadReplayDone = true;
 							this.repeatedAudioRequestCount = 0;
 							if (await this.replayCachedAudioUpload(audioRequestKey, signal)) return this.translateVideoImpl(videoData, requestLang, responseLang, translationHelp, false, signal, livelyDisabled);
-						}
-						if (!this.alternateTransportRetryDone) {
-							this.alternateTransportRetryDone = true;
-							this.repeatedAudioRequestCount = 0;
-							this.webAbrTransportStartIndex = 1;
-							this.currentAudioRequestKey = audioRequestKey;
-							this.cachedAudioUpload = void 0;
-							this.downloadFailureError = void 0;
-							this.downloading = true;
-							console.warn("[VOT][source-audio-upload] same payload did not clear AUDIO_REQUESTED; redownloading with alternate WEB_ABR transport order", {
-								translationId,
-								videoId: videoData.videoId,
-								transportStartIndex: this.webAbrTransportStartIndex
-							});
-							await this.prepareSourceAudioUpload(signal);
-							await Promise.all([this.waitForAudioDownloadCompletion(signal, YOUTUBE_AUDIO_STREAM_TIMEOUT_MS), this.audioDownloader.runAudioDownload(videoData.videoId, res.translationId, signal, this.videoHandler.video, this.webAbrTransportStartIndex)]);
-							return this.translateVideoImpl(videoData, requestLang, responseLang, translationHelp, false, signal, livelyDisabled);
 						}
 						return this.scheduleRetry(() => this.translateVideoImpl(videoData, requestLang, responseLang, translationHelp, false, signal, livelyDisabled), 5e3, signal);
 					}
