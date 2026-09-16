@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.12
+// @version         1.11.6.13
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -23486,7 +23486,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.12"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.13"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -47207,6 +47207,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		activeTranslationUrl;
 		activeAudioUploadUrl;
 		translationRequestStateUrl;
+		translationRequestStateLangKey;
 		translationRequestStarted = false;
 		activeTranslationVoiceMode;
 		handledAudioRequestKey;
@@ -47238,6 +47239,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		resetTranslationRequestState(reason) {
 			debug.log("[VOT][translate] reset request state", { reason });
 			this.translationRequestStateUrl = void 0;
+			this.translationRequestStateLangKey = void 0;
 			this.activeAudioUploadUrl = void 0;
 			this.translationRequestStarted = false;
 			this.activeTranslationVoiceMode = void 0;
@@ -48318,6 +48320,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		async translateVideoImpl(videoData, requestLang, responseLang, translationHelp = null, shouldSendFailedAudio = false, signal = NEVER_ABORTED_SIGNAL, disableLivelyVoice = false) {
 			clearTimeout(this.videoHandler.autoRetry);
 			this.finishDownloadSuccess();
+			const forceSameYouTubeSourceLang = this.videoHandler.site.host === "youtube" && requestLang !== "auto";
 			const requestLangForApi = this.videoHandler.getRequestLangForTranslation(requestLang, responseLang);
 			debug.log(videoData, `Translate video (requestLang: ${requestLang}, requestLangForApi: ${requestLangForApi}, responseLang: ${responseLang})`);
 			let livelyDisabled = disableLivelyVoice;
@@ -48348,6 +48351,12 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				this.resetTranslationRequestState("translation url changed");
 				this.translationRequestStateUrl = this.activeTranslationUrl;
 			}
+			const translationLangKey = `${requestLangForApi}:${responseLang}:${forceSameYouTubeSourceLang ? "forced-same-lang" : "normal"}`;
+			if (this.translationRequestStateLangKey !== void 0 && this.translationRequestStateLangKey !== translationLangKey) {
+				this.resetTranslationRequestState("translation language changed");
+				this.translationRequestStateUrl = this.activeTranslationUrl;
+			}
+			this.translationRequestStateLangKey = translationLangKey;
 			this.activeAudioUploadUrl = this.normalizeUrlForRequest(String(requestVideoData.url || this.activeTranslationUrl || ""));
 			try {
 				throwIfAborted(signal);
@@ -48365,6 +48374,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 						const useMinimalYouTubePollingPayload = false;
 						const extraOpts = {
 							useLivelyVoice,
+							...forceSameYouTubeSourceLang ? { forceSourceLang: true } : {},
 							videoTitle: requestVideoData.title ?? this.videoHandler.videoData?.title ?? ""
 						};
 						console.log("[VOT][youtube/request-snapshot]", {
@@ -48374,6 +48384,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 							duration: requestVideoData.duration,
 							requestLang: requestLangForApi,
 							responseLang,
+							forceSameYouTubeSourceLang,
+							forceSourceLang: forceSameYouTubeSourceLang,
 							translationHelpCount: translationHelp?.length ?? 0,
 							useLivelyVoice,
 							allowFailedAudioSignal,
@@ -59895,12 +59907,22 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		toggleSubtitlesForCurrentLangPair() {
 			return this.callModuleAsync(toggleSubtitlesForCurrentLangPair);
 		}
-		getRequestLangForTranslation(requestLang, responseLang) {
-			if (this.data?.useLivelyVoice && this.data?.account?.token && responseLang === "ru") return "en";
+		getRequestLangForTranslation(requestLang, _responseLang) {
 			return requestLang;
 		}
 		isLivelyVoiceAllowed(requestLang = this.videoData?.detectedLanguage ?? "auto", responseLang = this.videoData?.responseLanguage ?? this.translateToLang) {
-			if (this.getRequestLangForTranslation(requestLang, responseLang) !== "en" || responseLang !== "ru") return false;
+			const requestLangForApi = this.getRequestLangForTranslation(requestLang, responseLang);
+			if (![
+				"ru",
+				"en",
+				"zh",
+				"ko",
+				"fr",
+				"it",
+				"es",
+				"de",
+				"ja"
+			].includes(requestLangForApi) || responseLang !== "ru") return false;
 			if (!this.data?.account?.token) return false;
 			return true;
 		}

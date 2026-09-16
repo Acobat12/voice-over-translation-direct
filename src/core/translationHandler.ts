@@ -193,6 +193,7 @@ export class VOTTranslationHandler {
 	private activeTranslationUrl?: string;
 	private activeAudioUploadUrl?: string;
 	private translationRequestStateUrl?: string;
+	private translationRequestStateLangKey?: string;
 	private translationRequestStarted = false;
 	private activeTranslationVoiceMode?: boolean;
 	private handledAudioRequestKey?: string;
@@ -244,6 +245,7 @@ export class VOTTranslationHandler {
 	resetTranslationRequestState(reason?: unknown): void {
 		debug.log("[VOT][translate] reset request state", { reason });
 		this.translationRequestStateUrl = undefined;
+		this.translationRequestStateLangKey = undefined;
 		this.activeAudioUploadUrl = undefined;
 		this.translationRequestStarted = false;
 		this.activeTranslationVoiceMode = undefined;
@@ -2168,6 +2170,13 @@ export class VOTTranslationHandler {
 		clearTimeout(this.videoHandler.autoRetry);
 		this.finishDownloadSuccess();
 
+		// Experimental retranslate test: keep the normal API source language
+		// (including the lively-voice `en` mapping), but explicitly force the
+		// source language for YouTube. This tests whether Yandex will create a
+		// fresh translation without changing the language pair.
+		const forceSameYouTubeSourceLang =
+			this.videoHandler.site.host === "youtube" && requestLang !== "auto";
+
 		const requestLangForApi = this.videoHandler.getRequestLangForTranslation(
 			requestLang,
 			responseLang,
@@ -2247,6 +2256,18 @@ export class VOTTranslationHandler {
 			this.resetTranslationRequestState("translation url changed");
 			this.translationRequestStateUrl = this.activeTranslationUrl;
 		}
+
+		const translationLangKey = `${requestLangForApi}:${responseLang}:${
+			forceSameYouTubeSourceLang ? "forced-same-lang" : "normal"
+		}`;
+		if (
+			this.translationRequestStateLangKey !== undefined &&
+			this.translationRequestStateLangKey !== translationLangKey
+		) {
+			this.resetTranslationRequestState("translation language changed");
+			this.translationRequestStateUrl = this.activeTranslationUrl;
+		}
+		this.translationRequestStateLangKey = translationLangKey;
 		this.activeAudioUploadUrl = this.normalizeUrlForRequest(
 			String(requestVideoData.url || this.activeTranslationUrl || ""),
 		);
@@ -2296,6 +2317,7 @@ export class VOTTranslationHandler {
 					const useMinimalYouTubePollingPayload = false;
 					const extraOpts = {
 						useLivelyVoice,
+						...(forceSameYouTubeSourceLang ? { forceSourceLang: true } : {}),
 						videoTitle:
 							requestVideoData.title ??
 							this.videoHandler.videoData?.title ??
@@ -2309,6 +2331,8 @@ export class VOTTranslationHandler {
 						duration: requestVideoData.duration,
 						requestLang: requestLangForApi,
 						responseLang,
+						forceSameYouTubeSourceLang,
+						forceSourceLang: forceSameYouTubeSourceLang,
 						translationHelpCount: translationHelp?.length ?? 0,
 						useLivelyVoice,
 						allowFailedAudioSignal,

@@ -10,10 +10,10 @@ import { ensureRuntimeActivated } from "./bootstrap/runtimeActivation";
 import { bindObserverListeners } from "./bootstrap/videoObserverBinding";
 import VOTClient, { VOTWorkerClient } from "./client";
 import {
-  authCallbackOrigin,
-  proxyWorkerHost,
-  votBackendUrl,
-  workerHost,
+	authCallbackOrigin,
+	proxyWorkerHost,
+	votBackendUrl,
+	workerHost,
 } from "./config/config";
 import { extraSites } from "./config/extraSites";
 import { GENERIC_PLAYER_SELECTOR } from "./config/playerSelectors";
@@ -25,12 +25,12 @@ import { findConnectedContainerBySelector } from "./core/containerResolution";
 import { isMobileYouTubeLikeSite } from "./core/hostPolicies";
 import { resolveOverlayMountTargets } from "./core/overlayMountTargets";
 import {
-  isCustomPlaybackTarget,
-  shouldUsePlainAudioPlayback,
+	isCustomPlaybackTarget,
+	shouldUsePlainAudioPlayback,
 } from "./core/playbackPolicy";
 import {
-  getSourceAudioAvailability,
-  type SourceAudioAvailabilityState,
+	getSourceAudioAvailability,
+	type SourceAudioAvailabilityState,
 } from "./core/sourceAudioAvailability";
 import { VOTTranslationHandler } from "./core/translationHandler";
 import { TranslationOrchestrator } from "./core/translationOrchestrator";
@@ -48,15 +48,15 @@ import { isSameOverlayMount } from "./ui/mount";
 import { OverlayVisibilityController } from "./ui/overlayVisibilityController";
 import debug from "./utils/debug";
 import {
-  containsCrossShadow,
-  resolveScopedFullscreenElement,
+	containsCrossShadow,
+	resolveScopedFullscreenElement,
 } from "./utils/dom";
 import { getEnvironmentInfo as getEnvironmentInfoImpl } from "./utils/environment";
 import { GM_fetch } from "./utils/gm";
 import { isIframe } from "./utils/iframeConnector";
 import {
-  createIntervalIdleChecker,
-  type IntervalIdleChecker,
+	createIntervalIdleChecker,
+	type IntervalIdleChecker,
 } from "./utils/intervalIdleChecker";
 import { installManifestSniffer } from "./utils/manifestSniffer";
 import { Notifier } from "./utils/notify";
@@ -64,59 +64,59 @@ import { installSiteSubtitlesSniffer } from "./utils/siteSubtitlesSniffer";
 import { votStorage } from "./utils/storage";
 import { translate } from "./utils/translateApis";
 import {
-  calculatedResLang,
-  type DocumentWithFullscreen,
-  fnv1a32ToKeyPart,
-  stableStringify,
+	calculatedResLang,
+	type DocumentWithFullscreen,
+	fnv1a32ToKeyPart,
+	stableStringify,
 } from "./utils/utils";
 import { VideoObserver } from "./utils/VideoObserver";
 import {
-  clampPercentInt,
-  snapVolume01,
-  volume01ToPercent,
+	clampPercentInt,
+	snapVolume01,
+	volume01ToPercent,
 } from "./utils/volume";
 import {
-  applyVolumeLinkDelta,
-  syncTranslationLinkSnapshot,
-  syncVideoLinkSnapshot,
+	applyVolumeLinkDelta,
+	syncTranslationLinkSnapshot,
+	syncVideoLinkSnapshot,
 } from "./utils/volumeLink";
 import {
-  getAutoHideDelay as getAutoHideDelayImpl,
-  initExtraEvents as initExtraEventsImpl,
-  isOverlayInteractiveNode as isOverlayInteractiveNodeImpl,
-  rebindOverlayVisibilityTargets as rebindOverlayVisibilityTargetsImpl,
-  releaseExtraEvents as releaseExtraEventsImpl,
+	getAutoHideDelay as getAutoHideDelayImpl,
+	initExtraEvents as initExtraEventsImpl,
+	isOverlayInteractiveNode as isOverlayInteractiveNodeImpl,
+	rebindOverlayVisibilityTargets as rebindOverlayVisibilityTargetsImpl,
+	releaseExtraEvents as releaseExtraEventsImpl,
 } from "./videoHandler/modules/events";
 // VideoHandler is large; keep the public API but move big feature areas into
 // dedicated modules for cohesion.
 import { init as initVideoHandler } from "./videoHandler/modules/init";
 import {
-  changeSubtitlesLang as changeSubtitlesLangImpl,
-  enableSubtitlesForCurrentLangPair as enableSubtitlesForCurrentLangPairImpl,
-  ensureSubtitlesForCurrentLangPair as ensureSubtitlesForCurrentLangPairImpl,
-  loadSubtitles as loadSubtitlesImpl,
-  toggleSubtitlesForCurrentLangPair as toggleSubtitlesForCurrentLangPairImpl,
-  updateSubtitlesLangSelect as updateSubtitlesLangSelectImpl,
+	changeSubtitlesLang as changeSubtitlesLangImpl,
+	enableSubtitlesForCurrentLangPair as enableSubtitlesForCurrentLangPairImpl,
+	ensureSubtitlesForCurrentLangPair as ensureSubtitlesForCurrentLangPairImpl,
+	loadSubtitles as loadSubtitlesImpl,
+	toggleSubtitlesForCurrentLangPair as toggleSubtitlesForCurrentLangPairImpl,
+	updateSubtitlesLangSelect as updateSubtitlesLangSelectImpl,
 } from "./videoHandler/modules/subtitles";
 import {
-  applyManualVideoVolumeOverride as applyManualVideoVolumeOverrideImpl,
-  clearPendingAutoplayRecovery as clearPendingAutoplayRecoveryImpl,
-  handleProxySettingsChanged as handleProxySettingsChangedImpl,
-  isAwaitingAutoplayRecovery as isAwaitingAutoplayRecoveryImpl,
-  isMultiMethodS3 as isMultiMethodS3Impl,
-  isYouTubeHosts as isYouTubeHostsImpl,
-  primePlaybackByGesture as primePlaybackByGestureImpl,
-  proxifyAudio as proxifyAudioImpl,
-  refreshTranslationAudio as refreshTranslationAudioImpl,
-  resumePendingAutoplayRecovery as resumePendingAutoplayRecoveryImpl,
-  scheduleTranslationRefresh as scheduleTranslationRefreshImpl,
-  setupAudioSettings as setupAudioSettingsImpl,
-  stopSmartVolumeDucking as stopSmartVolumeDuckingImpl,
-  syncTranslationPlaybackVolume as syncTranslationPlaybackVolumeImpl,
-  translateFunc as translateFuncImpl,
-  unproxifyAudio as unproxifyAudioImpl,
-  updateTranslation as updateTranslationImpl,
-  validateAudioUrl as validateAudioUrlImpl,
+	applyManualVideoVolumeOverride as applyManualVideoVolumeOverrideImpl,
+	clearPendingAutoplayRecovery as clearPendingAutoplayRecoveryImpl,
+	handleProxySettingsChanged as handleProxySettingsChangedImpl,
+	isAwaitingAutoplayRecovery as isAwaitingAutoplayRecoveryImpl,
+	isMultiMethodS3 as isMultiMethodS3Impl,
+	isYouTubeHosts as isYouTubeHostsImpl,
+	primePlaybackByGesture as primePlaybackByGestureImpl,
+	proxifyAudio as proxifyAudioImpl,
+	refreshTranslationAudio as refreshTranslationAudioImpl,
+	resumePendingAutoplayRecovery as resumePendingAutoplayRecoveryImpl,
+	scheduleTranslationRefresh as scheduleTranslationRefreshImpl,
+	setupAudioSettings as setupAudioSettingsImpl,
+	stopSmartVolumeDucking as stopSmartVolumeDuckingImpl,
+	syncTranslationPlaybackVolume as syncTranslationPlaybackVolumeImpl,
+	translateFunc as translateFuncImpl,
+	unproxifyAudio as unproxifyAudioImpl,
+	updateTranslation as updateTranslationImpl,
+	validateAudioUrl as validateAudioUrlImpl,
 } from "./videoHandler/modules/translation";
 
 import type { VideoData } from "./videoHandler/shared";
@@ -129,18 +129,18 @@ export { countryCode } from "./videoHandler/shared";
 
 const RESPONSE_LANG_SET = new Set<string>(availableTTS as readonly string[]);
 const isResponseLang = (value: string): value is ResponseLang =>
-  RESPONSE_LANG_SET.has(value);
+	RESPONSE_LANG_SET.has(value);
 const RESOLVED_VOID_PROMISE: Promise<void> = Promise.resolve();
 const GOOGLE_DRIVE_ACTIVE_HANDLER_KEY = "__VOT_GOOGLE_DRIVE_ACTIVE_HANDLER__";
 
 type InternalVideoVolumeSetHistoryEntry = {
-  at: number;
-  percent: number;
-  suppressMs: number;
+	at: number;
+	percent: number;
+	suppressMs: number;
 };
 if (/(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(location.hostname)) {
-  installSiteSubtitlesSniffer();
-  installManifestSniffer();
+	installSiteSubtitlesSniffer();
+	installManifestSniffer();
 }
 /*─────────────────────────────────────────────────────────────*/
 /*                        Main class: VideoHandler             */
@@ -148,1886 +148,1892 @@ if (/(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(location.hostname)) {
 /*─────────────────────────────────────────────────────────────*/
 
 export class VideoHandler {
-  video!: HTMLVideoElement;
-  container!: HTMLElement;
-  site!: ServiceConf;
-
-  // Public API / core state
-  translateFromLang: RequestLang = "auto";
-  translateToLang: ResponseLang = calculatedResLang;
-
-  data?: Partial<StorageData>;
-  videoData?: VideoData;
-
-  firstPlay = true;
-  audioContext?: AudioContext;
-
-  votClient!: VOTClient | VOTWorkerClient;
-  audioPlayer!: Chaimu;
-
-  abortController!: AbortController;
-  actionsAbortController!: AbortController;
-
-  /** Increments whenever we reset/abort translation actions to invalidate stale async work */
-  actionsGeneration = 0;
-
-  notifier: Notifier = new Notifier();
-
-  cacheManager!: CacheManager;
-  votSessionStorage = new VOTSessionStorageCache();
-  /**
-   * In-flight subtitles list requests, keyed by subtitles cache key.
-   *
-   * Prevents duplicate parallel requests when the subtitles hotkey is spammed
-   * before the first request resolves.
-   */
-  subtitlesLoadPromises = new Map<string, Promise<any[]>>();
-  downloadTranslationUrl: string | null = null;
-
-  translationRefreshTimeout?: ReturnType<typeof setTimeout>;
-  isRefreshingTranslation = false;
-
-  autoRetry?: ReturnType<typeof setTimeout>;
-  // streamPing?: ReturnType<typeof setInterval>;
-  votOpts?: Record<string, unknown>;
-  volumeOnStart?: number;
-
-  /**
-   * syncVolume (link translation and video volume) runtime state.
-   * We keep last-known slider values to apply deltas reliably.
-   */
-  volumeLinkState = {
-    initialized: false,
-    lastVideoPercent: 0,
-    lastTranslationPercent: 0,
-  };
-
-  /**
-   * Used to ignore our own programmatic video-volume updates when observing
-   * external UIs (e.g. YouTube volume panel aria mutations).
-   */
-  internalVideoVolumeSetAt = 0;
-  internalVideoVolumeSetPercent: number | null = null;
-  internalVideoVolumeSuppressionMs = 250;
-  internalVideoVolumeSetHistory: InternalVideoVolumeSetHistoryEntry[] = [];
-  internalVideoVolumeSetHistoryLimit = 48;
-
-  // Smart auto-volume ducking state. Used to lower the original video volume
-  // only while the translated track has audible sound (not during silence).
-  smartVolumeDuckingInterval?: ReturnType<typeof setTimeout>;
-  smartVolumeDuckingTarget = 0.2;
-  smartVolumeDuckingBaseline?: number;
-  smartVolumeLastApplied?: number;
-
-  // Internal smoothing state for Smart Auto-Volume ducking.
-  smartVolumeLastTickAt = 0;
-  smartVolumeLastSoundAt = 0;
-  smartVolumeRmsMissingSinceAt: number | null = null;
-
-  /** Smoothed translated-track RMS envelope (0..1). */
-  smartVolumeRmsEnvelope = 0;
-
-  /**
-   * Internal speech gate state for Smart Auto-Volume ducking.
-   *
-   * This is a debounced/hysteresis-based boolean that tracks whether the
-   * translated track is considered "audible" for the purpose of ducking.
-   */
-  smartVolumeSpeechGateOpen = false;
-  smartVolumeIsDucked = false;
-  longWaitingResCount = 0;
-  hadAsyncWait = false;
-
-  // Available subtitle tracks for the current video. The subtitles UI widget
-  // maintains its own internal line/token representation.
-  subtitles: any[] = [];
-  subtitlesCacheKey: string | null = null;
-  subtitlesWidget?: SubtitlesWidget;
-
-  activeTranslation: { key: string; promise: Promise<unknown> } | null = null;
-  activeVoiceMode: "standard" | "lively" | null = null;
-  lastTranslationVideoId: string | null = null;
-  externalTranslationSourceUrl: string | null = null;
-  pendingAutoplayRecovery: {
-    gen: number;
-    videoId: string;
-    sourceUrl: string;
-    createdAt: number;
-  } | null = null;
-  pendingAutoplayRecoveryAbortController?: AbortController;
-  pendingAutoplayRecoveryPromise: Promise<boolean> | null = null;
-  /**
-   * In-flight async teardown for translation/audio player cleanup.
-   * New translation starts should wait for this to avoid clear/init races.
-   */
-  stopTranslatePromise: Promise<void> | null = null;
-
-  // Managers
-  interactionChecker!: IntervalIdleChecker;
-  uiManager!: UIManager;
-  overlayVisibility!: OverlayVisibilityController;
-  overlayVisibilityTargetsAbortController?: AbortController;
-  translationOrchestrator!: TranslationOrchestrator;
-  lifecycleController!: VideoLifecycleController;
-  translationHandler!: VOTTranslationHandler;
-  videoManager!: VOTVideoManager;
-
-  // Subtitles received directly from API (Yandex) when available
-  yandexSubtitles: ProcessedSubtitles | null = null;
-
-  // Observers / listeners
-  resizeObserver?: ResizeObserver;
-  syncVolumeObserver?: MutationObserver;
-  overlayMountObserver?: MutationObserver;
-  mobileYouTubeLifecycleDebounceTimer?: ReturnType<typeof setTimeout>;
-
-  // Init guard
-  initialized = false;
-  onPrimaryAttachReady?: () => void;
-  private overlayVerificationGeneration = 0;
-
-  /**
-   * Cached overlay mount points (root/portal). Recomputed when container changes.
-   * Avoids doing the same DOM/style walks multiple times per lifecycle update.
-   */
-  private mountCache?: {
-    container: HTMLElement;
-    base: HTMLElement;
-    root: HTMLElement;
-    portalContainer: HTMLElement;
-    subtitlesMountContainer: HTMLElement;
-    fullscreenRoot: HTMLElement | null;
-  };
-
-  /**
-   * In-memory cache for translated error strings (RU -> UI language).
-   * This avoids repeated translation API calls during retry loops when the
-   * same backend message is emitted multiple times.
-   */
-  private readonly errorTranslationCache = new Map<string, string>();
-
-  /**
-   * Returns fullscreen root for overlay if the active fullscreen session belongs
-   * to the current video/container. Otherwise returns null.
-   */
-  private getFullscreenOverlayRoot(): HTMLElement | null {
-    const doc = document as DocumentWithFullscreen;
-    const fullscreenEl = doc.fullscreenElement ?? doc.webkitFullscreenElement;
-    return resolveScopedFullscreenElement(fullscreenEl, [this.container]);
-  }
-
-  private findPageScopedContainer(): HTMLElement | null {
-    const selector = String(this.site.selector || "").trim();
-    if (!selector) {
-      return null;
-    }
-
-    const selectors = selector
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-    let fallback: HTMLElement | null = null;
-
-    for (const currentSelector of selectors) {
-      let matches: NodeListOf<Element>;
-      try {
-        matches = document.querySelectorAll(currentSelector);
-      } catch {
-        continue;
-      }
-
-      for (const match of matches) {
-        if (
-          !(match instanceof HTMLElement) ||
-          !match.isConnected ||
-          match === document.body ||
-          match === document.documentElement
-        ) {
-          continue;
-        }
-
-        const rect = match.getBoundingClientRect();
-        if (rect.width > 0 && rect.height > 0) {
-          return match;
-        }
-
-        fallback ??= match;
-      }
-    }
-
-    return fallback;
-  }
-
-  private resolveCurrentContainer(): HTMLElement {
-    if (!this.site.selector) {
-      return this.video.parentElement ?? this.container;
-    }
-
-    const matched = findConnectedContainerBySelector(
-      this.video,
-      this.site.selector,
-    );
-    if (matched) {
-      return matched;
-    }
-
-    if (
-      this.container.isConnected &&
-      containsCrossShadow(this.container, this.video)
-    ) {
-      return this.container;
-    }
-
-    if (isMobileYouTubeLikeSite(this.site)) {
-      const pageScopedContainer = this.findPageScopedContainer();
-      if (pageScopedContainer) {
-        return pageScopedContainer;
-      }
-    }
-
-    return this.video.parentElement ?? this.container;
-  }
-
-  private getOverlayMountPoints(container: HTMLElement = this.container): {
-    root: HTMLElement;
-    portalContainer: HTMLElement;
-    subtitlesMountContainer: HTMLElement;
-    fullscreenRoot: HTMLElement | null;
-  } {
-    const fullscreenRoot = this.getFullscreenOverlayRoot();
-    const { base, root, portalContainer, subtitlesMountContainer } =
-      resolveOverlayMountTargets({
-        container,
-        site: this.site,
-        fullscreenRoot,
-      });
-
-    const cache = this.mountCache;
-    if (
-      cache?.container === container &&
-      cache.base === base &&
-      cache.subtitlesMountContainer === subtitlesMountContainer &&
-      cache.fullscreenRoot === fullscreenRoot &&
-      (cache.root.isConnected ?? document.documentElement.contains(cache.root))
-    ) {
-      return {
-        root: cache.root,
-        portalContainer: cache.portalContainer,
-        subtitlesMountContainer: cache.subtitlesMountContainer,
-        fullscreenRoot: cache.fullscreenRoot,
-      };
-    }
-
-    this.mountCache = {
-      container,
-      base,
-      root,
-      portalContainer,
-      subtitlesMountContainer,
-      fullscreenRoot,
-    };
-    return { root, portalContainer, subtitlesMountContainer, fullscreenRoot };
-  }
-
-  private getOverlayMount(
-    container: HTMLElement = this.container,
-  ): OverlayMount {
-    const { root, portalContainer, subtitlesMountContainer, fullscreenRoot } =
-      this.getOverlayMountPoints(container);
-    return {
-      root,
-      portalContainer,
-      subtitlesMountContainer,
-      tooltipLayoutRoot: fullscreenRoot ?? this.tooltipLayoutRoot,
-    };
-  }
-
-  /**
-   * Builds a stable cache key for translations.
-   *
-   * NOTE: Keep this in sync with CacheManager expectations.
-   * @param {string} videoId
-   * @param {string} from
-   * @param {string} to
-   */
-  getTranslationCacheKey(
-    videoId: string,
-    from: string,
-    to: string,
-    translationHelp?: unknown,
-  ): string {
-    const requestLangForApi = this.getRequestLangForTranslation(
-      from as RequestLang,
-      to as ResponseLang,
-    );
-    const useLivelyVoice =
-      this.isLivelyVoiceAllowed(requestLangForApi, to as ResponseLang) &&
-      this.data?.useLivelyVoice;
-    // `translationHelp` can change the output, so include it in the cache key.
-    // Keep this compact by hashing a stable JSON representation.
-    const helpStr =
-      translationHelp === undefined || translationHelp === null
-        ? ""
-        : stableStringify(translationHelp);
-    const helpHash = helpStr ? fnv1a32ToKeyPart(helpStr) : "0";
-    return `${videoId}_${requestLangForApi}_${to}_${useLivelyVoice}_${helpHash}`;
-  }
-
-  /**
-   * Builds a stable cache key for subtitles.
-   *
-   * Bugfix: subtitles cache key must match the key used by loadSubtitles().
-   * @param {string} videoId
-   * @param {string} detectedLanguage
-   * @param {string} responseLanguage
-   */
-  getSubtitlesCacheKey(
-    videoId: string,
-    detectedLanguage: string,
-    responseLanguage: string,
-  ): string {
-    return `${videoId}_${detectedLanguage}_${responseLanguage}_${Boolean(this.data?.useLivelyVoice)}`;
-  }
-
-  getPreferredSubtitlesLanguage(
-    detectedLanguage: string = this.videoData?.detectedLanguage ?? "auto",
-    responseLanguage: string = this.videoData?.responseLanguage ??
-      this.translateToLang,
-  ): string | undefined {
-    const normalize = (value?: string): string | undefined => {
-      const nextValue = String(value || "")
-        .trim()
-        .toLowerCase();
-      if (!nextValue || nextValue === "auto") {
-        return undefined;
-      }
-      return nextValue;
-    };
-
-    return normalize(responseLanguage) ?? normalize(detectedLanguage);
-  }
-
-  isActionStale(actionContext?: { gen: number; videoId: string }): boolean {
-    if (!actionContext) return false;
-    return (
-      this.actionsGeneration !== actionContext.gen ||
-      this.videoData?.videoId !== actionContext.videoId
-    );
-  }
-
-  private updateVOTClientRequestSignal(): void {
-    if (!this.votClient) return;
-    this.votClient.fetchOpts = {
-      ...(this.votClient.fetchOpts ?? {}),
-      signal: this.actionsAbortController.signal,
-    };
-  }
-
-  resetActionsAbortController(reason?: any): void {
-    try {
-      this.actionsAbortController?.abort(reason);
-    } catch {
-      // ignore
-    }
-    this.actionsAbortController = new AbortController();
-    this.actionsGeneration++;
-    // Keep client sessions intact and update only per-request abort signal.
-    this.updateVOTClientRequestSignal();
-  }
-
-  /**
-   * Constructs a new VideoHandler instance.
-   * @param {HTMLVideoElement} video The video element to handle.
-   * @param {HTMLElement} container The container element for the video.
-   * @param {Object} site The site object associated with the video.
-   */
-  constructor(
-    video: HTMLVideoElement,
-    container: HTMLElement,
-    site: ServiceConf,
-  ) {
-    debug.log(
-      "[VideoHandler] add video:",
-      video,
-      "container:",
-      container,
-      this,
-    );
-    this.video = video;
-    this.container = container;
-    this.site = site;
-    if (
-      String(globalThis.location.hostname || "").toLowerCase() ===
-        "youtube.googleapis.com" &&
-      globalThis.location.pathname.startsWith("/embed")
-    ) {
-      (globalThis as Record<string, unknown>)[GOOGLE_DRIVE_ACTIVE_HANDLER_KEY] =
-        this;
-    }
-    this.abortController = new AbortController();
-    this.actionsAbortController = new AbortController();
-    this.cacheManager = new CacheManager();
-    this.interactionChecker = createIntervalIdleChecker();
-    this.interactionChecker.start();
-    const self = () => this;
-    // Create helper instances
-    const mount = this.getOverlayMount(container);
-    this.uiManager = new UIManager({
-      mount,
-      data: this.data,
-      videoHandler: this,
-      intervalIdleChecker: this.interactionChecker,
-    });
-    this.overlayVisibility = new OverlayVisibilityController({
-      checker: this.interactionChecker,
-      getOverlayView: () => this.uiManager.votOverlayView ?? null,
-      getAutoHideDelay: () => this.getAutoHideDelay(),
-      isInteractiveNode: (node: Node) => this.isOverlayInteractiveNode(node),
-      shouldAutoHide: () =>
-        this.uiManager.votOverlayView?.votButton?.status !== "disabled",
-    });
-    this.translationOrchestrator = new TranslationOrchestrator({
-      isFirstPlay: () => this.firstPlay,
-      setFirstPlay: (next: boolean) => {
-        this.firstPlay = next;
-      },
-      isAutoTranslateEnabled: () => Boolean(this.data?.autoTranslate),
-      getVideoId: () => this.videoData?.videoId,
-      scheduleAutoTranslate: () => this.runAutoTranslate(),
-      isMobileYouTubeMuted: () =>
-        this.site.host === "youtube" &&
-        this.site.additionalData === "mobile" &&
-        this.video.muted,
-      setMuteWatcher: (callback: () => void) => {
-        // Mobile YouTube typically starts autoplay muted. We defer auto-translate
-        // until the user unmutes. `volumechange` fires when `muted` or `volume`
-        // changes on HTMLMediaElement.
-        let done = false;
-        const fireOnce = () => {
-          if (done) return;
-          done = true;
-          this.video.removeEventListener("volumechange", onVolumeChange);
-          callback();
-        };
-
-        const onVolumeChange = () => {
-          if (!this.video.muted) {
-            fireOnce();
-          }
-        };
-
-        this.video.addEventListener("volumechange", onVolumeChange, {
-          signal: this.abortController.signal,
-        });
-
-        // Handle a potential race where the video becomes unmuted before the
-        // listener is attached.
-        queueMicrotask(() => {
-          if (!this.video.muted) {
-            fireOnce();
-          }
-        });
-      },
-    });
-    const lifecycleHost = {
-      get video() {
-        return self().video;
-      },
-      get site() {
-        return self().site;
-      },
-      get container() {
-        return self().container;
-      },
-      set container(value: HTMLElement) {
-        if (self().container === value) {
-          return;
-        }
-        self().container = value;
-        self().uiManager.updateMount(self().getOverlayMount(value));
-      },
-      get firstPlay() {
-        return self().firstPlay;
-      },
-      set firstPlay(value: boolean) {
-        self().firstPlay = value;
-      },
-      stopTranslation: () => this.stopTranslation(),
-      get uiManager() {
-        return self().uiManager as any;
-      },
-      getVideoData: () => this.getVideoData(),
-      cacheManager: {
-        getSubtitles: (key: string) => self().cacheManager.getSubtitles(key),
-      },
-      getSubtitlesCacheKey: (
-        videoId: string,
-        detectedLanguage: string,
-        responseLanguage: string,
-      ) =>
-        this.getSubtitlesCacheKey(videoId, detectedLanguage, responseLanguage),
-      ensureSubtitlesForCurrentLangPair: () =>
-        this.ensureSubtitlesForCurrentLangPair(),
-      updateSubtitlesLangSelect: () => this.updateSubtitlesLangSelect(),
-      enableSubtitlesForCurrentLangPair: () =>
-        this.enableSubtitlesForCurrentLangPair(),
-      setSelectMenuValues: (from: string, to: string) =>
-        this.setSelectMenuValues(from, to),
-      get translateToLang() {
-        return self().translateToLang;
-      },
-      set translateToLang(value: string) {
-        if (isResponseLang(value)) self().translateToLang = value;
-      },
-      get data() {
-        return self().data ?? {};
-      },
-      get subtitles() {
-        return self().subtitles;
-      },
-      set subtitles(value: any[]) {
-        self().subtitles = value;
-      },
-      get subtitlesCacheKey() {
-        return self().subtitlesCacheKey;
-      },
-      set subtitlesCacheKey(value: string | null) {
-        self().subtitlesCacheKey = value;
-      },
-      get videoData() {
-        return self().videoData;
-      },
-      set videoData(value: any) {
-        self().videoData = value;
-      },
-      get actionsAbortController() {
-        return self().actionsAbortController;
-      },
-      set actionsAbortController(value: AbortController) {
-        self().actionsAbortController = value;
-      },
-      resetActionsAbortController: (reason?: unknown) =>
-        this.resetActionsAbortController(reason),
-      initVOTClient: () => this.initVOTClient(),
-      translationOrchestrator: this.translationOrchestrator,
-      resetSubtitlesWidget: () => this.resetSubtitlesWidget(),
-      queueOverlayAutoHide: () => this.overlayVisibility?.queueAutoHide(),
-      onPrimaryAttachReady: () => this.onPrimaryAttachReady?.(),
-      syncSourceAudioAvailabilityUi: (options?: { forceVisible?: boolean }) =>
-        this.syncSourceAudioAvailabilityUi(options),
-    };
-    this.lifecycleController = new VideoLifecycleController(lifecycleHost);
-    this.translationHandler = new VOTTranslationHandler(this);
-    this.videoManager = new VOTVideoManager(this);
-  }
-
-  /**
-   * Lazily creates the subtitles widget.
-   * @returns {SubtitlesWidget}
-   */
-  getSubtitlesWidget() {
-    if (!this.subtitlesWidget) {
-      const { subtitlesMountContainer } = this.getOverlayMountPoints();
-      this.subtitlesWidget = new SubtitlesWidget(
-        this.video,
-        subtitlesMountContainer,
-        this.interactionChecker,
-        this.tooltipLayoutRoot,
-      );
-
-      if (this.data) {
-        // Smart layout is enabled by default for new users.
-        // When enabled, the widget will compute font-size / line length based on player size.
-        this.subtitlesWidget.setSmartLayout(
-          typeof this.data.subtitlesSmartLayout === "boolean"
-            ? this.data.subtitlesSmartLayout
-            : true,
-        );
-        if (typeof this.data.subtitlesMaxLength === "number") {
-          this.subtitlesWidget.setMaxLength(this.data.subtitlesMaxLength);
-        }
-        if (typeof this.data.highlightWords === "boolean") {
-          this.subtitlesWidget.setHighlightWords(this.data.highlightWords);
-        }
-        if (typeof this.data.subtitlesFontSize === "number") {
-          this.subtitlesWidget.setFontSize(this.data.subtitlesFontSize);
-        }
-        if (typeof this.data.subtitlesFontFamily === "string") {
-          this.subtitlesWidget.setFontFamily(
-            this.data.subtitlesFontFamily as SubtitleFontFamily,
-          );
-        }
-        if (typeof this.data.subtitlesOpacity === "number") {
-          this.subtitlesWidget.setOpacity(this.data.subtitlesOpacity);
-        }
-      }
-    }
-    return this.subtitlesWidget;
-  }
-
-  /**
-   * Determines whether subtitles widget is initialized\.
-   * @returns {boolean}
-   */
-  hasSubtitlesWidget() {
-    return Boolean(this.subtitlesWidget);
-  }
-
-  resetSubtitlesWidget() {
-    if (this.hasSubtitlesWidget()) {
-      this.subtitlesWidget?.release();
-      this.subtitlesWidget = undefined;
-    }
-  }
-
-  /**
-   * Root element for overlay UI (buttons/menu) so it remains clickable on players
-   * that disable pointer events on inner layers.
-   */
-  get uiRoot(): HTMLElement {
-    return this.getOverlayMountPoints().root;
-  }
-
-  /**
-   * Determines the DOM container used for overlay portals.
-   * @returns {HTMLElement}
-   */
-  get portalContainer() {
-    return this.getOverlayMountPoints().portalContainer;
-  }
-
-  /**
-   * Determines the root element used for tooltip layout calculations.
-   * @returns {HTMLElement | undefined}
-   */
-  get tooltipLayoutRoot() {
-    switch (this.site.host) {
-      case "kickstarter": {
-        return document.getElementById("react-project-header") ?? undefined;
-      }
-      case "custom": {
-        return undefined;
-      }
-      default: {
-        return this.container;
-      }
-    }
-  }
-
-  /**
-   * Returns the container element for event listeners.
-   * @returns {HTMLElement} The event container.
-   */
-  getEventContainer() {
-    if (!this.site.eventSelector) return this.container;
-    const matched = findConnectedContainerBySelector(
-      this.video,
-      this.site.eventSelector,
-    );
-    return matched ?? this.container;
-  }
-
-  /**
-   * Run auto translate using orchestrator dependencies.
-   */
-  async runAutoTranslate() {
-    let sourceAudioState = this.syncSourceAudioAvailabilityUi({
-      forceVisible: true,
-    });
-    if (!sourceAudioState.ready) {
-      console.log("[VOT][source-audio] auto-translate blocked before start", {
-        kind: sourceAudioState.kind,
-        ready: sourceAudioState.ready,
-        audioDetected: sourceAudioState.audioDetected,
-        detectionSource: sourceAudioState.detectionSource,
-      });
-      return false;
-    }
-
-    await this.videoManager.videoValidator();
-
-    sourceAudioState = this.syncSourceAudioAvailabilityUi({
-      forceVisible: true,
-    });
-    if (!sourceAudioState.ready) {
-      console.log(
-        "[VOT][source-audio] auto-translate blocked after validation",
-        {
-          kind: sourceAudioState.kind,
-          ready: sourceAudioState.ready,
-          audioDetected: sourceAudioState.audioDetected,
-          detectionSource: sourceAudioState.detectionSource,
-        },
-      );
-      return false;
-    }
-
-    await this.uiManager.handleTranslationBtnClick();
-    return true;
-  }
-
-  /**
-   * Lazily initializes and returns the AudioContext.
-   * @returns {AudioContext | undefined}
-   */
-  getAudioContext() {
-    if (this.audioContext) return this.audioContext;
-    if (!this.isAudioContextSupported) return undefined;
-    try {
-      this.audioContext = initAudioContext();
-      return this.audioContext;
-    } catch (err) {
-      // Some environments expose AudioContext but still fail to initialize.
-      console.warn("[VOT] Failed to init AudioContext, falling back:", err);
-      return undefined;
-    }
-  }
-
-  get isAudioContextSupported() {
-    return (
-      globalThis.AudioContext !== undefined ||
-      (globalThis as any).webkitAudioContext !== undefined
-    );
-  }
-
-  /**
-   * Determines if audio should be preferred.
-   * @returns {boolean} True if audio is preferred.
-   */
-  getPreferAudio() {
-    const siteHost = this.site.host;
-    const videoHost = this.videoData?.host;
-    const isStream = this.videoData?.isStream ?? false;
-
-    if (isCustomPlaybackTarget(siteHost, videoHost) || isStream) {
-      return true;
-    }
-
-    const hasAudioContext = Boolean(this.getAudioContext());
-    const data = this.data;
-    return shouldUsePlainAudioPlayback({
-      siteHost,
-      videoHost,
-      isStream,
-      hasAudioContext,
-      newAudioPlayer: data?.newAudioPlayer,
-      onlyBypassMediaCSP: data?.onlyBypassMediaCSP,
-      needBypassCSP: this.site.needBypassCSP,
-    });
-  }
-  /**
-   * Creates the audio player.
-   * @returns {VideoHandler} The VideoHandler instance.
-   */
-  createPlayer() {
-    const preferAudio = this.getPreferAudio();
-    debug.log("preferAudio:", preferAudio);
-    this.audioPlayer = new Chaimu({
-      video: this.video,
-      // DEBUG_MODE is injected at build-time.
-      debug: Boolean(DEBUG_MODE),
-      fetchFn: GM_fetch,
-      fetchOpts: {
-        timeout: 0,
-      },
-      preferAudio,
-    });
-    if (preferAudio) {
-      const playerAudioContext = this.audioPlayer.audioContext;
-      this.audioPlayer.audioContext = undefined;
-
-      if (playerAudioContext && playerAudioContext.state !== "closed") {
-        void playerAudioContext.close().catch(() => {
-          // ignore
-        });
-      }
-
-      if (this.audioContext && this.audioContext.state !== "closed") {
-        const handlerAudioContext = this.audioContext;
-        this.audioContext = undefined;
-        void handlerAudioContext.close().catch(() => {
-          // ignore
-        });
-      }
-    }
-    return this;
-  }
-
-  /**
-   * Returns true if a detected external volume update is very likely caused by
-   * our own recent programmatic setVideoVolume call.
-   */
-  isLikelyInternalVideoVolumeChange(observedPercent: number) {
-    const now = Date.now();
-    const history = this.internalVideoVolumeSetHistory;
-    if (history.length > 0) {
-      let writeIndex = 0;
-      let matchFound = false;
-
-      for (const entry of history) {
-        if (now - entry.at > entry.suppressMs) {
-          continue;
-        }
-
-        history[writeIndex++] = entry;
-        // Allow a 1% tolerance to account for hosts that quantize volume.
-        if (!matchFound && Math.abs(observedPercent - entry.percent) <= 1) {
-          matchFound = true;
-        }
-      }
-
-      history.length = writeIndex;
-      return matchFound;
-    }
-
-    if (this.internalVideoVolumeSetPercent === null) return false;
-
-    const ageMs = now - this.internalVideoVolumeSetAt;
-    if (ageMs > this.internalVideoVolumeSuppressionMs) return false;
-
-    return Math.abs(observedPercent - this.internalVideoVolumeSetPercent) <= 1;
-  }
-
-  private callModule<TArgs extends unknown[], TResult>(
-    impl: (this: VideoHandler, ...args: TArgs) => TResult,
-    ...args: TArgs
-  ): TResult {
-    return impl.call(this, ...args);
-  }
-
-  private callModuleAsync<TArgs extends unknown[], TResult>(
-    impl: (this: VideoHandler, ...args: TArgs) => Promise<TResult>,
-    ...args: TArgs
-  ): Promise<TResult> {
-    return impl.call(this, ...args);
-  }
-
-  /**
-   * Initializes the VideoHandler: loads settings, UI, video data, events, etc.
-   * @returns {Promise<void>}
-   */
-  init(): Promise<void> {
-    return initVideoHandler.call(this);
-  }
-
-  /**
-   * Initializes the VOT client.
-   * @returns {VideoHandler} This instance.
-   */
-  async initVOTClient() {
-    const transportHost = this.data?.translateProxyEnabled
-      ? (this.data?.proxyWorkerHost ?? proxyWorkerHost)
-      : workerHost;
-    this.votOpts = {
-      fetchFn: GM_fetch,
-      fetchOpts: {
-        signal: this.actionsAbortController.signal,
-        forceGmXhr: true,
-      },
-      apiToken: this.data?.account?.token,
-      hostVOT: votBackendUrl,
-      host: transportHost,
-    };
-    this.votClient = new (
-      this.data?.translateProxyEnabled ? VOTWorkerClient : VOTClient
-    )(this.votOpts);
-    this.votClient.sessions = await this.votSessionStorage.restore(
-      transportHost,
-      this.votClient.sessions,
-    );
-
-    const originalGetSession = this.votClient.getSession.bind(this.votClient);
-    this.votClient.getSession = async (
-      module: SessionModule,
-    ): Promise<ClientSession> => {
-      const session = await originalGetSession(module);
-      await this.votSessionStorage.persist(
-        transportHost,
-        this.votClient.sessions,
-      );
-      return session;
-    };
-
-    return this;
-  }
-
-  /**
-   * Sets the translation button state and text.
-   * @param {string} status The new status.
-   * @param {string} text The text to display.
-   * @returns {VideoHandler} This instance.
-   */
-  transformBtn(status: Status, text: string): this {
-    this.uiManager.transformBtn(status, text);
-    return this;
-  }
-
-  /**
-   * @returns {boolean} True if the extension audio player has active audio source
-   */
-  hasActiveSource() {
-    return Boolean(
-      this.audioPlayer?.player?.src || this.externalTranslationSourceUrl,
-    );
-  }
-
-  getSourceAudioAvailabilityState(): SourceAudioAvailabilityState {
-    return getSourceAudioAvailability(this.video);
-  }
-
-  syncSourceAudioAvailabilityUi(
-    options: { forceVisible?: boolean } = {},
-  ): SourceAudioAvailabilityState {
-    const state = this.getSourceAudioAvailabilityState();
-    const overlayView = this.uiManager.votOverlayView;
-    if (!overlayView?.votButton) {
-      return state;
-    }
-    const previousStatus = overlayView.votButton.status;
-
-    if (options.forceVisible) {
-      overlayView.votButton.container.hidden = false;
-      overlayView.updateButtonOpacity(1);
-    }
-
-    if (this.hasActiveSource() || overlayView.votButton.loading) {
-      return state;
-    }
-
-    if (!state.ready) {
-      this.overlayVisibility?.cancel();
-      const label = localizationProvider.get(state.localizationKey as any);
-      this.transformBtn("disabled", label);
-      return state;
-    }
-
-    if (previousStatus === "disabled") {
-      this.transformBtn("none", localizationProvider.get("translateVideo"));
-      this.overlayVisibility?.queueAutoHide();
-    }
-
-    return state;
-  }
-
-  isAwaitingAutoplayRecovery(): boolean {
-    return this.callModule(isAwaitingAutoplayRecoveryImpl);
-  }
-
-  clearPendingAutoplayRecovery(resetUi = false): void {
-    this.callModule(clearPendingAutoplayRecoveryImpl, resetUi);
-  }
-
-  resumePendingAutoplayRecovery(trigger = "manual"): Promise<boolean> {
-    return this.callModuleAsync(resumePendingAutoplayRecoveryImpl, trigger);
-  }
-
-  primePlaybackByGesture(trigger = "manual"): Promise<void> {
-    return this.callModuleAsync(primePlaybackByGestureImpl, trigger);
-  }
-
-  /**
-   * Initializes extra event listeners (resize, click outside, keydown, etc.).
-   */
-  initExtraEvents() {
-    return this.callModule(initExtraEventsImpl);
-  }
-
-  /**
-   * Recomputes overlay mount points and rebinds interaction targets.
-   *
-   * Used when fullscreen state changes without changing `this.container`
-   * (common for players inside Shadow DOM).
-   */
-  refreshOverlayMount(): void {
-    if (isMobileYouTubeLikeSite(this.site)) {
-      const nextContainer = this.resolveCurrentContainer();
-      if (nextContainer !== this.container) {
-        this.container = nextContainer;
-      }
-    }
-    this.mountCache = undefined;
-    const nextMount = this.getOverlayMount(this.container);
-    const mountChanged = !isSameOverlayMount(this.uiManager.mount, nextMount);
-    this.uiManager.updateMount(nextMount);
-    if (!mountChanged) {
-      return;
-    }
-    this.rebindOverlayVisibilityTargets();
-  }
-
-  async ensureOverlayVerified(reason = "attach"): Promise<boolean> {
-    const verificationGeneration = ++this.overlayVerificationGeneration;
-    const retryDelaysMs = [0, 500, 1000, 1500];
-
-    debug.log("[VOT][observer] overlay mount requested", {
-      reason,
-      siteHost: this.site.host,
-      videoId: this.videoData?.videoId,
-      src: this.video.currentSrc || this.video.src || "",
-    });
-
-    for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
-      if (
-        this.abortController.signal.aborted ||
-        verificationGeneration !== this.overlayVerificationGeneration
-      ) {
-        return false;
-      }
-
-      const delayMs = retryDelaysMs[attempt];
-      if (delayMs > 0) {
-        await new Promise<void>((resolve) => {
-          globalThis.setTimeout(resolve, delayMs);
-        });
-      }
-
-      if (
-        this.abortController.signal.aborted ||
-        verificationGeneration !== this.overlayVerificationGeneration
-      ) {
-        return false;
-      }
-
-      const before = this.uiManager.getOverlayVerificationState({
-        requireVisible: true,
-      });
-      if (before.verified) {
-        debug.log("[VOT][observer] overlay verified", {
-          reason,
-          attempt,
-          ...before,
-        });
-        return true;
-      }
-
-      this.refreshOverlayMount();
-      const after = this.uiManager.ensureOverlayMounted({ forceVisible: true });
-
-      try {
-        this.rebindOverlayVisibilityTargets();
-      } catch (error) {
-        debug.warn(
-          "[VOT][observer] failed to rebind overlay visibility",
-          error,
-        );
-      }
-
-      this.syncSourceAudioAvailabilityUi({ forceVisible: true });
-
-      if (after.verified) {
-        debug.log("[VOT][observer] overlay verified", {
-          reason,
-          attempt,
-          ...after,
-        });
-        return true;
-      }
-
-      if (attempt < retryDelaysMs.length - 1) {
-        debug.log("[VOT][observer] overlay missing after attach, retrying", {
-          reason,
-          attempt,
-          nextDelayMs: retryDelaysMs[attempt + 1],
-          ...after,
-        });
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Re-attach overlayVisibility listeners to the *current* overlay button/menu elements.
-   *
-   * The overlay UI gets recreated in some flows (e.g. menu language change),
-   * so listeners that were attached to the old DOM nodes must be re-bound.
-   */
-  rebindOverlayVisibilityTargets = rebindOverlayVisibilityTargetsImpl;
-
-  /**
-   * Called when the video can play.
-   */
-  setCanPlay() {
-    return this.lifecycleController.setCanPlay();
-  }
-
-  isOverlayInteractiveNode(node: unknown): boolean {
-    return this.callModule(isOverlayInteractiveNodeImpl, node);
-  }
-
-  /**
-   * Schedules hiding the overlay button with guard checks for internal navigation.
-   */
-  getAutoHideDelay(): number {
-    return this.callModule(getAutoHideDelayImpl);
-  }
-
-  /**
-   * Changes subtitles language based on user selection.
-   * @param {string} subs The subtitles selection value.
-   */
-  changeSubtitlesLang: (subs: string) => Promise<this> =
-    changeSubtitlesLangImpl as unknown as (subs: string) => Promise<this>;
-
-  /**
-   * Updates the subtitles selection options.
-   */
-  updateSubtitlesLangSelect = updateSubtitlesLangSelectImpl;
-
-  /**
-   * Ensures the in-memory subtitles list matches the current language-pair cache key.
-   */
-  ensureSubtitlesForCurrentLangPair = ensureSubtitlesForCurrentLangPairImpl;
-
-  /**
-   * Loads subtitles for the current video.
-   */
-  loadSubtitles = loadSubtitlesImpl;
-
-  /**
-   * Enables subtitles that match the currently selected language pair (from -> to).
-   *
-   * Used by the subtitles hotkey: prefers Yandex captions for the exact pair,
-   * then falls back to any captions in the target language.
-   */
-  enableSubtitlesForCurrentLangPair() {
-    return this.callModuleAsync(enableSubtitlesForCurrentLangPairImpl);
-  }
-
-  /**
-   * Toggles subtitles for the current video.
-   *
-   * - If subtitles are enabled, this disables them.
-   * - If subtitles are disabled, this enables the best subtitles track for the
-   *   current language pair.
-   */
-  toggleSubtitlesForCurrentLangPair() {
-    return this.callModuleAsync(toggleSubtitlesForCurrentLangPairImpl);
-  }
-
-  getRequestLangForTranslation(
-    requestLang: RequestLang,
-    responseLang: ResponseLang,
-  ): RequestLang {
-    if (
-      this.data?.useLivelyVoice &&
-      this.data?.account?.token &&
-      responseLang === "ru"
-    ) {
-      // Keep menu selection intact, but force English in API requests
-      // when lively voices are enabled.
-      return "en";
-    }
-    return requestLang;
-  }
-
-  isLivelyVoiceAllowed(
-    requestLang: RequestLang = this.videoData?.detectedLanguage ?? "auto",
-    responseLang: ResponseLang = this.videoData?.responseLanguage ??
-      this.translateToLang,
-  ) {
-    const requestLangForApi = this.getRequestLangForTranslation(
-      requestLang,
-      responseLang,
-    );
-    // allowed only en -> ru pair
-    if (requestLangForApi !== "en" || responseLang !== "ru") {
-      return false;
-    }
-
-    // allowed only with auth
-    if (!this.data?.account?.token) {
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
-   * Gets the video volume.
-   * @returns {number} The video volume (0.0 - 1.0).
-   */
-  getVideoVolume() {
-    return this.videoManager.getVideoVolume();
-  }
-
-  /**
-   * Sets the video volume.
-   * @param {number} volume A number between 0 and 1.
-   * @returns {VideoHandler} This instance.
-   */
-  setVideoVolume(
-    volume: number,
-    options: { suppressSyncMs?: number } = {},
-  ): this {
-    const snapped = snapVolume01(volume);
-    const suppressSyncMs =
-      typeof options.suppressSyncMs === "number" &&
-      Number.isFinite(options.suppressSyncMs)
-        ? Math.max(0, options.suppressSyncMs)
-        : this.internalVideoVolumeSuppressionMs;
-    const now = Date.now();
-    const percent = volume01ToPercent(snapped);
-
-    // Remember this programmatic update so external observers (e.g. YouTube aria
-    // mutations) won't treat it as a user-driven volume change and resync volumes
-    // again (which would cause drift/loops).
-    this.internalVideoVolumeSetAt = now;
-    this.internalVideoVolumeSetPercent = percent;
-    this.internalVideoVolumeSetHistory.push({
-      at: now,
-      percent,
-      suppressMs: suppressSyncMs,
-    });
-    if (
-      this.internalVideoVolumeSetHistory.length >
-      this.internalVideoVolumeSetHistoryLimit
-    ) {
-      this.internalVideoVolumeSetHistory.splice(
-        0,
-        this.internalVideoVolumeSetHistory.length -
-          this.internalVideoVolumeSetHistoryLimit,
-      );
-    }
-
-    this.videoManager.setVideoVolume(snapped);
-    return this;
-  }
-
-  /**
-   * Keeps internal syncVolume state aligned with observed/programmatic video-volume changes.
-   */
-  onVideoVolumeSliderSynced(volumePercent: number) {
-    const normalized = clampPercentInt(volumePercent);
-
-    // If syncVolume isn't initialized yet, keep the state aligned so the first
-    // delta computation won't jump.
-    if (!this.volumeLinkState.initialized) {
-      syncVideoLinkSnapshot(this.volumeLinkState, normalized);
-      return;
-    }
-
-    // When syncVolume is active during translation, ONLY update the delta baseline
-    // for internal (programmatic) updates. External updates should be handled by
-    // syncVolumeWrapper("video", ...) so that the delta is preserved.
-    if (
-      this.data?.syncVolume &&
-      this.hasActiveSource() &&
-      !this.isLikelyInternalVideoVolumeChange(normalized)
-    ) {
-      return;
-    }
-
-    syncVideoLinkSnapshot(this.volumeLinkState, normalized);
-  }
-
-  /**
-   * Keeps internal translation-volume snapshot aligned when syncVolume is
-   * temporarily disabled, so re-enabling link mode does not apply stale deltas.
-   */
-  onTranslationVolumeSliderSynced(volumePercent: number) {
-    if (!this.volumeLinkState.initialized) {
-      syncTranslationLinkSnapshot(this.volumeLinkState, volumePercent);
-      return;
-    }
-
-    syncTranslationLinkSnapshot(this.volumeLinkState, volumePercent);
-  }
-
-  /**
-   * Re-seeds syncVolume baseline from current UI slider values.
-   * Useful when toggling syncVolume on/off to avoid stale delta state.
-   */
-  resetVolumeLinkState(videoPercent: number, translationPercent: number): void {
-    syncVideoLinkSnapshot(this.volumeLinkState, videoPercent);
-    syncTranslationLinkSnapshot(this.volumeLinkState, translationPercent);
-    this.volumeLinkState.initialized = true;
-  }
-
-  /**
-   * Checks if the video is muted.
-   * @returns {boolean} True if muted.
-   */
-  isMuted() {
-    return this.videoManager.isMuted();
-  }
-
-  /**
-   * Syncs the video volume slider.
-   */
-  syncVideoVolumeSlider() {
-    this.videoManager.syncVideoVolumeSlider();
-  }
-
-  /**
-   * Sets language select menu values.
-   * @param {string} from Source language.
-   * @param {string} to Target language.
-   */
-  setSelectMenuValues(from: string, to: string): void {
-    this.videoManager.setSelectMenuValues(
-      from as RequestLang,
-      to as ResponseLang,
-    );
-  }
-
-  /**
-   * Keeps translation and video sliders linked (syncVolume option).
-   *
-   * The implementation is delta-based: when the user changes one slider, the
-   * other slider moves by the same delta. This preserves the relative
-   * difference between volumes and works with "audio booster" (translation can
-   * exceed 100%).
-   */
-  syncVolumeWrapper(
-    fromType: "translation" | "video",
-    newVolume: number,
-  ): void {
-    const overlayView = this.uiManager.votOverlayView;
-    if (!overlayView?.isInitialized()) {
-      return;
-    }
-
-    const videoSlider = overlayView.videoVolumeSlider;
-    const translationSlider = overlayView.translationVolumeSlider;
-
-    if (!videoSlider || !translationSlider) {
-      return;
-    }
-    const { nextVideo, nextTranslation } = applyVolumeLinkDelta({
-      state: this.volumeLinkState,
-      fromType,
-      newVolume,
-      currentVideo: Number(videoSlider.value),
-      currentTranslation: Number(translationSlider.value),
-      translationMin: translationSlider.min,
-      translationMax: translationSlider.max,
-    });
-
-    if (typeof nextTranslation === "number") {
-      translationSlider.value = nextTranslation;
-      if (this.audioPlayer?.player) {
-        this.audioPlayer.player.volume = nextTranslation / 100;
-      }
-      return;
-    }
-
-    if (typeof nextVideo === "number") {
-      videoSlider.value = nextVideo;
-      this.setVideoVolume(nextVideo / 100);
-    }
-  }
-
-  /**
-   * Retrieves video data.
-   * @returns {Promise<Object>} The video data object.
-   */
-  getVideoData() {
-    return this.videoManager.getVideoData();
-  }
-  sanitizeDownloadName(value: string): string {
-    return value
-      .replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "")
-      .replace(/[<>:"/\\|?*]/g, "_")
-      .replace(/\s+/g, " ")
-      .trim();
-  }
-
-  getDownloadBaseName(): string {
-    const fromDownloadTitle =
-      typeof this.videoData?.downloadTitle === "string" &&
-      this.videoData.downloadTitle.trim()
-        ? this.videoData.downloadTitle
-        : undefined;
-
-    const fromVideoData =
-      typeof this.videoData?.title === "string" && this.videoData.title.trim()
-        ? this.videoData.title
-        : undefined;
-
-    const fromCurrentVideoTitle =
-      typeof (this.videoData as any)?.videoTitle === "string" &&
-      (this.videoData as any).videoTitle.trim()
-        ? (this.videoData as any).videoTitle
-        : undefined;
-
-    const raw =
-      fromDownloadTitle ||
-      fromVideoData ||
-      fromCurrentVideoTitle ||
-      `translation-${this.videoData?.videoId ?? "audio"}`;
-
-    return this.sanitizeDownloadName(raw);
-  }
-  /**
-   * Validates the video.
-   * @returns {Promise<boolean>} True if valid.
-   */
-  videoValidator() {
-    return this.videoManager.videoValidator();
-  }
-
-  /**
-   * Stops translation and resets UI elements.
-   */
-  stopTranslate(): Promise<void> {
-    if (this.stopTranslatePromise !== null) {
-      return this.stopTranslatePromise;
-    }
-
-    const cleanup = async () => {
-      this.clearPendingAutoplayRecovery();
-      this.externalTranslationSourceUrl = null;
-      if (this.audioPlayer?.player) {
-        try {
-          this.audioPlayer.player.removeVideoEvents();
-          this.audioPlayer.player.src = "";
-          await this.audioPlayer.player.clear();
-        } catch (err) {
-          debug.log("[stopTranslate] audioPlayer cleanup error", err);
-        }
-        debug.log("audioPlayer after stopTranslate", this.audioPlayer);
-      }
-      this.activeTranslation = null;
-      this.activeVoiceMode = null;
-      const overlayView = this.uiManager.votOverlayView;
-      if (overlayView) {
-        if (overlayView.videoVolumeSlider) {
-          overlayView.videoVolumeSlider.hidden = true;
-        }
-        if (overlayView.translationVolumeSlider) {
-          overlayView.translationVolumeSlider.hidden = true;
-        }
-        if (overlayView.downloadTranslationButton) {
-          overlayView.downloadTranslationButton.hidden = true;
-        }
-      }
-      this.downloadTranslationUrl = null;
-      this.longWaitingResCount = 0;
-      this.hadAsyncWait = false;
-      this.transformBtn("none", localizationProvider.get("translateVideo"));
-      this.syncSourceAudioAvailabilityUi();
-      debug.log(`Volume on start: ${this.volumeOnStart}`);
-
-      // Restore the original video volume. If the user adjusted volume while
-      // ducking was enabled, prefer the latest baseline volume.
-      const restoreVolume =
-        typeof this.smartVolumeDuckingBaseline === "number"
-          ? this.smartVolumeDuckingBaseline
-          : this.volumeOnStart;
-
-      stopSmartVolumeDuckingImpl(this, { restoreVolume });
-      this.volumeOnStart = undefined;
-      if (this.autoRetry !== undefined) {
-        clearTimeout(this.autoRetry);
-        this.autoRetry = undefined;
-      }
-      if (this.translationRefreshTimeout !== undefined) {
-        clearTimeout(this.translationRefreshTimeout);
-        this.translationRefreshTimeout = undefined;
-      }
-      this.translationHandler?.resetTranslationRequestState("stopTranslate");
-      // Cancel in-flight translation work.
-      this.resetActionsAbortController("stopTranslate");
-    };
-
-    const inFlight = cleanup().finally(() => {
-      if (this.stopTranslatePromise === inFlight) {
-        this.stopTranslatePromise = null;
-      }
-    });
-
-    this.stopTranslatePromise = inFlight;
-    return inFlight;
-  }
-
-  waitForPendingStopTranslate(): Promise<void> {
-    return this.stopTranslatePromise ?? RESOLVED_VOID_PROMISE;
-  }
-
-  /**
-   * Updates the translation error message on the UI.
-   * @param {string|Error} errorMessage The error message.
-   */
-  async updateTranslationErrorMsg(
-    errorMessage: any,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (signal?.aborted) {
-      return;
-    }
-    const translationTake = localizationProvider.get("translationTake");
-    const lang = localizationProvider.lang;
-    // A repeated "about a minute" UI string is not proof that the server
-    // is stalled: several decreasing ETA values map to this same text.
-    // Do not synthesize TranslationDelayed from the display string alone.
-    this.longWaitingResCount =
-      errorMessage === localizationProvider.get("translationTakeAboutMinute")
-        ? this.longWaitingResCount + 1
-        : 0;
-    debug.log("longWaitingResCount", this.longWaitingResCount);
-    debug.log("updateTranslationErrorMsg message", errorMessage);
-    if (errorMessage?.name === "VOTLocalizedError") {
-      this.transformBtn("error", errorMessage.localizedMessage);
-    } else if (errorMessage instanceof Error) {
-      this.transformBtn("error", errorMessage?.message);
-    } else if (
-      this.data?.translateAPIErrors &&
-      lang !== "ru" &&
-      !errorMessage?.includes(translationTake)
-    ) {
-      const overlayView = this.uiManager.votOverlayView;
-      if (!overlayView?.votButton) {
-        return;
-      }
-      const messageStr = Array.isArray(errorMessage)
-        ? errorMessage.join(" ")
-        : String(errorMessage);
-      const cacheKey = `${lang}:${messageStr}`;
-      const cached = this.errorTranslationCache.get(cacheKey);
-      if (cached) {
-        this.transformBtn("error", cached);
-      } else {
-        overlayView.votButton.loading = true;
-        const translatedMessage = await translate(messageStr, "ru", lang);
-        const translatedText = Array.isArray(translatedMessage)
-          ? translatedMessage.join("\n")
-          : String(translatedMessage);
-        if (signal?.aborted) {
-          return;
-        }
-        this.errorTranslationCache.set(cacheKey, translatedText);
-        // Prevent unbounded growth.
-        if (this.errorTranslationCache.size > 50) {
-          const oldestKey = this.errorTranslationCache.keys().next().value;
-          if (oldestKey) this.errorTranslationCache.delete(oldestKey);
-        }
-        this.transformBtn("error", translatedText);
-      }
-      if (signal?.aborted) {
-        return;
-      }
-    } else {
-      const msg = Array.isArray(errorMessage)
-        ? errorMessage.join("\n")
-        : String(errorMessage ?? "");
-      this.transformBtn("error", msg);
-    }
-    if (signal?.aborted) {
-      return;
-    }
-    if (
-      [
-        "Подготавливаем перевод",
-        "Видео передано в обработку",
-        "Ожидаем перевод видео",
-        "Загружаем переведенное аудио",
-      ].includes(errorMessage)
-    ) {
-      if (this.uiManager.votOverlayView?.votButton) {
-        this.uiManager.votOverlayView.votButton.loading = true;
-      }
-    }
-  }
-
-  /**
-   * Called after translation is updated.
-   * @param {string} audioUrl The URL of the translation audio.
-   */
-  afterUpdateTranslation(audioUrl) {
-    const overlayView = this.uiManager.votOverlayView;
-    if (!overlayView?.votButton) {
-      return;
-    }
-    const isSuccess =
-      overlayView.votButton.container.dataset.status === "success";
-    if (overlayView.videoVolumeSlider) {
-      overlayView.videoVolumeSlider.hidden =
-        !this.data?.showVideoSlider || !isSuccess;
-    }
-    if (overlayView.translationVolumeSlider) {
-      overlayView.translationVolumeSlider.hidden = !isSuccess;
-    }
-
-    // Re-initialize delta-based syncVolume state when translation becomes active.
-    if (overlayView.videoVolumeSlider && overlayView.translationVolumeSlider) {
-      this.volumeLinkState.lastVideoPercent = Number(
-        overlayView.videoVolumeSlider.value,
-      );
-      this.volumeLinkState.lastTranslationPercent = Number(
-        overlayView.translationVolumeSlider.value,
-      );
-      this.volumeLinkState.initialized = true;
-    } else {
-      this.volumeLinkState.initialized = false;
-    }
-
-    if (this.videoData && !this.videoData.isStream) {
-      if (overlayView.downloadTranslationButton) {
-        overlayView.downloadTranslationButton.hidden = false;
-      }
-      this.downloadTranslationUrl = audioUrl;
-    }
-    debug.log(
-      "afterUpdateTranslation downloadTranslationUrl",
-      this.downloadTranslationUrl,
-    );
-    this.syncTranslationPlaybackVolume();
-
-    if (isSuccess && this.site.host === "vk" && this.videoData?.videoId) {
-      const vkSubtitlesCacheKey = this.getSubtitlesCacheKey(
-        this.videoData.videoId,
-        this.videoData.detectedLanguage,
-        this.videoData.responseLanguage,
-      );
-      this.cacheManager.deleteSubtitles(vkSubtitlesCacheKey);
-      this.subtitles = [];
-      this.subtitlesCacheKey = null;
-      void (async () => {
-        try {
-          await this.loadSubtitles();
-          if (this.data?.autoSubtitles) {
-            await this.enableSubtitlesForCurrentLangPair();
-          }
-        } catch (error) {
-          debug.log("[VOT][VK subtitles] failed to refresh after translation", {
-            error,
-            videoId: this.videoData?.videoId,
-          });
-        }
-      })();
-    }
-
-    if (this.data?.sendNotifyOnComplete && this.hadAsyncWait && isSuccess) {
-      this.notifier.translationCompleted(globalThis.location.hostname);
-      this.hadAsyncWait = false;
-    }
-  }
-
-  /**
-   * Validates the audio URL by sending a request.
-   * @param {string} audioUrl The audio URL to validate.
-   * @returns {Promise<string>} The valid audio URL.
-   */
-  validateAudioUrl(
-    audioUrl: string,
-    actionContext?: { gen: number; videoId: string },
-  ): Promise<string> {
-    return this.callModuleAsync(validateAudioUrlImpl, audioUrl, actionContext);
-  }
-
-  scheduleTranslationRefresh(): void {
-    this.callModule(scheduleTranslationRefreshImpl);
-  }
-
-  refreshTranslationAudio = refreshTranslationAudioImpl;
-
-  /**
-   * Proxifies the audio URL if needed.
-   * @param {string} audioUrl The original audio URL.
-   * @returns {string} The proxified audio URL.
-   */
-  proxifyAudio(audioUrl: string): string {
-    return this.callModule(proxifyAudioImpl, audioUrl);
-  }
-
-  /**
-   * Reverts a previously proxified audio URL back to the original Yandex S3 URL.
-   *
-   * This allows us to re-apply proxy settings when the proxy host/mode changes
-   * without permanently "locking in" the old proxy host in the current player
-   * src.
-   */
-  unproxifyAudio(audioUrl: string): string {
-    return this.callModule(unproxifyAudioImpl, audioUrl);
-  }
-
-  /**
-   * Called when proxy-related settings are changed at runtime.
-   *
-   * - Clears in-memory caches so old failures/URLs don't persist.
-   * - Cancels any in-flight translation work.
-   * - Best-effort refreshes the active audio source so the new proxy host/mode
-   *   takes effect immediately.
-   */
-  handleProxySettingsChanged = handleProxySettingsChangedImpl;
-
-  isMultiMethodS3(url: string): boolean {
-    return this.callModule(isMultiMethodS3Impl, url);
-  }
-
-  /**
-   * Updates the translation audio source.
-   * @param {string} audioUrl The audio URL.
-   */
-  updateTranslation = updateTranslationImpl;
-
-  /**
-   * Translates the video/audio.
-   * @param {string} VIDEO_ID The video ID.
-   * @param {boolean} isStream Whether the video is a stream.
-   * @param {string} requestLang Source language.
-   * @param {string} responseLang Target language.
-   * @param {any} translationHelp Optional translation helper data.
-   */
-  translateFunc(
-    VIDEO_ID: string,
-    isStream: boolean,
-    requestLang: string,
-    responseLang: string,
-    translationHelp?: any,
-  ): Promise<void> {
-    return translateFuncImpl.call(
-      this,
-      VIDEO_ID,
-      isStream,
-      requestLang,
-      responseLang,
-      translationHelp,
-    );
-  }
-
-  /**
-   * used for enable audio downloader on this hosts
-   */
-  isYouTubeHosts() {
-    return this.callModule(isYouTubeHostsImpl);
-  }
-  canUploadAudioForCurrentSite(): boolean {
-    const host = this.site.host;
-    const rawUrl = String(
-      this.videoData?.url || this.video?.currentSrc || this.video?.src || "",
-    );
-    debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
-
-    const canForceLocalFileUpload = (() => {
-      if (!rawUrl) {
-        return isCustomPlaybackTarget(host, this.videoData?.host);
-      }
-
-      try {
-        const normalizedUrl = new URL(
-          rawUrl,
-          globalThis.location.href,
-        ).toString();
-
-        if (!this.votClient.isDirectMediaUrl(normalizedUrl)) {
-          return isCustomPlaybackTarget(host, this.videoData?.host);
-        }
-
-        return (
-          isCustomPlaybackTarget(host, this.videoData?.host) ||
-          new URL(normalizedUrl).hostname !== globalThis.location.hostname
-        );
-      } catch {
-        return isCustomPlaybackTarget(host, this.videoData?.host);
-      }
-    })();
-
-    if (canForceLocalFileUpload) {
-      return true;
-    }
-
-    if (!this.data?.useAudioDownload) {
-      return false;
-    }
-
-    return (
-      host === "youtube" ||
-      host === "invidious" ||
-      host === "piped" ||
-      host === "yandexdisk" ||
-      host === "douyin" ||
-      host === "custom" ||
-      host === "vk"
-    );
-  }
-  /**
-   * Configures audio settings such as volume.
-   */
-  setupAudioSettings() {
-    return this.callModule(setupAudioSettingsImpl);
-  }
-
-  syncTranslationPlaybackVolume(): void {
-    this.callModule(syncTranslationPlaybackVolumeImpl);
-  }
-
-  applyManualVideoVolumeOverride(volume: number): void {
-    this.callModule(applyManualVideoVolumeOverrideImpl, volume);
-  }
-
-  /**
-   * Stops translation and synchronizes volume.
-   */
-  stopTranslation = async () => {
-    this.translationOrchestrator?.reset();
-    this.overlayVisibility?.cancel();
-    await this.stopTranslate();
-    this.syncVideoVolumeSlider();
-  };
-
-  /**
-   * Handles video source change events.
-   */
-  handleSrcChanged() {
-    return this.lifecycleController.handleSrcChanged();
-  }
-
-  /**
-   * Releases resources and removes event listeners.
-   */
-  async release() {
-    debug.log("[VideoHandler] release");
-    if (
-      /^(m|music)\.youtube\.com$/i.test(
-        String(globalThis.location.hostname || ""),
-      )
-    ) {
-      console.log("[VOT][mobile-overlay][handler] VideoHandler.release()", {
-        videoId: this.videoData?.videoId,
-        page: `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`,
-      });
-    }
-    this.initialized = false;
-    this.overlayVerificationGeneration += 1;
-    try {
-      await this.stopTranslation();
-    } catch (err) {
-      debug.log("[VideoHandler] stopTranslation failed during release", err);
-    }
-    this.lifecycleController?.teardown();
-    this.abortController?.abort();
-    this.abortController = new AbortController();
-    this.overlayVisibility?.release();
-    this.releaseExtraEvents();
-    if (this.hasSubtitlesWidget()) {
-      this.subtitlesWidget?.release();
-      this.subtitlesWidget = undefined;
-    }
-    this.interactionChecker?.destroy();
-    this.uiManager.release();
-    if (
-      (globalThis as Record<string, unknown>)[
-        GOOGLE_DRIVE_ACTIVE_HANDLER_KEY
-      ] === this
-    ) {
-      Reflect.deleteProperty(
-        globalThis as Record<string, unknown>,
-        GOOGLE_DRIVE_ACTIVE_HANDLER_KEY,
-      );
-    }
-  }
-
-  /**
-   * Collects report information for bug reporting.
-   * @returns {Object} Report info object.
-   */
-  collectReportInfo() {
-    const info = getEnvironmentInfoImpl();
-    const detectedLanguage = this.videoData?.detectedLanguage ?? "unknown";
-    const responseLanguage = this.videoData?.responseLanguage ?? "unknown";
-    const additionalInfo = `<details>
+	video!: HTMLVideoElement;
+	container!: HTMLElement;
+	site!: ServiceConf;
+
+	// Public API / core state
+	translateFromLang: RequestLang = "auto";
+	translateToLang: ResponseLang = calculatedResLang;
+
+	data?: Partial<StorageData>;
+	videoData?: VideoData;
+
+	firstPlay = true;
+	audioContext?: AudioContext;
+
+	votClient!: VOTClient | VOTWorkerClient;
+	audioPlayer!: Chaimu;
+
+	abortController!: AbortController;
+	actionsAbortController!: AbortController;
+
+	/** Increments whenever we reset/abort translation actions to invalidate stale async work */
+	actionsGeneration = 0;
+
+	notifier: Notifier = new Notifier();
+
+	cacheManager!: CacheManager;
+	votSessionStorage = new VOTSessionStorageCache();
+	/**
+	 * In-flight subtitles list requests, keyed by subtitles cache key.
+	 *
+	 * Prevents duplicate parallel requests when the subtitles hotkey is spammed
+	 * before the first request resolves.
+	 */
+	subtitlesLoadPromises = new Map<string, Promise<any[]>>();
+	downloadTranslationUrl: string | null = null;
+
+	translationRefreshTimeout?: ReturnType<typeof setTimeout>;
+	isRefreshingTranslation = false;
+
+	autoRetry?: ReturnType<typeof setTimeout>;
+	// streamPing?: ReturnType<typeof setInterval>;
+	votOpts?: Record<string, unknown>;
+	volumeOnStart?: number;
+
+	/**
+	 * syncVolume (link translation and video volume) runtime state.
+	 * We keep last-known slider values to apply deltas reliably.
+	 */
+	volumeLinkState = {
+		initialized: false,
+		lastVideoPercent: 0,
+		lastTranslationPercent: 0,
+	};
+
+	/**
+	 * Used to ignore our own programmatic video-volume updates when observing
+	 * external UIs (e.g. YouTube volume panel aria mutations).
+	 */
+	internalVideoVolumeSetAt = 0;
+	internalVideoVolumeSetPercent: number | null = null;
+	internalVideoVolumeSuppressionMs = 250;
+	internalVideoVolumeSetHistory: InternalVideoVolumeSetHistoryEntry[] = [];
+	internalVideoVolumeSetHistoryLimit = 48;
+
+	// Smart auto-volume ducking state. Used to lower the original video volume
+	// only while the translated track has audible sound (not during silence).
+	smartVolumeDuckingInterval?: ReturnType<typeof setTimeout>;
+	smartVolumeDuckingTarget = 0.2;
+	smartVolumeDuckingBaseline?: number;
+	smartVolumeLastApplied?: number;
+
+	// Internal smoothing state for Smart Auto-Volume ducking.
+	smartVolumeLastTickAt = 0;
+	smartVolumeLastSoundAt = 0;
+	smartVolumeRmsMissingSinceAt: number | null = null;
+
+	/** Smoothed translated-track RMS envelope (0..1). */
+	smartVolumeRmsEnvelope = 0;
+
+	/**
+	 * Internal speech gate state for Smart Auto-Volume ducking.
+	 *
+	 * This is a debounced/hysteresis-based boolean that tracks whether the
+	 * translated track is considered "audible" for the purpose of ducking.
+	 */
+	smartVolumeSpeechGateOpen = false;
+	smartVolumeIsDucked = false;
+	longWaitingResCount = 0;
+	hadAsyncWait = false;
+
+	// Available subtitle tracks for the current video. The subtitles UI widget
+	// maintains its own internal line/token representation.
+	subtitles: any[] = [];
+	subtitlesCacheKey: string | null = null;
+	subtitlesWidget?: SubtitlesWidget;
+
+	activeTranslation: { key: string; promise: Promise<unknown> } | null = null;
+	activeVoiceMode: "standard" | "lively" | null = null;
+	lastTranslationVideoId: string | null = null;
+	externalTranslationSourceUrl: string | null = null;
+	pendingAutoplayRecovery: {
+		gen: number;
+		videoId: string;
+		sourceUrl: string;
+		createdAt: number;
+	} | null = null;
+	pendingAutoplayRecoveryAbortController?: AbortController;
+	pendingAutoplayRecoveryPromise: Promise<boolean> | null = null;
+	/**
+	 * In-flight async teardown for translation/audio player cleanup.
+	 * New translation starts should wait for this to avoid clear/init races.
+	 */
+	stopTranslatePromise: Promise<void> | null = null;
+
+	// Managers
+	interactionChecker!: IntervalIdleChecker;
+	uiManager!: UIManager;
+	overlayVisibility!: OverlayVisibilityController;
+	overlayVisibilityTargetsAbortController?: AbortController;
+	translationOrchestrator!: TranslationOrchestrator;
+	lifecycleController!: VideoLifecycleController;
+	translationHandler!: VOTTranslationHandler;
+	videoManager!: VOTVideoManager;
+
+	// Subtitles received directly from API (Yandex) when available
+	yandexSubtitles: ProcessedSubtitles | null = null;
+
+	// Observers / listeners
+	resizeObserver?: ResizeObserver;
+	syncVolumeObserver?: MutationObserver;
+	overlayMountObserver?: MutationObserver;
+	mobileYouTubeLifecycleDebounceTimer?: ReturnType<typeof setTimeout>;
+
+	// Init guard
+	initialized = false;
+	onPrimaryAttachReady?: () => void;
+	private overlayVerificationGeneration = 0;
+
+	/**
+	 * Cached overlay mount points (root/portal). Recomputed when container changes.
+	 * Avoids doing the same DOM/style walks multiple times per lifecycle update.
+	 */
+	private mountCache?: {
+		container: HTMLElement;
+		base: HTMLElement;
+		root: HTMLElement;
+		portalContainer: HTMLElement;
+		subtitlesMountContainer: HTMLElement;
+		fullscreenRoot: HTMLElement | null;
+	};
+
+	/**
+	 * In-memory cache for translated error strings (RU -> UI language).
+	 * This avoids repeated translation API calls during retry loops when the
+	 * same backend message is emitted multiple times.
+	 */
+	private readonly errorTranslationCache = new Map<string, string>();
+
+	/**
+	 * Returns fullscreen root for overlay if the active fullscreen session belongs
+	 * to the current video/container. Otherwise returns null.
+	 */
+	private getFullscreenOverlayRoot(): HTMLElement | null {
+		const doc = document as DocumentWithFullscreen;
+		const fullscreenEl = doc.fullscreenElement ?? doc.webkitFullscreenElement;
+		return resolveScopedFullscreenElement(fullscreenEl, [this.container]);
+	}
+
+	private findPageScopedContainer(): HTMLElement | null {
+		const selector = String(this.site.selector || "").trim();
+		if (!selector) {
+			return null;
+		}
+
+		const selectors = selector
+			.split(",")
+			.map((item) => item.trim())
+			.filter(Boolean);
+		let fallback: HTMLElement | null = null;
+
+		for (const currentSelector of selectors) {
+			let matches: NodeListOf<Element>;
+			try {
+				matches = document.querySelectorAll(currentSelector);
+			} catch {
+				continue;
+			}
+
+			for (const match of matches) {
+				if (
+					!(match instanceof HTMLElement) ||
+					!match.isConnected ||
+					match === document.body ||
+					match === document.documentElement
+				) {
+					continue;
+				}
+
+				const rect = match.getBoundingClientRect();
+				if (rect.width > 0 && rect.height > 0) {
+					return match;
+				}
+
+				fallback ??= match;
+			}
+		}
+
+		return fallback;
+	}
+
+	private resolveCurrentContainer(): HTMLElement {
+		if (!this.site.selector) {
+			return this.video.parentElement ?? this.container;
+		}
+
+		const matched = findConnectedContainerBySelector(
+			this.video,
+			this.site.selector,
+		);
+		if (matched) {
+			return matched;
+		}
+
+		if (
+			this.container.isConnected &&
+			containsCrossShadow(this.container, this.video)
+		) {
+			return this.container;
+		}
+
+		if (isMobileYouTubeLikeSite(this.site)) {
+			const pageScopedContainer = this.findPageScopedContainer();
+			if (pageScopedContainer) {
+				return pageScopedContainer;
+			}
+		}
+
+		return this.video.parentElement ?? this.container;
+	}
+
+	private getOverlayMountPoints(container: HTMLElement = this.container): {
+		root: HTMLElement;
+		portalContainer: HTMLElement;
+		subtitlesMountContainer: HTMLElement;
+		fullscreenRoot: HTMLElement | null;
+	} {
+		const fullscreenRoot = this.getFullscreenOverlayRoot();
+		const { base, root, portalContainer, subtitlesMountContainer } =
+			resolveOverlayMountTargets({
+				container,
+				site: this.site,
+				fullscreenRoot,
+			});
+
+		const cache = this.mountCache;
+		if (
+			cache?.container === container &&
+			cache.base === base &&
+			cache.subtitlesMountContainer === subtitlesMountContainer &&
+			cache.fullscreenRoot === fullscreenRoot &&
+			(cache.root.isConnected ?? document.documentElement.contains(cache.root))
+		) {
+			return {
+				root: cache.root,
+				portalContainer: cache.portalContainer,
+				subtitlesMountContainer: cache.subtitlesMountContainer,
+				fullscreenRoot: cache.fullscreenRoot,
+			};
+		}
+
+		this.mountCache = {
+			container,
+			base,
+			root,
+			portalContainer,
+			subtitlesMountContainer,
+			fullscreenRoot,
+		};
+		return { root, portalContainer, subtitlesMountContainer, fullscreenRoot };
+	}
+
+	private getOverlayMount(
+		container: HTMLElement = this.container,
+	): OverlayMount {
+		const { root, portalContainer, subtitlesMountContainer, fullscreenRoot } =
+			this.getOverlayMountPoints(container);
+		return {
+			root,
+			portalContainer,
+			subtitlesMountContainer,
+			tooltipLayoutRoot: fullscreenRoot ?? this.tooltipLayoutRoot,
+		};
+	}
+
+	/**
+	 * Builds a stable cache key for translations.
+	 *
+	 * NOTE: Keep this in sync with CacheManager expectations.
+	 * @param {string} videoId
+	 * @param {string} from
+	 * @param {string} to
+	 */
+	getTranslationCacheKey(
+		videoId: string,
+		from: string,
+		to: string,
+		translationHelp?: unknown,
+	): string {
+		const requestLangForApi = this.getRequestLangForTranslation(
+			from as RequestLang,
+			to as ResponseLang,
+		);
+		const useLivelyVoice =
+			this.isLivelyVoiceAllowed(requestLangForApi, to as ResponseLang) &&
+			this.data?.useLivelyVoice;
+		// `translationHelp` can change the output, so include it in the cache key.
+		// Keep this compact by hashing a stable JSON representation.
+		const helpStr =
+			translationHelp === undefined || translationHelp === null
+				? ""
+				: stableStringify(translationHelp);
+		const helpHash = helpStr ? fnv1a32ToKeyPart(helpStr) : "0";
+		return `${videoId}_${requestLangForApi}_${to}_${useLivelyVoice}_${helpHash}`;
+	}
+
+	/**
+	 * Builds a stable cache key for subtitles.
+	 *
+	 * Bugfix: subtitles cache key must match the key used by loadSubtitles().
+	 * @param {string} videoId
+	 * @param {string} detectedLanguage
+	 * @param {string} responseLanguage
+	 */
+	getSubtitlesCacheKey(
+		videoId: string,
+		detectedLanguage: string,
+		responseLanguage: string,
+	): string {
+		return `${videoId}_${detectedLanguage}_${responseLanguage}_${Boolean(this.data?.useLivelyVoice)}`;
+	}
+
+	getPreferredSubtitlesLanguage(
+		detectedLanguage: string = this.videoData?.detectedLanguage ?? "auto",
+		responseLanguage: string = this.videoData?.responseLanguage ??
+			this.translateToLang,
+	): string | undefined {
+		const normalize = (value?: string): string | undefined => {
+			const nextValue = String(value || "")
+				.trim()
+				.toLowerCase();
+			if (!nextValue || nextValue === "auto") {
+				return undefined;
+			}
+			return nextValue;
+		};
+
+		return normalize(responseLanguage) ?? normalize(detectedLanguage);
+	}
+
+	isActionStale(actionContext?: { gen: number; videoId: string }): boolean {
+		if (!actionContext) return false;
+		return (
+			this.actionsGeneration !== actionContext.gen ||
+			this.videoData?.videoId !== actionContext.videoId
+		);
+	}
+
+	private updateVOTClientRequestSignal(): void {
+		if (!this.votClient) return;
+		this.votClient.fetchOpts = {
+			...(this.votClient.fetchOpts ?? {}),
+			signal: this.actionsAbortController.signal,
+		};
+	}
+
+	resetActionsAbortController(reason?: any): void {
+		try {
+			this.actionsAbortController?.abort(reason);
+		} catch {
+			// ignore
+		}
+		this.actionsAbortController = new AbortController();
+		this.actionsGeneration++;
+		// Keep client sessions intact and update only per-request abort signal.
+		this.updateVOTClientRequestSignal();
+	}
+
+	/**
+	 * Constructs a new VideoHandler instance.
+	 * @param {HTMLVideoElement} video The video element to handle.
+	 * @param {HTMLElement} container The container element for the video.
+	 * @param {Object} site The site object associated with the video.
+	 */
+	constructor(
+		video: HTMLVideoElement,
+		container: HTMLElement,
+		site: ServiceConf,
+	) {
+		debug.log(
+			"[VideoHandler] add video:",
+			video,
+			"container:",
+			container,
+			this,
+		);
+		this.video = video;
+		this.container = container;
+		this.site = site;
+		if (
+			String(globalThis.location.hostname || "").toLowerCase() ===
+				"youtube.googleapis.com" &&
+			globalThis.location.pathname.startsWith("/embed")
+		) {
+			(globalThis as Record<string, unknown>)[GOOGLE_DRIVE_ACTIVE_HANDLER_KEY] =
+				this;
+		}
+		this.abortController = new AbortController();
+		this.actionsAbortController = new AbortController();
+		this.cacheManager = new CacheManager();
+		this.interactionChecker = createIntervalIdleChecker();
+		this.interactionChecker.start();
+		const self = () => this;
+		// Create helper instances
+		const mount = this.getOverlayMount(container);
+		this.uiManager = new UIManager({
+			mount,
+			data: this.data,
+			videoHandler: this,
+			intervalIdleChecker: this.interactionChecker,
+		});
+		this.overlayVisibility = new OverlayVisibilityController({
+			checker: this.interactionChecker,
+			getOverlayView: () => this.uiManager.votOverlayView ?? null,
+			getAutoHideDelay: () => this.getAutoHideDelay(),
+			isInteractiveNode: (node: Node) => this.isOverlayInteractiveNode(node),
+			shouldAutoHide: () =>
+				this.uiManager.votOverlayView?.votButton?.status !== "disabled",
+		});
+		this.translationOrchestrator = new TranslationOrchestrator({
+			isFirstPlay: () => this.firstPlay,
+			setFirstPlay: (next: boolean) => {
+				this.firstPlay = next;
+			},
+			isAutoTranslateEnabled: () => Boolean(this.data?.autoTranslate),
+			getVideoId: () => this.videoData?.videoId,
+			scheduleAutoTranslate: () => this.runAutoTranslate(),
+			isMobileYouTubeMuted: () =>
+				this.site.host === "youtube" &&
+				this.site.additionalData === "mobile" &&
+				this.video.muted,
+			setMuteWatcher: (callback: () => void) => {
+				// Mobile YouTube typically starts autoplay muted. We defer auto-translate
+				// until the user unmutes. `volumechange` fires when `muted` or `volume`
+				// changes on HTMLMediaElement.
+				let done = false;
+				const fireOnce = () => {
+					if (done) return;
+					done = true;
+					this.video.removeEventListener("volumechange", onVolumeChange);
+					callback();
+				};
+
+				const onVolumeChange = () => {
+					if (!this.video.muted) {
+						fireOnce();
+					}
+				};
+
+				this.video.addEventListener("volumechange", onVolumeChange, {
+					signal: this.abortController.signal,
+				});
+
+				// Handle a potential race where the video becomes unmuted before the
+				// listener is attached.
+				queueMicrotask(() => {
+					if (!this.video.muted) {
+						fireOnce();
+					}
+				});
+			},
+		});
+		const lifecycleHost = {
+			get video() {
+				return self().video;
+			},
+			get site() {
+				return self().site;
+			},
+			get container() {
+				return self().container;
+			},
+			set container(value: HTMLElement) {
+				if (self().container === value) {
+					return;
+				}
+				self().container = value;
+				self().uiManager.updateMount(self().getOverlayMount(value));
+			},
+			get firstPlay() {
+				return self().firstPlay;
+			},
+			set firstPlay(value: boolean) {
+				self().firstPlay = value;
+			},
+			stopTranslation: () => this.stopTranslation(),
+			get uiManager() {
+				return self().uiManager as any;
+			},
+			getVideoData: () => this.getVideoData(),
+			cacheManager: {
+				getSubtitles: (key: string) => self().cacheManager.getSubtitles(key),
+			},
+			getSubtitlesCacheKey: (
+				videoId: string,
+				detectedLanguage: string,
+				responseLanguage: string,
+			) =>
+				this.getSubtitlesCacheKey(videoId, detectedLanguage, responseLanguage),
+			ensureSubtitlesForCurrentLangPair: () =>
+				this.ensureSubtitlesForCurrentLangPair(),
+			updateSubtitlesLangSelect: () => this.updateSubtitlesLangSelect(),
+			enableSubtitlesForCurrentLangPair: () =>
+				this.enableSubtitlesForCurrentLangPair(),
+			setSelectMenuValues: (from: string, to: string) =>
+				this.setSelectMenuValues(from, to),
+			get translateToLang() {
+				return self().translateToLang;
+			},
+			set translateToLang(value: string) {
+				if (isResponseLang(value)) self().translateToLang = value;
+			},
+			get data() {
+				return self().data ?? {};
+			},
+			get subtitles() {
+				return self().subtitles;
+			},
+			set subtitles(value: any[]) {
+				self().subtitles = value;
+			},
+			get subtitlesCacheKey() {
+				return self().subtitlesCacheKey;
+			},
+			set subtitlesCacheKey(value: string | null) {
+				self().subtitlesCacheKey = value;
+			},
+			get videoData() {
+				return self().videoData;
+			},
+			set videoData(value: any) {
+				self().videoData = value;
+			},
+			get actionsAbortController() {
+				return self().actionsAbortController;
+			},
+			set actionsAbortController(value: AbortController) {
+				self().actionsAbortController = value;
+			},
+			resetActionsAbortController: (reason?: unknown) =>
+				this.resetActionsAbortController(reason),
+			initVOTClient: () => this.initVOTClient(),
+			translationOrchestrator: this.translationOrchestrator,
+			resetSubtitlesWidget: () => this.resetSubtitlesWidget(),
+			queueOverlayAutoHide: () => this.overlayVisibility?.queueAutoHide(),
+			onPrimaryAttachReady: () => this.onPrimaryAttachReady?.(),
+			syncSourceAudioAvailabilityUi: (options?: { forceVisible?: boolean }) =>
+				this.syncSourceAudioAvailabilityUi(options),
+		};
+		this.lifecycleController = new VideoLifecycleController(lifecycleHost);
+		this.translationHandler = new VOTTranslationHandler(this);
+		this.videoManager = new VOTVideoManager(this);
+	}
+
+	/**
+	 * Lazily creates the subtitles widget.
+	 * @returns {SubtitlesWidget}
+	 */
+	getSubtitlesWidget() {
+		if (!this.subtitlesWidget) {
+			const { subtitlesMountContainer } = this.getOverlayMountPoints();
+			this.subtitlesWidget = new SubtitlesWidget(
+				this.video,
+				subtitlesMountContainer,
+				this.interactionChecker,
+				this.tooltipLayoutRoot,
+			);
+
+			if (this.data) {
+				// Smart layout is enabled by default for new users.
+				// When enabled, the widget will compute font-size / line length based on player size.
+				this.subtitlesWidget.setSmartLayout(
+					typeof this.data.subtitlesSmartLayout === "boolean"
+						? this.data.subtitlesSmartLayout
+						: true,
+				);
+				if (typeof this.data.subtitlesMaxLength === "number") {
+					this.subtitlesWidget.setMaxLength(this.data.subtitlesMaxLength);
+				}
+				if (typeof this.data.highlightWords === "boolean") {
+					this.subtitlesWidget.setHighlightWords(this.data.highlightWords);
+				}
+				if (typeof this.data.subtitlesFontSize === "number") {
+					this.subtitlesWidget.setFontSize(this.data.subtitlesFontSize);
+				}
+				if (typeof this.data.subtitlesFontFamily === "string") {
+					this.subtitlesWidget.setFontFamily(
+						this.data.subtitlesFontFamily as SubtitleFontFamily,
+					);
+				}
+				if (typeof this.data.subtitlesOpacity === "number") {
+					this.subtitlesWidget.setOpacity(this.data.subtitlesOpacity);
+				}
+			}
+		}
+		return this.subtitlesWidget;
+	}
+
+	/**
+	 * Determines whether subtitles widget is initialized\.
+	 * @returns {boolean}
+	 */
+	hasSubtitlesWidget() {
+		return Boolean(this.subtitlesWidget);
+	}
+
+	resetSubtitlesWidget() {
+		if (this.hasSubtitlesWidget()) {
+			this.subtitlesWidget?.release();
+			this.subtitlesWidget = undefined;
+		}
+	}
+
+	/**
+	 * Root element for overlay UI (buttons/menu) so it remains clickable on players
+	 * that disable pointer events on inner layers.
+	 */
+	get uiRoot(): HTMLElement {
+		return this.getOverlayMountPoints().root;
+	}
+
+	/**
+	 * Determines the DOM container used for overlay portals.
+	 * @returns {HTMLElement}
+	 */
+	get portalContainer() {
+		return this.getOverlayMountPoints().portalContainer;
+	}
+
+	/**
+	 * Determines the root element used for tooltip layout calculations.
+	 * @returns {HTMLElement | undefined}
+	 */
+	get tooltipLayoutRoot() {
+		switch (this.site.host) {
+			case "kickstarter": {
+				return document.getElementById("react-project-header") ?? undefined;
+			}
+			case "custom": {
+				return undefined;
+			}
+			default: {
+				return this.container;
+			}
+		}
+	}
+
+	/**
+	 * Returns the container element for event listeners.
+	 * @returns {HTMLElement} The event container.
+	 */
+	getEventContainer() {
+		if (!this.site.eventSelector) return this.container;
+		const matched = findConnectedContainerBySelector(
+			this.video,
+			this.site.eventSelector,
+		);
+		return matched ?? this.container;
+	}
+
+	/**
+	 * Run auto translate using orchestrator dependencies.
+	 */
+	async runAutoTranslate() {
+		let sourceAudioState = this.syncSourceAudioAvailabilityUi({
+			forceVisible: true,
+		});
+		if (!sourceAudioState.ready) {
+			console.log("[VOT][source-audio] auto-translate blocked before start", {
+				kind: sourceAudioState.kind,
+				ready: sourceAudioState.ready,
+				audioDetected: sourceAudioState.audioDetected,
+				detectionSource: sourceAudioState.detectionSource,
+			});
+			return false;
+		}
+
+		await this.videoManager.videoValidator();
+
+		sourceAudioState = this.syncSourceAudioAvailabilityUi({
+			forceVisible: true,
+		});
+		if (!sourceAudioState.ready) {
+			console.log(
+				"[VOT][source-audio] auto-translate blocked after validation",
+				{
+					kind: sourceAudioState.kind,
+					ready: sourceAudioState.ready,
+					audioDetected: sourceAudioState.audioDetected,
+					detectionSource: sourceAudioState.detectionSource,
+				},
+			);
+			return false;
+		}
+
+		await this.uiManager.handleTranslationBtnClick();
+		return true;
+	}
+
+	/**
+	 * Lazily initializes and returns the AudioContext.
+	 * @returns {AudioContext | undefined}
+	 */
+	getAudioContext() {
+		if (this.audioContext) return this.audioContext;
+		if (!this.isAudioContextSupported) return undefined;
+		try {
+			this.audioContext = initAudioContext();
+			return this.audioContext;
+		} catch (err) {
+			// Some environments expose AudioContext but still fail to initialize.
+			console.warn("[VOT] Failed to init AudioContext, falling back:", err);
+			return undefined;
+		}
+	}
+
+	get isAudioContextSupported() {
+		return (
+			globalThis.AudioContext !== undefined ||
+			(globalThis as any).webkitAudioContext !== undefined
+		);
+	}
+
+	/**
+	 * Determines if audio should be preferred.
+	 * @returns {boolean} True if audio is preferred.
+	 */
+	getPreferAudio() {
+		const siteHost = this.site.host;
+		const videoHost = this.videoData?.host;
+		const isStream = this.videoData?.isStream ?? false;
+
+		if (isCustomPlaybackTarget(siteHost, videoHost) || isStream) {
+			return true;
+		}
+
+		const hasAudioContext = Boolean(this.getAudioContext());
+		const data = this.data;
+		return shouldUsePlainAudioPlayback({
+			siteHost,
+			videoHost,
+			isStream,
+			hasAudioContext,
+			newAudioPlayer: data?.newAudioPlayer,
+			onlyBypassMediaCSP: data?.onlyBypassMediaCSP,
+			needBypassCSP: this.site.needBypassCSP,
+		});
+	}
+	/**
+	 * Creates the audio player.
+	 * @returns {VideoHandler} The VideoHandler instance.
+	 */
+	createPlayer() {
+		const preferAudio = this.getPreferAudio();
+		debug.log("preferAudio:", preferAudio);
+		this.audioPlayer = new Chaimu({
+			video: this.video,
+			// DEBUG_MODE is injected at build-time.
+			debug: Boolean(DEBUG_MODE),
+			fetchFn: GM_fetch,
+			fetchOpts: {
+				timeout: 0,
+			},
+			preferAudio,
+		});
+		if (preferAudio) {
+			const playerAudioContext = this.audioPlayer.audioContext;
+			this.audioPlayer.audioContext = undefined;
+
+			if (playerAudioContext && playerAudioContext.state !== "closed") {
+				void playerAudioContext.close().catch(() => {
+					// ignore
+				});
+			}
+
+			if (this.audioContext && this.audioContext.state !== "closed") {
+				const handlerAudioContext = this.audioContext;
+				this.audioContext = undefined;
+				void handlerAudioContext.close().catch(() => {
+					// ignore
+				});
+			}
+		}
+		return this;
+	}
+
+	/**
+	 * Returns true if a detected external volume update is very likely caused by
+	 * our own recent programmatic setVideoVolume call.
+	 */
+	isLikelyInternalVideoVolumeChange(observedPercent: number) {
+		const now = Date.now();
+		const history = this.internalVideoVolumeSetHistory;
+		if (history.length > 0) {
+			let writeIndex = 0;
+			let matchFound = false;
+
+			for (const entry of history) {
+				if (now - entry.at > entry.suppressMs) {
+					continue;
+				}
+
+				history[writeIndex++] = entry;
+				// Allow a 1% tolerance to account for hosts that quantize volume.
+				if (!matchFound && Math.abs(observedPercent - entry.percent) <= 1) {
+					matchFound = true;
+				}
+			}
+
+			history.length = writeIndex;
+			return matchFound;
+		}
+
+		if (this.internalVideoVolumeSetPercent === null) return false;
+
+		const ageMs = now - this.internalVideoVolumeSetAt;
+		if (ageMs > this.internalVideoVolumeSuppressionMs) return false;
+
+		return Math.abs(observedPercent - this.internalVideoVolumeSetPercent) <= 1;
+	}
+
+	private callModule<TArgs extends unknown[], TResult>(
+		impl: (this: VideoHandler, ...args: TArgs) => TResult,
+		...args: TArgs
+	): TResult {
+		return impl.call(this, ...args);
+	}
+
+	private callModuleAsync<TArgs extends unknown[], TResult>(
+		impl: (this: VideoHandler, ...args: TArgs) => Promise<TResult>,
+		...args: TArgs
+	): Promise<TResult> {
+		return impl.call(this, ...args);
+	}
+
+	/**
+	 * Initializes the VideoHandler: loads settings, UI, video data, events, etc.
+	 * @returns {Promise<void>}
+	 */
+	init(): Promise<void> {
+		return initVideoHandler.call(this);
+	}
+
+	/**
+	 * Initializes the VOT client.
+	 * @returns {VideoHandler} This instance.
+	 */
+	async initVOTClient() {
+		const transportHost = this.data?.translateProxyEnabled
+			? (this.data?.proxyWorkerHost ?? proxyWorkerHost)
+			: workerHost;
+		this.votOpts = {
+			fetchFn: GM_fetch,
+			fetchOpts: {
+				signal: this.actionsAbortController.signal,
+				forceGmXhr: true,
+			},
+			apiToken: this.data?.account?.token,
+			hostVOT: votBackendUrl,
+			host: transportHost,
+		};
+		this.votClient = new (
+			this.data?.translateProxyEnabled ? VOTWorkerClient : VOTClient
+		)(this.votOpts);
+		this.votClient.sessions = await this.votSessionStorage.restore(
+			transportHost,
+			this.votClient.sessions,
+		);
+
+		const originalGetSession = this.votClient.getSession.bind(this.votClient);
+		this.votClient.getSession = async (
+			module: SessionModule,
+		): Promise<ClientSession> => {
+			const session = await originalGetSession(module);
+			await this.votSessionStorage.persist(
+				transportHost,
+				this.votClient.sessions,
+			);
+			return session;
+		};
+
+		return this;
+	}
+
+	/**
+	 * Sets the translation button state and text.
+	 * @param {string} status The new status.
+	 * @param {string} text The text to display.
+	 * @returns {VideoHandler} This instance.
+	 */
+	transformBtn(status: Status, text: string): this {
+		this.uiManager.transformBtn(status, text);
+		return this;
+	}
+
+	/**
+	 * @returns {boolean} True if the extension audio player has active audio source
+	 */
+	hasActiveSource() {
+		return Boolean(
+			this.audioPlayer?.player?.src || this.externalTranslationSourceUrl,
+		);
+	}
+
+	getSourceAudioAvailabilityState(): SourceAudioAvailabilityState {
+		return getSourceAudioAvailability(this.video);
+	}
+
+	syncSourceAudioAvailabilityUi(
+		options: { forceVisible?: boolean } = {},
+	): SourceAudioAvailabilityState {
+		const state = this.getSourceAudioAvailabilityState();
+		const overlayView = this.uiManager.votOverlayView;
+		if (!overlayView?.votButton) {
+			return state;
+		}
+		const previousStatus = overlayView.votButton.status;
+
+		if (options.forceVisible) {
+			overlayView.votButton.container.hidden = false;
+			overlayView.updateButtonOpacity(1);
+		}
+
+		if (this.hasActiveSource() || overlayView.votButton.loading) {
+			return state;
+		}
+
+		if (!state.ready) {
+			this.overlayVisibility?.cancel();
+			const label = localizationProvider.get(state.localizationKey as any);
+			this.transformBtn("disabled", label);
+			return state;
+		}
+
+		if (previousStatus === "disabled") {
+			this.transformBtn("none", localizationProvider.get("translateVideo"));
+			this.overlayVisibility?.queueAutoHide();
+		}
+
+		return state;
+	}
+
+	isAwaitingAutoplayRecovery(): boolean {
+		return this.callModule(isAwaitingAutoplayRecoveryImpl);
+	}
+
+	clearPendingAutoplayRecovery(resetUi = false): void {
+		this.callModule(clearPendingAutoplayRecoveryImpl, resetUi);
+	}
+
+	resumePendingAutoplayRecovery(trigger = "manual"): Promise<boolean> {
+		return this.callModuleAsync(resumePendingAutoplayRecoveryImpl, trigger);
+	}
+
+	primePlaybackByGesture(trigger = "manual"): Promise<void> {
+		return this.callModuleAsync(primePlaybackByGestureImpl, trigger);
+	}
+
+	/**
+	 * Initializes extra event listeners (resize, click outside, keydown, etc.).
+	 */
+	initExtraEvents() {
+		return this.callModule(initExtraEventsImpl);
+	}
+
+	/**
+	 * Recomputes overlay mount points and rebinds interaction targets.
+	 *
+	 * Used when fullscreen state changes without changing `this.container`
+	 * (common for players inside Shadow DOM).
+	 */
+	refreshOverlayMount(): void {
+		if (isMobileYouTubeLikeSite(this.site)) {
+			const nextContainer = this.resolveCurrentContainer();
+			if (nextContainer !== this.container) {
+				this.container = nextContainer;
+			}
+		}
+		this.mountCache = undefined;
+		const nextMount = this.getOverlayMount(this.container);
+		const mountChanged = !isSameOverlayMount(this.uiManager.mount, nextMount);
+		this.uiManager.updateMount(nextMount);
+		if (!mountChanged) {
+			return;
+		}
+		this.rebindOverlayVisibilityTargets();
+	}
+
+	async ensureOverlayVerified(reason = "attach"): Promise<boolean> {
+		const verificationGeneration = ++this.overlayVerificationGeneration;
+		const retryDelaysMs = [0, 500, 1000, 1500];
+
+		debug.log("[VOT][observer] overlay mount requested", {
+			reason,
+			siteHost: this.site.host,
+			videoId: this.videoData?.videoId,
+			src: this.video.currentSrc || this.video.src || "",
+		});
+
+		for (let attempt = 0; attempt < retryDelaysMs.length; attempt++) {
+			if (
+				this.abortController.signal.aborted ||
+				verificationGeneration !== this.overlayVerificationGeneration
+			) {
+				return false;
+			}
+
+			const delayMs = retryDelaysMs[attempt];
+			if (delayMs > 0) {
+				await new Promise<void>((resolve) => {
+					globalThis.setTimeout(resolve, delayMs);
+				});
+			}
+
+			if (
+				this.abortController.signal.aborted ||
+				verificationGeneration !== this.overlayVerificationGeneration
+			) {
+				return false;
+			}
+
+			const before = this.uiManager.getOverlayVerificationState({
+				requireVisible: true,
+			});
+			if (before.verified) {
+				debug.log("[VOT][observer] overlay verified", {
+					reason,
+					attempt,
+					...before,
+				});
+				return true;
+			}
+
+			this.refreshOverlayMount();
+			const after = this.uiManager.ensureOverlayMounted({ forceVisible: true });
+
+			try {
+				this.rebindOverlayVisibilityTargets();
+			} catch (error) {
+				debug.warn(
+					"[VOT][observer] failed to rebind overlay visibility",
+					error,
+				);
+			}
+
+			this.syncSourceAudioAvailabilityUi({ forceVisible: true });
+
+			if (after.verified) {
+				debug.log("[VOT][observer] overlay verified", {
+					reason,
+					attempt,
+					...after,
+				});
+				return true;
+			}
+
+			if (attempt < retryDelaysMs.length - 1) {
+				debug.log("[VOT][observer] overlay missing after attach, retrying", {
+					reason,
+					attempt,
+					nextDelayMs: retryDelaysMs[attempt + 1],
+					...after,
+				});
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Re-attach overlayVisibility listeners to the *current* overlay button/menu elements.
+	 *
+	 * The overlay UI gets recreated in some flows (e.g. menu language change),
+	 * so listeners that were attached to the old DOM nodes must be re-bound.
+	 */
+	rebindOverlayVisibilityTargets = rebindOverlayVisibilityTargetsImpl;
+
+	/**
+	 * Called when the video can play.
+	 */
+	setCanPlay() {
+		return this.lifecycleController.setCanPlay();
+	}
+
+	isOverlayInteractiveNode(node: unknown): boolean {
+		return this.callModule(isOverlayInteractiveNodeImpl, node);
+	}
+
+	/**
+	 * Schedules hiding the overlay button with guard checks for internal navigation.
+	 */
+	getAutoHideDelay(): number {
+		return this.callModule(getAutoHideDelayImpl);
+	}
+
+	/**
+	 * Changes subtitles language based on user selection.
+	 * @param {string} subs The subtitles selection value.
+	 */
+	changeSubtitlesLang: (subs: string) => Promise<this> =
+		changeSubtitlesLangImpl as unknown as (subs: string) => Promise<this>;
+
+	/**
+	 * Updates the subtitles selection options.
+	 */
+	updateSubtitlesLangSelect = updateSubtitlesLangSelectImpl;
+
+	/**
+	 * Ensures the in-memory subtitles list matches the current language-pair cache key.
+	 */
+	ensureSubtitlesForCurrentLangPair = ensureSubtitlesForCurrentLangPairImpl;
+
+	/**
+	 * Loads subtitles for the current video.
+	 */
+	loadSubtitles = loadSubtitlesImpl;
+
+	/**
+	 * Enables subtitles that match the currently selected language pair (from -> to).
+	 *
+	 * Used by the subtitles hotkey: prefers Yandex captions for the exact pair,
+	 * then falls back to any captions in the target language.
+	 */
+	enableSubtitlesForCurrentLangPair() {
+		return this.callModuleAsync(enableSubtitlesForCurrentLangPairImpl);
+	}
+
+	/**
+	 * Toggles subtitles for the current video.
+	 *
+	 * - If subtitles are enabled, this disables them.
+	 * - If subtitles are disabled, this enables the best subtitles track for the
+	 *   current language pair.
+	 */
+	toggleSubtitlesForCurrentLangPair() {
+		return this.callModuleAsync(toggleSubtitlesForCurrentLangPairImpl);
+	}
+
+	getRequestLangForTranslation(
+		requestLang: RequestLang,
+		_responseLang: ResponseLang,
+	): RequestLang {
+		return requestLang;
+	}
+
+	isLivelyVoiceAllowed(
+		requestLang: RequestLang = this.videoData?.detectedLanguage ?? "auto",
+		responseLang: ResponseLang = this.videoData?.responseLanguage ??
+			this.translateToLang,
+	) {
+		const requestLangForApi = this.getRequestLangForTranslation(
+			requestLang,
+			responseLang,
+		);
+		// allowed only en -> ru pair
+		const livelySourceLangs: RequestLang[] = [
+			"ru",
+			"en",
+			"zh",
+			"ko",
+			"fr",
+			"it",
+			"es",
+			"de",
+			"ja",
+		];
+
+		if (
+			!livelySourceLangs.includes(requestLangForApi) ||
+			responseLang !== "ru"
+		) {
+			return false;
+		}
+
+		// allowed only with auth
+		if (!this.data?.account?.token) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Gets the video volume.
+	 * @returns {number} The video volume (0.0 - 1.0).
+	 */
+	getVideoVolume() {
+		return this.videoManager.getVideoVolume();
+	}
+
+	/**
+	 * Sets the video volume.
+	 * @param {number} volume A number between 0 and 1.
+	 * @returns {VideoHandler} This instance.
+	 */
+	setVideoVolume(
+		volume: number,
+		options: { suppressSyncMs?: number } = {},
+	): this {
+		const snapped = snapVolume01(volume);
+		const suppressSyncMs =
+			typeof options.suppressSyncMs === "number" &&
+			Number.isFinite(options.suppressSyncMs)
+				? Math.max(0, options.suppressSyncMs)
+				: this.internalVideoVolumeSuppressionMs;
+		const now = Date.now();
+		const percent = volume01ToPercent(snapped);
+
+		// Remember this programmatic update so external observers (e.g. YouTube aria
+		// mutations) won't treat it as a user-driven volume change and resync volumes
+		// again (which would cause drift/loops).
+		this.internalVideoVolumeSetAt = now;
+		this.internalVideoVolumeSetPercent = percent;
+		this.internalVideoVolumeSetHistory.push({
+			at: now,
+			percent,
+			suppressMs: suppressSyncMs,
+		});
+		if (
+			this.internalVideoVolumeSetHistory.length >
+			this.internalVideoVolumeSetHistoryLimit
+		) {
+			this.internalVideoVolumeSetHistory.splice(
+				0,
+				this.internalVideoVolumeSetHistory.length -
+					this.internalVideoVolumeSetHistoryLimit,
+			);
+		}
+
+		this.videoManager.setVideoVolume(snapped);
+		return this;
+	}
+
+	/**
+	 * Keeps internal syncVolume state aligned with observed/programmatic video-volume changes.
+	 */
+	onVideoVolumeSliderSynced(volumePercent: number) {
+		const normalized = clampPercentInt(volumePercent);
+
+		// If syncVolume isn't initialized yet, keep the state aligned so the first
+		// delta computation won't jump.
+		if (!this.volumeLinkState.initialized) {
+			syncVideoLinkSnapshot(this.volumeLinkState, normalized);
+			return;
+		}
+
+		// When syncVolume is active during translation, ONLY update the delta baseline
+		// for internal (programmatic) updates. External updates should be handled by
+		// syncVolumeWrapper("video", ...) so that the delta is preserved.
+		if (
+			this.data?.syncVolume &&
+			this.hasActiveSource() &&
+			!this.isLikelyInternalVideoVolumeChange(normalized)
+		) {
+			return;
+		}
+
+		syncVideoLinkSnapshot(this.volumeLinkState, normalized);
+	}
+
+	/**
+	 * Keeps internal translation-volume snapshot aligned when syncVolume is
+	 * temporarily disabled, so re-enabling link mode does not apply stale deltas.
+	 */
+	onTranslationVolumeSliderSynced(volumePercent: number) {
+		if (!this.volumeLinkState.initialized) {
+			syncTranslationLinkSnapshot(this.volumeLinkState, volumePercent);
+			return;
+		}
+
+		syncTranslationLinkSnapshot(this.volumeLinkState, volumePercent);
+	}
+
+	/**
+	 * Re-seeds syncVolume baseline from current UI slider values.
+	 * Useful when toggling syncVolume on/off to avoid stale delta state.
+	 */
+	resetVolumeLinkState(videoPercent: number, translationPercent: number): void {
+		syncVideoLinkSnapshot(this.volumeLinkState, videoPercent);
+		syncTranslationLinkSnapshot(this.volumeLinkState, translationPercent);
+		this.volumeLinkState.initialized = true;
+	}
+
+	/**
+	 * Checks if the video is muted.
+	 * @returns {boolean} True if muted.
+	 */
+	isMuted() {
+		return this.videoManager.isMuted();
+	}
+
+	/**
+	 * Syncs the video volume slider.
+	 */
+	syncVideoVolumeSlider() {
+		this.videoManager.syncVideoVolumeSlider();
+	}
+
+	/**
+	 * Sets language select menu values.
+	 * @param {string} from Source language.
+	 * @param {string} to Target language.
+	 */
+	setSelectMenuValues(from: string, to: string): void {
+		this.videoManager.setSelectMenuValues(
+			from as RequestLang,
+			to as ResponseLang,
+		);
+	}
+
+	/**
+	 * Keeps translation and video sliders linked (syncVolume option).
+	 *
+	 * The implementation is delta-based: when the user changes one slider, the
+	 * other slider moves by the same delta. This preserves the relative
+	 * difference between volumes and works with "audio booster" (translation can
+	 * exceed 100%).
+	 */
+	syncVolumeWrapper(
+		fromType: "translation" | "video",
+		newVolume: number,
+	): void {
+		const overlayView = this.uiManager.votOverlayView;
+		if (!overlayView?.isInitialized()) {
+			return;
+		}
+
+		const videoSlider = overlayView.videoVolumeSlider;
+		const translationSlider = overlayView.translationVolumeSlider;
+
+		if (!videoSlider || !translationSlider) {
+			return;
+		}
+		const { nextVideo, nextTranslation } = applyVolumeLinkDelta({
+			state: this.volumeLinkState,
+			fromType,
+			newVolume,
+			currentVideo: Number(videoSlider.value),
+			currentTranslation: Number(translationSlider.value),
+			translationMin: translationSlider.min,
+			translationMax: translationSlider.max,
+		});
+
+		if (typeof nextTranslation === "number") {
+			translationSlider.value = nextTranslation;
+			if (this.audioPlayer?.player) {
+				this.audioPlayer.player.volume = nextTranslation / 100;
+			}
+			return;
+		}
+
+		if (typeof nextVideo === "number") {
+			videoSlider.value = nextVideo;
+			this.setVideoVolume(nextVideo / 100);
+		}
+	}
+
+	/**
+	 * Retrieves video data.
+	 * @returns {Promise<Object>} The video data object.
+	 */
+	getVideoData() {
+		return this.videoManager.getVideoData();
+	}
+	sanitizeDownloadName(value: string): string {
+		return value
+			.replace(/\.(mp4|mkv|mov|webm|avi|m4v|mp3|srt|vtt|json)$/iu, "")
+			.replace(/[<>:"/\\|?*]/g, "_")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
+	getDownloadBaseName(): string {
+		const fromDownloadTitle =
+			typeof this.videoData?.downloadTitle === "string" &&
+			this.videoData.downloadTitle.trim()
+				? this.videoData.downloadTitle
+				: undefined;
+
+		const fromVideoData =
+			typeof this.videoData?.title === "string" && this.videoData.title.trim()
+				? this.videoData.title
+				: undefined;
+
+		const fromCurrentVideoTitle =
+			typeof (this.videoData as any)?.videoTitle === "string" &&
+			(this.videoData as any).videoTitle.trim()
+				? (this.videoData as any).videoTitle
+				: undefined;
+
+		const raw =
+			fromDownloadTitle ||
+			fromVideoData ||
+			fromCurrentVideoTitle ||
+			`translation-${this.videoData?.videoId ?? "audio"}`;
+
+		return this.sanitizeDownloadName(raw);
+	}
+	/**
+	 * Validates the video.
+	 * @returns {Promise<boolean>} True if valid.
+	 */
+	videoValidator() {
+		return this.videoManager.videoValidator();
+	}
+
+	/**
+	 * Stops translation and resets UI elements.
+	 */
+	stopTranslate(): Promise<void> {
+		if (this.stopTranslatePromise !== null) {
+			return this.stopTranslatePromise;
+		}
+
+		const cleanup = async () => {
+			this.clearPendingAutoplayRecovery();
+			this.externalTranslationSourceUrl = null;
+			if (this.audioPlayer?.player) {
+				try {
+					this.audioPlayer.player.removeVideoEvents();
+					this.audioPlayer.player.src = "";
+					await this.audioPlayer.player.clear();
+				} catch (err) {
+					debug.log("[stopTranslate] audioPlayer cleanup error", err);
+				}
+				debug.log("audioPlayer after stopTranslate", this.audioPlayer);
+			}
+			this.activeTranslation = null;
+			this.activeVoiceMode = null;
+			const overlayView = this.uiManager.votOverlayView;
+			if (overlayView) {
+				if (overlayView.videoVolumeSlider) {
+					overlayView.videoVolumeSlider.hidden = true;
+				}
+				if (overlayView.translationVolumeSlider) {
+					overlayView.translationVolumeSlider.hidden = true;
+				}
+				if (overlayView.downloadTranslationButton) {
+					overlayView.downloadTranslationButton.hidden = true;
+				}
+			}
+			this.downloadTranslationUrl = null;
+			this.longWaitingResCount = 0;
+			this.hadAsyncWait = false;
+			this.transformBtn("none", localizationProvider.get("translateVideo"));
+			this.syncSourceAudioAvailabilityUi();
+			debug.log(`Volume on start: ${this.volumeOnStart}`);
+
+			// Restore the original video volume. If the user adjusted volume while
+			// ducking was enabled, prefer the latest baseline volume.
+			const restoreVolume =
+				typeof this.smartVolumeDuckingBaseline === "number"
+					? this.smartVolumeDuckingBaseline
+					: this.volumeOnStart;
+
+			stopSmartVolumeDuckingImpl(this, { restoreVolume });
+			this.volumeOnStart = undefined;
+			if (this.autoRetry !== undefined) {
+				clearTimeout(this.autoRetry);
+				this.autoRetry = undefined;
+			}
+			if (this.translationRefreshTimeout !== undefined) {
+				clearTimeout(this.translationRefreshTimeout);
+				this.translationRefreshTimeout = undefined;
+			}
+			this.translationHandler?.resetTranslationRequestState("stopTranslate");
+			// Cancel in-flight translation work.
+			this.resetActionsAbortController("stopTranslate");
+		};
+
+		const inFlight = cleanup().finally(() => {
+			if (this.stopTranslatePromise === inFlight) {
+				this.stopTranslatePromise = null;
+			}
+		});
+
+		this.stopTranslatePromise = inFlight;
+		return inFlight;
+	}
+
+	waitForPendingStopTranslate(): Promise<void> {
+		return this.stopTranslatePromise ?? RESOLVED_VOID_PROMISE;
+	}
+
+	/**
+	 * Updates the translation error message on the UI.
+	 * @param {string|Error} errorMessage The error message.
+	 */
+	async updateTranslationErrorMsg(
+		errorMessage: any,
+		signal?: AbortSignal,
+	): Promise<void> {
+		if (signal?.aborted) {
+			return;
+		}
+		const translationTake = localizationProvider.get("translationTake");
+		const lang = localizationProvider.lang;
+		// A repeated "about a minute" UI string is not proof that the server
+		// is stalled: several decreasing ETA values map to this same text.
+		// Do not synthesize TranslationDelayed from the display string alone.
+		this.longWaitingResCount =
+			errorMessage === localizationProvider.get("translationTakeAboutMinute")
+				? this.longWaitingResCount + 1
+				: 0;
+		debug.log("longWaitingResCount", this.longWaitingResCount);
+		debug.log("updateTranslationErrorMsg message", errorMessage);
+		if (errorMessage?.name === "VOTLocalizedError") {
+			this.transformBtn("error", errorMessage.localizedMessage);
+		} else if (errorMessage instanceof Error) {
+			this.transformBtn("error", errorMessage?.message);
+		} else if (
+			this.data?.translateAPIErrors &&
+			lang !== "ru" &&
+			!errorMessage?.includes(translationTake)
+		) {
+			const overlayView = this.uiManager.votOverlayView;
+			if (!overlayView?.votButton) {
+				return;
+			}
+			const messageStr = Array.isArray(errorMessage)
+				? errorMessage.join(" ")
+				: String(errorMessage);
+			const cacheKey = `${lang}:${messageStr}`;
+			const cached = this.errorTranslationCache.get(cacheKey);
+			if (cached) {
+				this.transformBtn("error", cached);
+			} else {
+				overlayView.votButton.loading = true;
+				const translatedMessage = await translate(messageStr, "ru", lang);
+				const translatedText = Array.isArray(translatedMessage)
+					? translatedMessage.join("\n")
+					: String(translatedMessage);
+				if (signal?.aborted) {
+					return;
+				}
+				this.errorTranslationCache.set(cacheKey, translatedText);
+				// Prevent unbounded growth.
+				if (this.errorTranslationCache.size > 50) {
+					const oldestKey = this.errorTranslationCache.keys().next().value;
+					if (oldestKey) this.errorTranslationCache.delete(oldestKey);
+				}
+				this.transformBtn("error", translatedText);
+			}
+			if (signal?.aborted) {
+				return;
+			}
+		} else {
+			const msg = Array.isArray(errorMessage)
+				? errorMessage.join("\n")
+				: String(errorMessage ?? "");
+			this.transformBtn("error", msg);
+		}
+		if (signal?.aborted) {
+			return;
+		}
+		if (
+			[
+				"Подготавливаем перевод",
+				"Видео передано в обработку",
+				"Ожидаем перевод видео",
+				"Загружаем переведенное аудио",
+			].includes(errorMessage)
+		) {
+			if (this.uiManager.votOverlayView?.votButton) {
+				this.uiManager.votOverlayView.votButton.loading = true;
+			}
+		}
+	}
+
+	/**
+	 * Called after translation is updated.
+	 * @param {string} audioUrl The URL of the translation audio.
+	 */
+	afterUpdateTranslation(audioUrl) {
+		const overlayView = this.uiManager.votOverlayView;
+		if (!overlayView?.votButton) {
+			return;
+		}
+		const isSuccess =
+			overlayView.votButton.container.dataset.status === "success";
+		if (overlayView.videoVolumeSlider) {
+			overlayView.videoVolumeSlider.hidden =
+				!this.data?.showVideoSlider || !isSuccess;
+		}
+		if (overlayView.translationVolumeSlider) {
+			overlayView.translationVolumeSlider.hidden = !isSuccess;
+		}
+
+		// Re-initialize delta-based syncVolume state when translation becomes active.
+		if (overlayView.videoVolumeSlider && overlayView.translationVolumeSlider) {
+			this.volumeLinkState.lastVideoPercent = Number(
+				overlayView.videoVolumeSlider.value,
+			);
+			this.volumeLinkState.lastTranslationPercent = Number(
+				overlayView.translationVolumeSlider.value,
+			);
+			this.volumeLinkState.initialized = true;
+		} else {
+			this.volumeLinkState.initialized = false;
+		}
+
+		if (this.videoData && !this.videoData.isStream) {
+			if (overlayView.downloadTranslationButton) {
+				overlayView.downloadTranslationButton.hidden = false;
+			}
+			this.downloadTranslationUrl = audioUrl;
+		}
+		debug.log(
+			"afterUpdateTranslation downloadTranslationUrl",
+			this.downloadTranslationUrl,
+		);
+		this.syncTranslationPlaybackVolume();
+
+		if (isSuccess && this.site.host === "vk" && this.videoData?.videoId) {
+			const vkSubtitlesCacheKey = this.getSubtitlesCacheKey(
+				this.videoData.videoId,
+				this.videoData.detectedLanguage,
+				this.videoData.responseLanguage,
+			);
+			this.cacheManager.deleteSubtitles(vkSubtitlesCacheKey);
+			this.subtitles = [];
+			this.subtitlesCacheKey = null;
+			void (async () => {
+				try {
+					await this.loadSubtitles();
+					if (this.data?.autoSubtitles) {
+						await this.enableSubtitlesForCurrentLangPair();
+					}
+				} catch (error) {
+					debug.log("[VOT][VK subtitles] failed to refresh after translation", {
+						error,
+						videoId: this.videoData?.videoId,
+					});
+				}
+			})();
+		}
+
+		if (this.data?.sendNotifyOnComplete && this.hadAsyncWait && isSuccess) {
+			this.notifier.translationCompleted(globalThis.location.hostname);
+			this.hadAsyncWait = false;
+		}
+	}
+
+	/**
+	 * Validates the audio URL by sending a request.
+	 * @param {string} audioUrl The audio URL to validate.
+	 * @returns {Promise<string>} The valid audio URL.
+	 */
+	validateAudioUrl(
+		audioUrl: string,
+		actionContext?: { gen: number; videoId: string },
+	): Promise<string> {
+		return this.callModuleAsync(validateAudioUrlImpl, audioUrl, actionContext);
+	}
+
+	scheduleTranslationRefresh(): void {
+		this.callModule(scheduleTranslationRefreshImpl);
+	}
+
+	refreshTranslationAudio = refreshTranslationAudioImpl;
+
+	/**
+	 * Proxifies the audio URL if needed.
+	 * @param {string} audioUrl The original audio URL.
+	 * @returns {string} The proxified audio URL.
+	 */
+	proxifyAudio(audioUrl: string): string {
+		return this.callModule(proxifyAudioImpl, audioUrl);
+	}
+
+	/**
+	 * Reverts a previously proxified audio URL back to the original Yandex S3 URL.
+	 *
+	 * This allows us to re-apply proxy settings when the proxy host/mode changes
+	 * without permanently "locking in" the old proxy host in the current player
+	 * src.
+	 */
+	unproxifyAudio(audioUrl: string): string {
+		return this.callModule(unproxifyAudioImpl, audioUrl);
+	}
+
+	/**
+	 * Called when proxy-related settings are changed at runtime.
+	 *
+	 * - Clears in-memory caches so old failures/URLs don't persist.
+	 * - Cancels any in-flight translation work.
+	 * - Best-effort refreshes the active audio source so the new proxy host/mode
+	 *   takes effect immediately.
+	 */
+	handleProxySettingsChanged = handleProxySettingsChangedImpl;
+
+	isMultiMethodS3(url: string): boolean {
+		return this.callModule(isMultiMethodS3Impl, url);
+	}
+
+	/**
+	 * Updates the translation audio source.
+	 * @param {string} audioUrl The audio URL.
+	 */
+	updateTranslation = updateTranslationImpl;
+
+	/**
+	 * Translates the video/audio.
+	 * @param {string} VIDEO_ID The video ID.
+	 * @param {boolean} isStream Whether the video is a stream.
+	 * @param {string} requestLang Source language.
+	 * @param {string} responseLang Target language.
+	 * @param {any} translationHelp Optional translation helper data.
+	 */
+	translateFunc(
+		VIDEO_ID: string,
+		isStream: boolean,
+		requestLang: string,
+		responseLang: string,
+		translationHelp?: any,
+	): Promise<void> {
+		return translateFuncImpl.call(
+			this,
+			VIDEO_ID,
+			isStream,
+			requestLang,
+			responseLang,
+			translationHelp,
+		);
+	}
+
+	/**
+	 * used for enable audio downloader on this hosts
+	 */
+	isYouTubeHosts() {
+		return this.callModule(isYouTubeHostsImpl);
+	}
+	canUploadAudioForCurrentSite(): boolean {
+		const host = this.site.host;
+		const rawUrl = String(
+			this.videoData?.url || this.video?.currentSrc || this.video?.src || "",
+		);
+		debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
+
+		const canForceLocalFileUpload = (() => {
+			if (!rawUrl) {
+				return isCustomPlaybackTarget(host, this.videoData?.host);
+			}
+
+			try {
+				const normalizedUrl = new URL(
+					rawUrl,
+					globalThis.location.href,
+				).toString();
+
+				if (!this.votClient.isDirectMediaUrl(normalizedUrl)) {
+					return isCustomPlaybackTarget(host, this.videoData?.host);
+				}
+
+				return (
+					isCustomPlaybackTarget(host, this.videoData?.host) ||
+					new URL(normalizedUrl).hostname !== globalThis.location.hostname
+				);
+			} catch {
+				return isCustomPlaybackTarget(host, this.videoData?.host);
+			}
+		})();
+
+		if (canForceLocalFileUpload) {
+			return true;
+		}
+
+		if (!this.data?.useAudioDownload) {
+			return false;
+		}
+
+		return (
+			host === "youtube" ||
+			host === "invidious" ||
+			host === "piped" ||
+			host === "yandexdisk" ||
+			host === "douyin" ||
+			host === "custom" ||
+			host === "vk"
+		);
+	}
+	/**
+	 * Configures audio settings such as volume.
+	 */
+	setupAudioSettings() {
+		return this.callModule(setupAudioSettingsImpl);
+	}
+
+	syncTranslationPlaybackVolume(): void {
+		this.callModule(syncTranslationPlaybackVolumeImpl);
+	}
+
+	applyManualVideoVolumeOverride(volume: number): void {
+		this.callModule(applyManualVideoVolumeOverrideImpl, volume);
+	}
+
+	/**
+	 * Stops translation and synchronizes volume.
+	 */
+	stopTranslation = async () => {
+		this.translationOrchestrator?.reset();
+		this.overlayVisibility?.cancel();
+		await this.stopTranslate();
+		this.syncVideoVolumeSlider();
+	};
+
+	/**
+	 * Handles video source change events.
+	 */
+	handleSrcChanged() {
+		return this.lifecycleController.handleSrcChanged();
+	}
+
+	/**
+	 * Releases resources and removes event listeners.
+	 */
+	async release() {
+		debug.log("[VideoHandler] release");
+		if (
+			/^(m|music)\.youtube\.com$/i.test(
+				String(globalThis.location.hostname || ""),
+			)
+		) {
+			console.log("[VOT][mobile-overlay][handler] VideoHandler.release()", {
+				videoId: this.videoData?.videoId,
+				page: `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`,
+			});
+		}
+		this.initialized = false;
+		this.overlayVerificationGeneration += 1;
+		try {
+			await this.stopTranslation();
+		} catch (err) {
+			debug.log("[VideoHandler] stopTranslation failed during release", err);
+		}
+		this.lifecycleController?.teardown();
+		this.abortController?.abort();
+		this.abortController = new AbortController();
+		this.overlayVisibility?.release();
+		this.releaseExtraEvents();
+		if (this.hasSubtitlesWidget()) {
+			this.subtitlesWidget?.release();
+			this.subtitlesWidget = undefined;
+		}
+		this.interactionChecker?.destroy();
+		this.uiManager.release();
+		if (
+			(globalThis as Record<string, unknown>)[
+				GOOGLE_DRIVE_ACTIVE_HANDLER_KEY
+			] === this
+		) {
+			Reflect.deleteProperty(
+				globalThis as Record<string, unknown>,
+				GOOGLE_DRIVE_ACTIVE_HANDLER_KEY,
+			);
+		}
+	}
+
+	/**
+	 * Collects report information for bug reporting.
+	 * @returns {Object} Report info object.
+	 */
+	collectReportInfo() {
+		const info = getEnvironmentInfoImpl();
+		const detectedLanguage = this.videoData?.detectedLanguage ?? "unknown";
+		const responseLanguage = this.videoData?.responseLanguage ?? "unknown";
+		const additionalInfo = `<details>
 <summary>Autogenerated by VOT:</summary>
 <ul>
   <li>OS: ${info.os}</li>
@@ -2040,20 +2046,20 @@ export class VideoHandler {
   <li>Proxying mode: ${this.data?.translateProxyEnabled ?? 0}</li>
 </ul>
 </details>`;
-    const template = `1-bug-report-${localizationProvider.lang === "ru" ? "ru" : "en"}.yml`;
-    return {
-      assignees: "Acobat12",
-      template,
-      os: info.os,
-      "script-version": info.scriptVersion,
-      "additional-info": additionalInfo,
-    };
-  }
+		const template = `1-bug-report-${localizationProvider.lang === "ru" ? "ru" : "en"}.yml`;
+		return {
+			assignees: "Acobat12",
+			template,
+			os: info.os,
+			"script-version": info.scriptVersion,
+			"additional-info": additionalInfo,
+		};
+	}
 
-  /**
-   * Releases extra event listeners.
-   */
-  releaseExtraEvents = releaseExtraEventsImpl;
+	/**
+	 * Releases extra event listeners.
+	 */
+	releaseExtraEvents = releaseExtraEventsImpl;
 }
 
 const videoObserverChecker = createIntervalIdleChecker();
@@ -2062,156 +2068,156 @@ const videosWrappers = new WeakMap<HTMLVideoElement, VideoHandler>();
 let servicesCache: ServiceConf[] | null = null;
 const bootState = getOrCreateBootState();
 function extractGoogleDriveFileIdFromUrl(url: string): string | undefined {
-  try {
-    const parsed = new URL(url, globalThis.location.origin);
-    const pathname = parsed.pathname;
+	try {
+		const parsed = new URL(url, globalThis.location.origin);
+		const pathname = parsed.pathname;
 
-    return (
-      /\/file\/d\/([^/]+)/.exec(pathname)?.[1] ||
-      /\/videos\/d\/([^/]+)/.exec(pathname)?.[1] ||
-      /\/d\/([^/]+)/.exec(pathname)?.[1]
-    );
-  } catch {
-    return undefined;
-  }
+		return (
+			/\/file\/d\/([^/]+)/.exec(pathname)?.[1] ||
+			/\/videos\/d\/([^/]+)/.exec(pathname)?.[1] ||
+			/\/d\/([^/]+)/.exec(pathname)?.[1]
+		);
+	} catch {
+		return undefined;
+	}
 }
 
 function normalizeGoogleDriveStoredTitle(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
+	if (typeof value !== "string") return undefined;
 
-  const normalized = value
-    .replace(/\s*-\s*Google Drive\s*$/i, "")
-    .replace(/\s*-\s*Google Диск\s*$/i, "")
-    .trim();
+	const normalized = value
+		.replace(/\s*-\s*Google Drive\s*$/i, "")
+		.replace(/\s*-\s*Google Диск\s*$/i, "")
+		.trim();
 
-  return normalized || undefined;
+	return normalized || undefined;
 }
 
 function getGoogleDriveTopFrameTitle(): string | undefined {
-  const exactDriveTitle =
-    Array.from(
-      document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span'),
-    )
-      .map((el) => el.textContent?.trim() ?? "")
-      .find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text)) || "";
+	const exactDriveTitle =
+		Array.from(
+			document.querySelectorAll('[data-is-tooltip-wrapper="true"] > span'),
+		)
+			.map((el) => el.textContent?.trim() ?? "")
+			.find((text) => /\.(mp4|mkv|mov|webm|avi|m4v)$/i.test(text)) || "";
 
-  const headingTitle =
-    document
-      .querySelector('h1, [role="heading"], div[role="heading"]')
-      ?.textContent?.trim() || "";
+	const headingTitle =
+		document
+			.querySelector('h1, [role="heading"], div[role="heading"]')
+			?.textContent?.trim() || "";
 
-  const metaTitle =
-    document
-      .querySelector('meta[property="og:title"], meta[name="title"]')
-      ?.getAttribute("content")
-      ?.trim() || "";
+	const metaTitle =
+		document
+			.querySelector('meta[property="og:title"], meta[name="title"]')
+			?.getAttribute("content")
+			?.trim() || "";
 
-  const docTitle = String(document.title || "").trim();
+	const docTitle = String(document.title || "").trim();
 
-  return normalizeGoogleDriveStoredTitle(
-    exactDriveTitle || headingTitle || metaTitle || docTitle,
-  );
+	return normalizeGoogleDriveStoredTitle(
+		exactDriveTitle || headingTitle || metaTitle || docTitle,
+	);
 }
 
 async function persistGoogleDriveTopFrameTitleIfNeeded(): Promise<void> {
-  const host = globalThis.location.hostname;
+	const host = globalThis.location.hostname;
 
-  if (host !== "drive.google.com" && host !== "docs.google.com") {
-    return;
-  }
+	if (host !== "drive.google.com" && host !== "docs.google.com") {
+		return;
+	}
 
-  const fileId = extractGoogleDriveFileIdFromUrl(globalThis.location.href);
-  if (!fileId) {
-    return;
-  }
+	const fileId = extractGoogleDriveFileIdFromUrl(globalThis.location.href);
+	if (!fileId) {
+		return;
+	}
 
-  const title = getGoogleDriveTopFrameTitle();
-  if (!title) {
-    return;
-  }
+	const title = getGoogleDriveTopFrameTitle();
+	if (!title) {
+		return;
+	}
 
-  try {
-    await votStorage.set(`googledrive:title:${fileId}`, title);
-  } catch (error) {
-    console.warn("[VOT] failed to persist Google Drive title", error);
-  }
+	try {
+		await votStorage.set(`googledrive:title:${fileId}`, title);
+	} catch (error) {
+		console.warn("[VOT] failed to persist Google Drive title", error);
+	}
 }
 function getFrameContext() {
-  return {
-    frame: isIframe() ? "iframe" : "top",
-    host: globalThis.location.hostname || "unknown",
-    path: globalThis.location.pathname || "/",
-  };
+	return {
+		frame: isIframe() ? "iframe" : "top",
+		host: globalThis.location.hostname || "unknown",
+		path: globalThis.location.pathname || "/",
+	};
 }
 
 function logBootstrap(
-  message: string,
-  details?: Record<string, unknown>,
+	message: string,
+	details?: Record<string, unknown>,
 ): void {
-  const ctx = getFrameContext();
-  const payload: Record<string, unknown> = {
-    host: ctx.host,
-    path: ctx.path,
-  };
-  if (details) {
-    Object.assign(payload, details);
-  }
+	const ctx = getFrameContext();
+	const payload: Record<string, unknown> = {
+		host: ctx.host,
+		path: ctx.path,
+	};
+	if (details) {
+		Object.assign(payload, details);
+	}
 
-  console.log(`[VOT][bootstrap][${ctx.frame}] ${message}`, payload);
+	console.log(`[VOT][bootstrap][${ctx.frame}] ${message}`, payload);
 }
 
 function matchSite(entry: ServiceConf, url: URL): boolean {
-  const host = url.hostname;
+	const host = url.hostname;
 
-  const isMatches = (match: unknown): boolean => {
-    if (match instanceof RegExp) return match.test(host);
-    if (typeof match === "string") return host.includes(match);
-    if (typeof match === "function") {
-      try {
-        return Boolean(match(url));
-      } catch {
-        return false;
-      }
-    }
-    return false;
-  };
+	const isMatches = (match: unknown): boolean => {
+		if (match instanceof RegExp) return match.test(host);
+		if (typeof match === "string") return host.includes(match);
+		if (typeof match === "function") {
+			try {
+				return Boolean(match(url));
+			} catch {
+				return false;
+			}
+		}
+		return false;
+	};
 
-  return Array.isArray(entry.match)
-    ? entry.match.some(isMatches)
-    : isMatches(entry.match);
+	return Array.isArray(entry.match)
+		? entry.match.some(isMatches)
+		: isMatches(entry.match);
 }
 
 function getServicesCached(): ServiceConf[] {
-  if (!servicesCache) {
-    const base = getService();
-    const url = new URL(globalThis.location.href);
+	if (!servicesCache) {
+		const base = getService();
+		const url = new URL(globalThis.location.href);
 
-    const matchedBase = base.filter((site) => matchSite(site, url));
-    const matchedExtra = extraSites.filter((site) => matchSite(site, url));
+		const matchedBase = base.filter((site) => matchSite(site, url));
+		const matchedExtra = extraSites.filter((site) => matchSite(site, url));
 
-    servicesCache = [...matchedExtra, ...matchedBase];
+		servicesCache = [...matchedExtra, ...matchedBase];
 
-    const genericFallbackService = {
-      host: "custom",
-      url: "stub",
-      selector: GENERIC_PLAYER_SELECTOR,
-      eventSelector: GENERIC_PLAYER_SELECTOR,
-      rawResult: true,
-      priority: -1000,
-    } as ServiceConf;
+		const genericFallbackService = {
+			host: "custom",
+			url: "stub",
+			selector: GENERIC_PLAYER_SELECTOR,
+			eventSelector: GENERIC_PLAYER_SELECTOR,
+			rawResult: true,
+			priority: -1000,
+		} as ServiceConf;
 
-    const hasGenericFallback = servicesCache.some(
-      (site) =>
-        String(site.host) === "custom" &&
-        site.selector === GENERIC_PLAYER_SELECTOR,
-    );
+		const hasGenericFallback = servicesCache.some(
+			(site) =>
+				String(site.host) === "custom" &&
+				site.selector === GENERIC_PLAYER_SELECTOR,
+		);
 
-    if (!hasGenericFallback) {
-      servicesCache.push(genericFallbackService);
-    }
-  }
+		if (!hasGenericFallback) {
+			servicesCache.push(genericFallbackService);
+		}
+	}
 
-  return servicesCache;
+	return servicesCache;
 }
 
 /**
@@ -2221,199 +2227,199 @@ function getServicesCached(): ServiceConf[] {
  * @returns {HTMLElement|null} The matching parent element.
  */
 function findContainer(
-  site: ServiceConf,
-  video: HTMLVideoElement,
+	site: ServiceConf,
+	video: HTMLVideoElement,
 ): HTMLElement | null {
-  debug.log("findContainer", site, video);
+	debug.log("findContainer", site, video);
 
-  if (site.selector) {
-    const matched = findConnectedContainerBySelector(video, site.selector);
-    if (matched) {
-      debug.log("findContainer matched by site.selector", matched);
-      return matched;
-    }
-  }
+	if (site.selector) {
+		const matched = findConnectedContainerBySelector(video, site.selector);
+		if (matched) {
+			debug.log("findContainer matched by site.selector", matched);
+			return matched;
+		}
+	}
 
-  const genericMatched = findConnectedContainerBySelector(
-    video,
-    GENERIC_PLAYER_SELECTOR,
-  );
-  if (genericMatched) {
-    debug.log("findContainer matched by generic selector", genericMatched);
-    return genericMatched;
-  }
+	const genericMatched = findConnectedContainerBySelector(
+		video,
+		GENERIC_PLAYER_SELECTOR,
+	);
+	if (genericMatched) {
+		debug.log("findContainer matched by generic selector", genericMatched);
+		return genericMatched;
+	}
 
-  debug.log("findContainer fallback to parentElement");
-  return video.parentElement;
+	debug.log("findContainer fallback to parentElement");
+	return video.parentElement;
 }
 
 function isYouTubePage(): boolean {
-  const hostname = String(globalThis.location.hostname || "").toLowerCase();
+	const hostname = String(globalThis.location.hostname || "").toLowerCase();
 
-  return (
-    hostname === "youtube.com" ||
-    hostname.endsWith(".youtube.com") ||
-    hostname === "youtu.be" ||
-    hostname.endsWith(".youtube-nocookie.com") ||
-    hostname.endsWith(".youtubekids.com") ||
-    hostname === "youtube.googleapis.com"
-  );
+	return (
+		hostname === "youtube.com" ||
+		hostname.endsWith(".youtube.com") ||
+		hostname === "youtu.be" ||
+		hostname.endsWith(".youtube-nocookie.com") ||
+		hostname.endsWith(".youtubekids.com") ||
+		hostname === "youtube.googleapis.com"
+	);
 }
 
 function isYouTubeMusicPage(): boolean {
-  return (
-    String(globalThis.location.hostname || "").toLowerCase() ===
-    "music.youtube.com"
-  );
+	return (
+		String(globalThis.location.hostname || "").toLowerCase() ===
+		"music.youtube.com"
+	);
 }
 
 function shouldInstallManifestSniffer(): boolean {
-  // Keep manifest sniffing enabled for YouTube Music until it has the same
-  // stable helper coverage as desktop/mobile watch pages.
-  return isYouTubeMusicPage() || !isYouTubePage();
+	// Keep manifest sniffing enabled for YouTube Music until it has the same
+	// stable helper coverage as desktop/mobile watch pages.
+	return isYouTubeMusicPage() || !isYouTubePage();
 }
 
 /**
  * Main function to start the extension.
  */
 async function main(): Promise<void> {
-  await persistGoogleDriveTopFrameTitleIfNeeded();
-  if (shouldInstallManifestSniffer()) {
-    installManifestSniffer();
-  }
-  const iframeMode = isIframe();
-  const currentHost = String(globalThis.location.hostname || "").toLowerCase();
-  const shouldSkipGoogleDriveTopFrameBootstrap =
-    !iframeMode &&
-    (currentHost === "drive.google.com" || currentHost === "docs.google.com");
+	await persistGoogleDriveTopFrameTitleIfNeeded();
+	if (shouldInstallManifestSniffer()) {
+		installManifestSniffer();
+	}
+	const iframeMode = isIframe();
+	const currentHost = String(globalThis.location.hostname || "").toLowerCase();
+	const shouldSkipGoogleDriveTopFrameBootstrap =
+		!iframeMode &&
+		(currentHost === "drive.google.com" || currentHost === "docs.google.com");
 
-  if (shouldSkipGoogleDriveTopFrameBootstrap) {
-    logBootstrap(
-      "Google Drive top frame detected; skipping top-frame VideoHandler bootstrap",
-      { host: currentHost },
-    );
-    await ensureRuntimeActivated("google-drive-top-frame", logBootstrap);
-    return;
-  }
+	if (shouldSkipGoogleDriveTopFrameBootstrap) {
+		logBootstrap(
+			"Google Drive top frame detected; skipping top-frame VideoHandler bootstrap",
+			{ host: currentHost },
+		);
+		await ensureRuntimeActivated("google-drive-top-frame", logBootstrap);
+		return;
+	}
 
-  const bootstrapMode = resolveBootstrapMode({
-    isIframe: isIframe(),
-    href: String(globalThis.location.href || ""),
-    origin: globalThis.location.origin,
-    authOrigin: authCallbackOrigin,
-  });
+	const bootstrapMode = resolveBootstrapMode({
+		isIframe: isIframe(),
+		href: String(globalThis.location.href || ""),
+		origin: globalThis.location.origin,
+		authOrigin: authCallbackOrigin,
+	});
 
-  if (bootstrapMode === "skip") {
-    logBootstrap("Skipping bootstrap for non-runnable iframe");
-    return;
-  }
+	if (bootstrapMode === "skip") {
+		logBootstrap("Skipping bootstrap for non-runnable iframe");
+		return;
+	}
 
-  if (iframeMode && document.visibilityState === "hidden") {
-    logBootstrap("Hidden iframe detected; delaying bootstrap until visible");
+	if (iframeMode && document.visibilityState === "hidden") {
+		logBootstrap("Hidden iframe detected; delaying bootstrap until visible");
 
-    await new Promise<void>((resolve) => {
-      const onVisibilityChange = () => {
-        if (document.visibilityState !== "hidden") {
-          document.removeEventListener("visibilitychange", onVisibilityChange);
-          resolve();
-        }
-      };
+		await new Promise<void>((resolve) => {
+			const onVisibilityChange = () => {
+				if (document.visibilityState !== "hidden") {
+					document.removeEventListener("visibilitychange", onVisibilityChange);
+					resolve();
+				}
+			};
 
-      document.addEventListener("visibilitychange", onVisibilityChange);
+			document.addEventListener("visibilitychange", onVisibilityChange);
 
-      setTimeout(() => {
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-        resolve();
-      }, 1500);
-    });
-  }
+			setTimeout(() => {
+				document.removeEventListener("visibilitychange", onVisibilityChange);
+				resolve();
+			}, 1500);
+		});
+	}
 
-  logBootstrap("Loading extension");
-  if (bootstrapMode === "auth-eager") {
-    void ensureRuntimeActivated("auth-page", logBootstrap).catch((err) => {
-      console.error("[VOT] Failed to activate runtime", err);
-    });
-  } else {
-    logBootstrap("Lazy bootstrap enabled; waiting for video detection");
-  }
+	logBootstrap("Loading extension");
+	if (bootstrapMode === "auth-eager") {
+		void ensureRuntimeActivated("auth-page", logBootstrap).catch((err) => {
+			console.error("[VOT] Failed to activate runtime", err);
+		});
+	} else {
+		logBootstrap("Lazy bootstrap enabled; waiting for video detection");
+	}
 
-  bindObserverListeners({
-    videoObserver,
-    videosWrappers,
-    ensureRuntimeActivated: (reason: string) =>
-      ensureRuntimeActivated(reason, logBootstrap),
-    getServicesCached,
-    findContainer,
-    createVideoHandler: (video, container, site) =>
-      new VideoHandler(video, container, site),
-  });
-  const services = getServicesCached();
-  const videoObserverPolicy = resolveVideoObserverPolicy({
-    hostname: globalThis.location.hostname,
-    services,
-  });
-  videoObserver.setPolicy(videoObserverPolicy);
+	bindObserverListeners({
+		videoObserver,
+		videosWrappers,
+		ensureRuntimeActivated: (reason: string) =>
+			ensureRuntimeActivated(reason, logBootstrap),
+		getServicesCached,
+		findContainer,
+		createVideoHandler: (video, container, site) =>
+			new VideoHandler(video, container, site),
+	});
+	const services = getServicesCached();
+	const videoObserverPolicy = resolveVideoObserverPolicy({
+		hostname: globalThis.location.hostname,
+		services,
+	});
+	videoObserver.setPolicy(videoObserverPolicy);
 
-  if (videoObserverPolicy.preferProbeBootstrap) {
-    logBootstrap("Lightweight video probe enabled", {
-      strategy: videoObserverPolicy.probeStrategy,
-      selectors: videoObserverPolicy.probeSelectors.join(", "),
-    });
-    startLightweightVideoProbe({
-      strategy: videoObserverPolicy.probeStrategy,
-      selectors: videoObserverPolicy.probeSelectors,
-      pollIntervalMs: videoObserverPolicy.probePollIntervalMs,
-      pollTimeoutMs: videoObserverPolicy.probePollTimeoutMs,
-      onVideoDetected: (reason, video) => {
-        logBootstrap("Probe detected candidate video", { reason });
-        videoObserver.enable(video);
-      },
-      onProbeExhausted: (reason) => {
-        logBootstrap(
-          "Lightweight video probe exhausted; enabling DOM observer fallback",
-          {
-            reason,
-            strategy: videoObserverPolicy.probeStrategy,
-            timeoutMs: videoObserverPolicy.probePollTimeoutMs,
-          },
-        );
-        videoObserver.setPolicy({
-          ...videoObserverPolicy,
-          startDomObservationOnEnable: true,
-        });
-        videoObserver.enable();
-      },
-    });
-    return;
-  }
+	if (videoObserverPolicy.preferProbeBootstrap) {
+		logBootstrap("Lightweight video probe enabled", {
+			strategy: videoObserverPolicy.probeStrategy,
+			selectors: videoObserverPolicy.probeSelectors.join(", "),
+		});
+		startLightweightVideoProbe({
+			strategy: videoObserverPolicy.probeStrategy,
+			selectors: videoObserverPolicy.probeSelectors,
+			pollIntervalMs: videoObserverPolicy.probePollIntervalMs,
+			pollTimeoutMs: videoObserverPolicy.probePollTimeoutMs,
+			onVideoDetected: (reason, video) => {
+				logBootstrap("Probe detected candidate video", { reason });
+				videoObserver.enable(video);
+			},
+			onProbeExhausted: (reason) => {
+				logBootstrap(
+					"Lightweight video probe exhausted; enabling DOM observer fallback",
+					{
+						reason,
+						strategy: videoObserverPolicy.probeStrategy,
+						timeoutMs: videoObserverPolicy.probePollTimeoutMs,
+					},
+				);
+				videoObserver.setPolicy({
+					...videoObserverPolicy,
+					startDomObservationOnEnable: true,
+				});
+				videoObserver.enable();
+			},
+		});
+		return;
+	}
 
-  videoObserver.enable();
+	videoObserver.enable();
 }
 
 const DOM_BOOTSTRAP_ATTR = "data-vot-bootstrap-active";
 
 if (document.documentElement.hasAttribute(DOM_BOOTSTRAP_ATTR)) {
-  logBootstrap("dom bootstrap already initialized, skipping duplicate run");
+	logBootstrap("dom bootstrap already initialized, skipping duplicate run");
 } else {
-  document.documentElement.setAttribute(DOM_BOOTSTRAP_ATTR, "1");
+	document.documentElement.setAttribute(DOM_BOOTSTRAP_ATTR, "1");
 
-  if (bootState.status === "booting" || bootState.status === "booted") {
-    logBootstrap("bootstrap already initialized, skipping duplicate run", {
-      status: bootState.status,
-    });
-  } else {
-    const runBootstrap = async () => {
-      try {
-        await main();
-        bootState.status = "booted";
-      } catch (e) {
-        bootState.status = "failed";
-        bootState.error = e;
-        console.error("[VOT]", e);
-      }
-    };
+	if (bootState.status === "booting" || bootState.status === "booted") {
+		logBootstrap("bootstrap already initialized, skipping duplicate run", {
+			status: bootState.status,
+		});
+	} else {
+		const runBootstrap = async () => {
+			try {
+				await main();
+				bootState.status = "booted";
+			} catch (e) {
+				bootState.status = "failed";
+				bootState.error = e;
+				console.error("[VOT]", e);
+			}
+		};
 
-    bootState.status = "booting";
-    bootState.promise = runBootstrap();
-  }
+		bootState.status = "booting";
+		bootState.promise = runBootstrap();
+	}
 }
