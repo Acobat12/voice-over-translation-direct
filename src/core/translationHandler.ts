@@ -2170,12 +2170,22 @@ export class VOTTranslationHandler {
 		clearTimeout(this.videoHandler.autoRetry);
 		this.finishDownloadSuccess();
 
-		// Experimental retranslate test: keep the normal API source language
-		// (including the lively-voice `en` mapping), but explicitly force the
-		// source language for YouTube. This tests whether Yandex will create a
-		// fresh translation without changing the language pair.
+		// Экспериментальный тест повторного перевода: для YouTube явно принудительно
+		// задаём выбранный исходный язык через `forceSourceLang`, чтобы проверить,
+		// создаст ли Яндекс перевод для другой языковой пары.
+		//
+		// В тестах выяснилось, что для `en` Яндекс Браузер повторный перевод
+		// таким способом не создаёт, поэтому `en` исключён.
+		//
+		// Для других исходных языков используется `forceSourceLang: true`,
+		// чтобы Яндекс обрабатывал фактически выбранную языковую пару.
+		// На данный момент повторный перевод удалось подтвердить только для
+		// `de → ru` и `fr → ru`.
+
 		const forceSameYouTubeSourceLang =
-			this.videoHandler.site.host === "youtube" && requestLang !== "auto";
+			this.videoHandler.site.host === "youtube" &&
+			requestLang !== "auto" &&
+			requestLang !== "en";
 
 		const requestLangForApi = this.videoHandler.getRequestLangForTranslation(
 			requestLang,

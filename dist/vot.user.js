@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.13
+// @version         1.11.6.14
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -23486,7 +23486,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.13"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.14"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -48320,7 +48320,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		async translateVideoImpl(videoData, requestLang, responseLang, translationHelp = null, shouldSendFailedAudio = false, signal = NEVER_ABORTED_SIGNAL, disableLivelyVoice = false) {
 			clearTimeout(this.videoHandler.autoRetry);
 			this.finishDownloadSuccess();
-			const forceSameYouTubeSourceLang = this.videoHandler.site.host === "youtube" && requestLang !== "auto";
+			const forceSameYouTubeSourceLang = this.videoHandler.site.host === "youtube" && requestLang !== "auto" && requestLang !== "en";
 			const requestLangForApi = this.videoHandler.getRequestLangForTranslation(requestLang, responseLang);
 			debug.log(videoData, `Translate video (requestLang: ${requestLang}, requestLangForApi: ${requestLangForApi}, responseLang: ${responseLang})`);
 			let livelyDisabled = disableLivelyVoice;
