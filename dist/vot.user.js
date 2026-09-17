@@ -7,7 +7,7 @@
 // @name:ru         [VOT] - Закадровый перевод видео
 // @name:zh         [VOT] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.14
+// @version         1.11.6.15
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -1731,9 +1731,6 @@
 		"en",
 		"zh",
 		"ko",
-		"lt",
-		"lv",
-		"ar",
 		"fr",
 		"it",
 		"es",
@@ -23486,7 +23483,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.14"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.15"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -45161,9 +45158,48 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			racyCheckOk: true
 		};
 	}
-	function selectWebEmbeddedAudioFormat(formats) {
-		const withUrl = formats.filter(({ url, signatureCipher }) => typeof url === "string" || typeof signatureCipher === "string");
-		const audioOnly = withUrl.filter(({ mimeType }) => mimeType?.includes("audio/") && !mimeType?.includes("video/"));
+	function normalizeAudioLanguage(value) {
+		if (typeof value !== "string") return "";
+		return value.trim().toLowerCase().replaceAll("_", "-");
+	}
+	function getAudioFormatLanguage(format) {
+		const direct = format.languageCode ?? format.language ?? format.audioTrack?.languageCode ?? format.audioTrack?.language;
+		if (typeof direct === "string" && direct) return normalizeAudioLanguage(direct);
+		const trackId = format.audioTrack?.id ?? format.audioTrackId;
+		if (typeof trackId === "string" && trackId) {
+			const idLanguage = trackId.split(".")[0];
+			if (idLanguage) return normalizeAudioLanguage(idLanguage);
+		}
+		try {
+			const cipher = typeof format.signatureCipher === "string" ? new URLSearchParams(format.signatureCipher) : void 0;
+			const rawUrl = format.url ?? cipher?.get("url");
+			if (rawUrl) {
+				const xtags = new URL(rawUrl).searchParams.get("xtags") ?? "";
+				const match = /(?:^|:)lang=([^:]+)/i.exec(xtags);
+				if (match?.[1]) return normalizeAudioLanguage(match[1]);
+			}
+		} catch {}
+		return "";
+	}
+	function audioLanguageMatches(trackLanguage, requestedLanguage) {
+		const track = normalizeAudioLanguage(trackLanguage);
+		const requested = normalizeAudioLanguage(requestedLanguage);
+		if (!track || !requested || requested === "auto") return false;
+		if (track === requested) return true;
+		return track.split("-")[0] === requested.split("-")[0];
+	}
+	function isDrcAudioFormat(format) {
+		if (typeof format.xtags === "string" && format.xtags.includes("drc=1")) return true;
+		try {
+			const cipher = typeof format.signatureCipher === "string" ? new URLSearchParams(format.signatureCipher) : void 0;
+			const rawUrl = format.url ?? cipher?.get("url");
+			return (rawUrl ? new URL(rawUrl).searchParams.get("xtags") : null)?.includes("drc=1") === true;
+		} catch {
+			return false;
+		}
+	}
+	function selectWebEmbeddedAudioFormat(formats, requestedLanguage) {
+		const audioOnly = formats.filter(({ url, signatureCipher }) => typeof url === "string" || typeof signatureCipher === "string").filter(({ mimeType }) => mimeType?.includes("audio/") && !mimeType?.includes("video/"));
 		const preferredItags = [
 			251,
 			140,
@@ -45187,18 +45223,69 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			};
 			return rank(a.itag) - rank(b.itag) || (b.bitrate ?? 0) - (a.bitrate ?? 0);
 		};
+		const normalizedRequestedLanguage = normalizeAudioLanguage(requestedLanguage);
+		const exactLanguageCandidates = normalizedRequestedLanguage && normalizedRequestedLanguage !== "auto" ? audioOnly.filter((format) => getAudioFormatLanguage(format) === normalizedRequestedLanguage) : [];
+		const requestedLanguageCandidates = exactLanguageCandidates.length > 0 ? exactLanguageCandidates : normalizedRequestedLanguage && normalizedRequestedLanguage !== "auto" ? audioOnly.filter((format) => audioLanguageMatches(getAudioFormatLanguage(format), normalizedRequestedLanguage)) : [];
 		const defaultAudioOnly = audioOnly.filter(({ audioTrack }) => audioTrack?.audioIsDefault === true);
-		const selected = (defaultAudioOnly.length > 0 ? defaultAudioOnly : audioOnly).sort(byPreference)[0] ?? withUrl.find(({ itag }) => itag === 18) ?? withUrl.filter(({ mimeType }) => /mp4a\.|opus/i.test(mimeType ?? "")).sort((a, b) => (a.bitrate ?? 0) - (b.bitrate ?? 0))[0];
-		if (!selected) {
-			debug.log("Audio downloader. no direct audio formats", JSON.stringify(formats.map((format) => ({
+		const trackCandidates = requestedLanguageCandidates.length > 0 ? requestedLanguageCandidates : defaultAudioOnly.length > 0 ? defaultAudioOnly : audioOnly;
+		const selectionMode = requestedLanguageCandidates.length > 0 ? "requested-language" : defaultAudioOnly.length > 0 ? "audioIsDefault" : "legacy-fallback";
+		const nonDrcCandidates = trackCandidates.filter((format) => !isDrcAudioFormat(format));
+		const selected = (nonDrcCandidates.length > 0 ? nonDrcCandidates : trackCandidates).sort(byPreference)[0];
+		if (!selected) throw new Error("Audio downloader. web ABR returned no direct audio-only formats");
+		const describeAudioFormat = (format) => {
+			let urlInfo = {};
+			try {
+				const cipher = typeof format.signatureCipher === "string" ? new URLSearchParams(format.signatureCipher) : void 0;
+				const rawUrl = format.url ?? cipher?.get("url");
+				if (rawUrl) {
+					const parsed = new URL(rawUrl);
+					urlInfo = {
+						urlHost: parsed.hostname,
+						urlItag: parsed.searchParams.get("itag"),
+						urlXtags: parsed.searchParams.get("xtags"),
+						urlLmt: parsed.searchParams.get("lmt")
+					};
+				}
+			} catch {}
+			return {
 				itag: format.itag,
 				mimeType: format.mimeType,
+				bitrate: format.bitrate,
+				averageBitrate: format.averageBitrate,
+				audioQuality: format.audioQuality,
+				audioSampleRate: format.audioSampleRate,
+				audioChannels: format.audioChannels,
+				audioTrack: format.audioTrack,
+				audioTrackId: format.audioTrackId,
+				language: format.language,
+				languageCode: format.languageCode,
+				resolvedLanguage: getAudioFormatLanguage(format),
+				displayName: format.displayName,
+				xtags: format.xtags,
+				isDrc: isDrcAudioFormat(format),
+				contentLength: format.contentLength,
 				hasUrl: typeof format.url === "string",
 				hasCipher: typeof format.signatureCipher === "string",
-				contentLength: format.contentLength ?? "none"
-			}))));
-			throw new Error("Audio downloader. web ABR returned no direct audio formats");
-		}
+				...urlInfo
+			};
+		};
+		debug.log("Audio downloader. AUDIO TRACK TEST", JSON.stringify({
+			requestedLanguage: normalizedRequestedLanguage || null,
+			selectionMode,
+			selectedLanguage: getAudioFormatLanguage(selected) || null,
+			selectedTrack: selected.audioTrack?.displayName ?? selected.displayName ?? null,
+			selectedTrackId: selected.audioTrack?.id ?? selected.audioTrackId ?? null,
+			selectedIsDefault: selected.audioTrack?.audioIsDefault === true,
+			selectedItag: selected.itag ?? null,
+			selectedBitrate: selected.bitrate ?? null,
+			selectedContentLength: selected.contentLength ?? null,
+			selectedIsDrc: isDrcAudioFormat(selected),
+			selected: describeAudioFormat(selected),
+			audioOnlyCount: audioOnly.length,
+			requestedLanguageCandidates: requestedLanguageCandidates.length,
+			defaultAudioOnlyCount: defaultAudioOnly.length,
+			candidates: audioOnly.map(describeAudioFormat)
+		}, null, 2));
 		return selected;
 	}
 	async function sha1(value) {
@@ -45916,7 +46003,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		throw lastError instanceof Error ? lastError : new Error("Audio downloader. All web ABR transports failed");
 	}
 	var WEB_ABR_DOWNLOAD_QUEUE = new Map();
-	async function* getWebAbrAudioChunksImpl(targetWindow, videoId, signal, transportStartIndex = 0) {
+	async function* getWebAbrAudioChunksImpl(targetWindow, videoId, signal, transportStartIndex = 0, sourceLanguage) {
 		const config = await resolveYtcfg(targetWindow, signal);
 		const apiKey = getConfigValue(config, "INNERTUBE_API_KEY");
 		if (typeof apiKey !== "string") throw new Error("Audio downloader. web ABR config is unavailable");
@@ -45992,7 +46079,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					const status = playerResponse.playabilityStatus;
 					throw new Error(`Audio downloader. ${name} ${status?.status ?? "failed"}: ${status?.reason ?? status?.messages?.join(" ") ?? "no streaming data"}`);
 				}
-				const format = selectWebEmbeddedAudioFormat(formats);
+				const format = selectWebEmbeddedAudioFormat(formats, sourceLanguage);
 				const fetchedFlags = fetchedConfig?.experimentFlags;
 				const poTokenBinding = selectGvsPoTokenBinding(videoId, {
 					loggedIn,
@@ -46044,7 +46131,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		if (/LOGIN_REQUIRED|UNPLAYABLE/.test(fallbackError.message)) throw new Error(`${fallbackError.message}. Sign in to YouTube with an age-verified account and retry from the youtube.com watch page`, { cause: fallbackError });
 		throw fallbackError;
 	}
-	async function* getWebAbrAudioChunks(targetWindow, videoId, signal, transportStartIndex = 0) {
+	async function* getWebAbrAudioChunks(targetWindow, videoId, signal, transportStartIndex = 0, sourceLanguage) {
 		const queueKey = String(videoId);
 		const previousEntry = WEB_ABR_DOWNLOAD_QUEUE.get(queueKey);
 		const hadPrevious = Boolean(previousEntry);
@@ -46066,7 +46153,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				videoId,
 				transportStartIndex
 			});
-			yield* getWebAbrAudioChunksImpl(targetWindow, videoId, signal, transportStartIndex);
+			yield* getWebAbrAudioChunksImpl(targetWindow, videoId, signal, transportStartIndex, sourceLanguage);
 		} finally {
 			releaseCurrent?.();
 			if (WEB_ABR_DOWNLOAD_QUEUE.get(queueKey) === current) WEB_ABR_DOWNLOAD_QUEUE.delete(queueKey);
@@ -46106,7 +46193,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			isLastChunk
 		};
 	}
-	async function* getAudioBridgeChunks(videoId, signal, audioDownloadType, webAbrTransportStartIndex = 0) {
+	async function* getAudioBridgeChunks(videoId, signal, audioDownloadType, webAbrTransportStartIndex = 0, sourceLanguage) {
 		if (signal.aborted) throw makeAbortError();
 		const messageId = `stream-message-id-${performance.now()}-${Math.random()}`;
 		const chunks = [];
@@ -46223,7 +46310,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				payload: {
 					pureVideoId: videoId,
 					audioDownloadType,
-					webAbrTransportStartIndex
+					webAbrTransportStartIndex,
+					sourceLanguage
 				}
 			}, "*");
 			while (!streamFinished || chunks.length > 0) {
@@ -46244,16 +46332,17 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			if (!streamFinished || failure) postAbort();
 		}
 	}
-	async function getAudioFromBridge({ videoId, signal }, audioDownloadType, webAbrTransportStartIndex = 0) {
+	async function getAudioFromBridge({ videoId, signal }, audioDownloadType, webAbrTransportStartIndex = 0, sourceLanguage) {
 		return {
 			fileId: `random-${audioDownloadType}-${crypto.randomUUID()}`,
 			mediaPartsLength: null,
-			getMediaBuffers: () => getAudioBridgeChunks(videoId, signal, audioDownloadType, webAbrTransportStartIndex)
+			getMediaBuffers: () => getAudioBridgeChunks(videoId, signal, audioDownloadType, webAbrTransportStartIndex, sourceLanguage)
 		};
 	}
 	async function getAudioFromWebAbr(options) {
-		const webAbrTransportStartIndex = Number(options.webAbrTransportStartIndex ?? 0);
-		return getAudioFromBridge(options, WEB_ABR_STRATEGY, Number.isInteger(webAbrTransportStartIndex) && webAbrTransportStartIndex >= 0 ? webAbrTransportStartIndex : 0);
+		const extendedOptions = options;
+		const webAbrTransportStartIndex = Number(extendedOptions.webAbrTransportStartIndex ?? 0);
+		return getAudioFromBridge(options, WEB_ABR_STRATEGY, Number.isInteger(webAbrTransportStartIndex) && webAbrTransportStartIndex >= 0 ? webAbrTransportStartIndex : 0, extendedOptions.sourceLanguage);
 	}
 	async function getAudioFromWebMseProxy(options) {
 		return getAudioFromBridge(options, WEB_MSE_PROXY_STRATEGY);
@@ -46272,6 +46361,11 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		if (!message.payload || typeof message.payload !== "object") return 0;
 		const value = message.payload.webAbrTransportStartIndex;
 		return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+	}
+	function getSourceLanguage(message) {
+		if (!message.payload || typeof message.payload !== "object") return void 0;
+		const value = message.payload.sourceLanguage;
+		return typeof value === "string" && value ? value : void 0;
 	}
 	async function getEncryptedEmbedConfig(targetWindow, videoId) {
 		if (!/(?:^|\.)youtube\.com$/u.test(targetWindow.location.hostname)) return;
@@ -46712,7 +46806,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 				});
 			};
 			const webAbrTransportStartIndex = getWebAbrTransportStartIndex(message);
-			const chunks = audioDownloadType === "web_abr" ? getWebAbrAudioChunks(targetWindow, videoId, controller.signal, webAbrTransportStartIndex) : createAudioChunkStream(targetWindow, videoId, controller.signal, postProgress);
+			const sourceLanguage = getSourceLanguage(message);
+			const chunks = audioDownloadType === "web_abr" ? getWebAbrAudioChunks(targetWindow, videoId, controller.signal, webAbrTransportStartIndex, sourceLanguage) : createAudioChunkStream(targetWindow, videoId, controller.signal, postProgress);
 			let heartbeat;
 			if (audioDownloadType === "web_abr") {
 				postProgress();
@@ -46924,12 +47019,13 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 		if (!chunk || chunk.byteLength === 0) throw new Error("Audio downloader. Empty audio");
 		return chunk;
 	}
-	async function handleCommonAudioDownloadRequest({ audioDownloader, attemptedStrategy = audioDownloader.strategy, translationId, videoId, signal, preferredVideo, webAbrTransportStartIndex = 0 }) {
+	async function handleCommonAudioDownloadRequest({ audioDownloader, attemptedStrategy = audioDownloader.strategy, translationId, videoId, signal, preferredVideo, webAbrTransportStartIndex = 0, sourceLanguage }) {
 		const audioData = await strategies[attemptedStrategy]({
 			videoId,
 			signal,
 			preferredVideo,
-			webAbrTransportStartIndex
+			webAbrTransportStartIndex,
+			sourceLanguage
 		});
 		if (!audioData) throw new Error("Audio downloader. Can not get audio data");
 		debug.log("Audio downloader. Url found", { audioDownloadType: attemptedStrategy });
@@ -46992,7 +47088,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 			this.strategy = strategy;
 			debug.log("Audio downloader created", { strategy });
 		}
-		async runAudioDownload(videoId, translationId, signal, preferredVideo, webAbrTransportStartIndex = 0) {
+		async runAudioDownload(videoId, translationId, signal, preferredVideo, webAbrTransportStartIndex = 0, sourceLanguage) {
 			const attempts = this.strategy === "web_abr" ? [WEB_ABR_STRATEGY, WEB_MSE_PROXY_STRATEGY] : [this.strategy];
 			for (const attemptedStrategy of attempts) try {
 				await handleCommonAudioDownloadRequest({
@@ -47002,7 +47098,8 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 					videoId,
 					signal,
 					preferredVideo,
-					webAbrTransportStartIndex
+					webAbrTransportStartIndex,
+					sourceLanguage
 				});
 				debug.log("Audio downloader. Audio download finished", {
 					videoId,
@@ -48532,7 +48629,7 @@ ${VK_OVERLAY_PATCH_TEXT}`;
 						translationId: res.translationId,
 						timeoutMs: YOUTUBE_AUDIO_STREAM_TIMEOUT_MS
 					});
-					await Promise.all([this.waitForAudioDownloadCompletion(signal, YOUTUBE_AUDIO_STREAM_TIMEOUT_MS), this.audioDownloader.runAudioDownload(videoData.videoId, res.translationId, signal, this.videoHandler.video, this.webAbrTransportStartIndex)]);
+					await Promise.all([this.waitForAudioDownloadCompletion(signal, YOUTUBE_AUDIO_STREAM_TIMEOUT_MS), this.audioDownloader.runAudioDownload(videoData.videoId, res.translationId, signal, this.videoHandler.video, this.webAbrTransportStartIndex, requestLang)]);
 					this.handledAudioRequestKey = audioRequestKey;
 					this.postAudioTranslateRetryCount = 0;
 					return await this.translateVideoImpl(videoData, requestLang, responseLang, translationHelp, false, signal, livelyDisabled);
