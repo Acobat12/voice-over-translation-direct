@@ -312,18 +312,83 @@ function buildWebEmbeddedPlayerRequest(
 		racyCheckOk: true,
 	};
 }
-function selectWebEmbeddedAudioFormat(formats) {
+function normalizeAudioLanguage(value) {
+	if (typeof value !== "string") return "";
+	return value.trim().toLowerCase().replaceAll("_", "-");
+}
+
+function getAudioFormatLanguage(format) {
+	const direct =
+		format.languageCode ??
+		format.language ??
+		format.audioTrack?.languageCode ??
+		format.audioTrack?.language;
+	if (typeof direct === "string" && direct)
+		return normalizeAudioLanguage(direct);
+
+	const trackId = format.audioTrack?.id ?? format.audioTrackId;
+	if (typeof trackId === "string" && trackId) {
+		// YouTube track ids look like "de-DE.10" / "en-US.4".
+		const idLanguage = trackId.split(".")[0];
+		if (idLanguage) return normalizeAudioLanguage(idLanguage);
+	}
+
+	try {
+		const cipher =
+			typeof format.signatureCipher === "string"
+				? new URLSearchParams(format.signatureCipher)
+				: void 0;
+		const rawUrl = format.url ?? cipher?.get("url");
+		if (rawUrl) {
+			const xtags = new URL(rawUrl).searchParams.get("xtags") ?? "";
+			const match = /(?:^|:)lang=([^:]+)/i.exec(xtags);
+			if (match?.[1]) return normalizeAudioLanguage(match[1]);
+		}
+	} catch {}
+
+	return "";
+}
+
+function audioLanguageMatches(trackLanguage, requestedLanguage) {
+	const track = normalizeAudioLanguage(trackLanguage);
+	const requested = normalizeAudioLanguage(requestedLanguage);
+	if (!track || !requested || requested === "auto") return false;
+	if (track === requested) return true;
+	return track.split("-")[0] === requested.split("-")[0];
+}
+
+function isDrcAudioFormat(format) {
+	if (typeof format.xtags === "string" && format.xtags.includes("drc=1")) {
+		return true;
+	}
+	try {
+		const cipher =
+			typeof format.signatureCipher === "string"
+				? new URLSearchParams(format.signatureCipher)
+				: void 0;
+		const rawUrl = format.url ?? cipher?.get("url");
+		const xtags = rawUrl ? new URL(rawUrl).searchParams.get("xtags") : null;
+		return xtags?.includes("drc=1") === true;
+	} catch {
+		return false;
+	}
+}
+
+function selectWebEmbeddedAudioFormat(formats, requestedLanguage) {
 	const withUrl = formats.filter(
 		({ url, signatureCipher }) =>
 			typeof url === "string" || typeof signatureCipher === "string",
 	);
+
 	const audioOnly = withUrl.filter(
 		({ mimeType }) =>
 			mimeType?.includes("audio/") && !mimeType?.includes("video/"),
 	);
+
 	const preferredItags = [
 		251, 140, 141, 250, 249, 139, 256, 258, 325, 327, 328, 338, 171, 172,
 	];
+
 	const byPreference = (a, b) => {
 		const rank = (itag) => {
 			const index = itag === void 0 ? -1 : preferredItags.indexOf(itag);
@@ -331,40 +396,134 @@ function selectWebEmbeddedAudioFormat(formats) {
 		};
 		return rank(a.itag) - rank(b.itag) || (b.bitrate ?? 0) - (a.bitrate ?? 0);
 	};
-	// On YouTube multi-audio videos the same itag may exist for many languages.
-	// Prefer YouTube's explicitly marked default/original audio track first,
-	// then apply the existing itag/bitrate preference inside that track.
+
+	// If VOT explicitly selected a source language, prefer that YouTube audio
+	// track. BCP-47 variants are matched by exact tag first, then base language
+	// (for example "de" -> "de-DE", "en" -> "en-US").
+	const normalizedRequestedLanguage = normalizeAudioLanguage(requestedLanguage);
+	const exactLanguageCandidates =
+		normalizedRequestedLanguage && normalizedRequestedLanguage !== "auto"
+			? audioOnly.filter(
+					(format) =>
+						getAudioFormatLanguage(format) === normalizedRequestedLanguage,
+				)
+			: [];
+	const requestedLanguageCandidates =
+		exactLanguageCandidates.length > 0
+			? exactLanguageCandidates
+			: normalizedRequestedLanguage && normalizedRequestedLanguage !== "auto"
+				? audioOnly.filter((format) =>
+						audioLanguageMatches(
+							getAudioFormatLanguage(format),
+							normalizedRequestedLanguage,
+						),
+					)
+				: [];
+
 	const defaultAudioOnly = audioOnly.filter(
 		({ audioTrack }) => audioTrack?.audioIsDefault === true,
 	);
-	const preferredAudioOnly =
-		defaultAudioOnly.length > 0 ? defaultAudioOnly : audioOnly;
 
-	const selected =
-		preferredAudioOnly.sort(byPreference)[0] ??
-		withUrl.find(({ itag }) => itag === 18) ??
-		withUrl
-			.filter(({ mimeType }) => /mp4a\.|opus/i.test(mimeType ?? ""))
-			.sort((a, b) => (a.bitrate ?? 0) - (b.bitrate ?? 0))[0];
+	const trackCandidates =
+		requestedLanguageCandidates.length > 0
+			? requestedLanguageCandidates
+			: defaultAudioOnly.length > 0
+				? defaultAudioOnly
+				: audioOnly;
+
+	const selectionMode =
+		requestedLanguageCandidates.length > 0
+			? "requested-language"
+			: defaultAudioOnly.length > 0
+				? "audioIsDefault"
+				: "legacy-fallback";
+
+	const nonDrcCandidates = trackCandidates.filter(
+		(format) => !isDrcAudioFormat(format),
+	);
+
+	const selected = (
+		nonDrcCandidates.length > 0 ? nonDrcCandidates : trackCandidates
+	).sort(byPreference)[0];
+
 	if (!selected) {
-		debug.log(
-			"Audio downloader. no direct audio formats",
-			JSON.stringify(
-				formats.map((format) => ({
-					itag: format.itag,
-					mimeType: format.mimeType,
-					hasUrl: typeof format.url === "string",
-					hasCipher: typeof format.signatureCipher === "string",
-					contentLength: format.contentLength ?? "none",
-				})),
-			),
-		);
 		throw new Error(
-			"Audio downloader. web ABR returned no direct audio formats",
+			"Audio downloader. web ABR returned no direct audio-only formats",
 		);
 	}
+
+	const describeAudioFormat = (format) => {
+		let urlInfo = {};
+		try {
+			const cipher =
+				typeof format.signatureCipher === "string"
+					? new URLSearchParams(format.signatureCipher)
+					: void 0;
+			const rawUrl = format.url ?? cipher?.get("url");
+			if (rawUrl) {
+				const parsed = new URL(rawUrl);
+				urlInfo = {
+					urlHost: parsed.hostname,
+					urlItag: parsed.searchParams.get("itag"),
+					urlXtags: parsed.searchParams.get("xtags"),
+					urlLmt: parsed.searchParams.get("lmt"),
+				};
+			}
+		} catch {}
+
+		return {
+			itag: format.itag,
+			mimeType: format.mimeType,
+			bitrate: format.bitrate,
+			averageBitrate: format.averageBitrate,
+			audioQuality: format.audioQuality,
+			audioSampleRate: format.audioSampleRate,
+			audioChannels: format.audioChannels,
+			audioTrack: format.audioTrack,
+			audioTrackId: format.audioTrackId,
+			language: format.language,
+			languageCode: format.languageCode,
+			resolvedLanguage: getAudioFormatLanguage(format),
+			displayName: format.displayName,
+			xtags: format.xtags,
+			isDrc: isDrcAudioFormat(format),
+			contentLength: format.contentLength,
+			hasUrl: typeof format.url === "string",
+			hasCipher: typeof format.signatureCipher === "string",
+			...urlInfo,
+		};
+	};
+
+	debug.log(
+		"Audio downloader. AUDIO TRACK TEST",
+		JSON.stringify(
+			{
+				requestedLanguage: normalizedRequestedLanguage || null,
+				selectionMode,
+				selectedLanguage: getAudioFormatLanguage(selected) || null,
+				selectedTrack:
+					selected.audioTrack?.displayName ?? selected.displayName ?? null,
+				selectedTrackId:
+					selected.audioTrack?.id ?? selected.audioTrackId ?? null,
+				selectedIsDefault: selected.audioTrack?.audioIsDefault === true,
+				selectedItag: selected.itag ?? null,
+				selectedBitrate: selected.bitrate ?? null,
+				selectedContentLength: selected.contentLength ?? null,
+				selectedIsDrc: isDrcAudioFormat(selected),
+				selected: describeAudioFormat(selected),
+				audioOnlyCount: audioOnly.length,
+				requestedLanguageCandidates: requestedLanguageCandidates.length,
+				defaultAudioOnlyCount: defaultAudioOnly.length,
+				candidates: audioOnly.map(describeAudioFormat),
+			},
+			null,
+			2,
+		),
+	);
+
 	return selected;
 }
+
 async function sha1(value) {
 	const digest = await crypto.subtle.digest(
 		"SHA-1",
@@ -1475,6 +1634,7 @@ async function* getWebAbrAudioChunksImpl(
 	videoId,
 	signal,
 	transportStartIndex = 0,
+	sourceLanguage,
 ) {
 	const config = await resolveYtcfg(targetWindow, signal);
 	const apiKey = getConfigValue(config, "INNERTUBE_API_KEY");
@@ -1603,7 +1763,7 @@ async function* getWebAbrAudioChunksImpl(
 					`Audio downloader. ${name} ${status?.status ?? "failed"}: ${status?.reason ?? status?.messages?.join(" ") ?? "no streaming data"}`,
 				);
 			}
-			const format = selectWebEmbeddedAudioFormat(formats);
+			const format = selectWebEmbeddedAudioFormat(formats, sourceLanguage);
 			const fetchedFlags = fetchedConfig?.experimentFlags;
 			const poTokenBinding = selectGvsPoTokenBinding(videoId, {
 				loggedIn,
@@ -1724,6 +1884,7 @@ export async function* getWebAbrAudioChunks(
 	videoId,
 	signal,
 	transportStartIndex = 0,
+	sourceLanguage,
 ) {
 	const queueKey = String(videoId);
 	const previousEntry = WEB_ABR_DOWNLOAD_QUEUE.get(queueKey);
@@ -1760,6 +1921,7 @@ export async function* getWebAbrAudioChunks(
 			videoId,
 			signal,
 			transportStartIndex,
+			sourceLanguage,
 		);
 	} finally {
 		releaseCurrent?.();
