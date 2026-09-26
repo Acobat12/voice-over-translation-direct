@@ -1,3 +1,29 @@
+// Compact sizing for the main Settings dialog only. Other dialogs keep their
+// normal dimensions (language pickers, temporary messages, etc.).
+.vot-dialog.vot-settings-dialog {
+  width: min(360px, calc(100vw - 24px));
+  font-size: 13px;
+  line-height: 1.35;
+
+  .vot-dialog-title {
+    padding: var(--vot-space-3) var(--vot-space-3) var(--vot-space-2) !important;
+  }
+
+  .vot-dialog-body-container {
+    padding: 0 var(--vot-space-3) !important;
+    gap: var(--vot-space-2);
+  }
+
+  .vot-dialog-footer-container {
+    gap: var(--vot-space-1);
+    padding: var(--vot-space-2) !important;
+  }
+
+  .vot-dialog-header-container {
+    min-height: 26px;
+  }
+}
+
 .vot-settings-section {
   border: 1px solid var(--vot-border-color);
   border-radius: var(--vot-radius-l);
@@ -19,7 +45,7 @@
 
 .vot-settings-section-header {
   margin: 0 !important;
-  padding: 0.45em 0.5em !important;
+  padding: 0.3em 0.4em !important;
   border-radius: var(--vot-radius-m);
 }
 
@@ -36,7 +62,7 @@
   // Components (select/slider) read these to align their right column.
   // Controls are no longer pushed to the far right edge of the dialog.
   // We still use a "comfort" width so dropdown pills are consistent.
-  --vot-settings-control-width: 200px;
+  --vot-settings-control-width: 140px;
   // Slightly tighter vertical rhythm for long settings pages.
   --vot-settings-row-gap: var(--vot-space-2);
 
@@ -88,7 +114,7 @@
     display: block !important;
     width: auto !important;
     max-height: none !important;
-    font-size: 13px !important;
+    font-size: 11px !important;
     line-height: 1.2 !important;
     color: rgba(var(--vot-helper-onsurface-rgb), 0.72) !important;
     cursor: default !important;
@@ -107,7 +133,7 @@
     // Control
     order: 1;
     width: 100% !important;
-    height: 36px !important;
+    height: 30px !important;
     padding: 0 var(--vot-space-3) !important;
     border: 1px solid var(--vot-border-color) !important;
     border-radius: var(--vot-radius-s) !important;
@@ -122,7 +148,7 @@
 
   // Multi-line should stay comfortable.
   & > .vot-textfield > textarea {
-    min-height: 84px !important;
+    min-height: 60px !important;
     height: auto !important;
     padding: var(--vot-space-2) var(--vot-space-3) !important;
     resize: vertical;

@@ -36,15 +36,18 @@ async function handleCommonAudioDownloadRequest({
   signal,
   preferredVideo,
   webAbrTransportStartIndex = 0,
+  sourceLanguage,
 }: AudioDownloadRequestOptions & {
   attemptedStrategy?: AvailableAudioDownloadType;
   webAbrTransportStartIndex?: number;
+  sourceLanguage?: string;
 }) {
   const audioData = await strategies[attemptedStrategy]({
     videoId,
     signal,
     preferredVideo,
     webAbrTransportStartIndex,
+    sourceLanguage,
   } as any);
   if (!audioData) {
     throw new Error("Audio downloader. Can not get audio data");
@@ -156,6 +159,7 @@ export class AudioDownloader {
     signal: AbortSignal,
     preferredVideo?: HTMLVideoElement | null,
     webAbrTransportStartIndex = 0,
+    sourceLanguage?: string,
   ) {
     const attempts: AvailableAudioDownloadType[] =
       this.strategy === WEB_ABR_STRATEGY
@@ -172,6 +176,7 @@ export class AudioDownloader {
           signal,
           preferredVideo,
           webAbrTransportStartIndex,
+          sourceLanguage,
         });
 
         debug.log("Audio downloader. Audio download finished", {
@@ -180,10 +185,16 @@ export class AudioDownloader {
         });
         return;
       } catch (err) {
-        if (signal.aborted || isAbortError(err)) {
+        // Only stop the whole download when OUR translation signal was actually
+        // cancelled. A strategy/bridge may throw an AbortError for its own
+        // internal request (for example when WEB_ABR switches/restarts a
+        // transport). Treating every AbortError as cancellation leaves the
+        // translation handler waiting forever with `downloading === true`.
+        if (signal.aborted) {
           debug.log("Audio downloader. Audio download aborted", {
             videoId,
             audioDownloadType: attemptedStrategy,
+            reason: "translation-signal-aborted",
           });
           return;
         }

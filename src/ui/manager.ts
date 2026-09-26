@@ -261,6 +261,9 @@ export class UIManager {
       .addEventListener("click:translate", async () => {
         await this.handleTranslationBtnClick();
       })
+      .addEventListener("click:restoreTranslation", async () => {
+        await this.handleRestoreTranslationClick();
+      })
       .addEventListener("click:pip", async () => {
         if (!this.videoHandler) {
           return;
@@ -563,6 +566,7 @@ export class UIManager {
       hasActiveSource: videoHandler.hasActiveSource(),
       activeTranslation: Boolean(videoHandler.activeTranslation),
     });
+    await videoHandler.videoValidator();
     const sourceAudioState = videoHandler.syncSourceAudioAvailabilityUi({
       forceVisible: true,
     });
@@ -593,11 +597,35 @@ export class UIManager {
     await videoHandler.primePlaybackByGesture("translate-button");
 
     const videoData = await this.getVideoDataForTranslation(videoHandler);
+
+    // Reset the previous video's automatic fallback BEFORE resolving the new
+    // video's language. Otherwise ensureDetectedLanguageForTranslation sees
+    // the old es/en/... instead of auto and cannot switch the new video.
+    if (
+      videoHandler.autoSourceLanguageOverrideVideoId &&
+      videoHandler.autoSourceLanguageOverrideVideoId !== videoData.videoId
+    ) {
+      videoHandler.translateFromLang = "auto";
+      videoHandler.autoSourceLanguageOverride = undefined;
+      videoHandler.autoSourceLanguageOverrideVideoId = undefined;
+      videoHandler.setSelectMenuValues("auto", videoData.responseLanguage);
+      debug.log(
+        "[startTranslationFlow] reset automatic source language to auto",
+        {
+          videoId: videoData.videoId,
+        },
+      );
+    }
+
     await videoHandler.videoManager.ensureDetectedLanguageForTranslation(
       videoData,
     );
 
-    debug.log("[startTranslationFlow] Run translateFunc", videoData.videoId);
+    debug.log("[startTranslationFlow] Run translateFunc", {
+      videoId: videoData.videoId,
+      detectedLanguage: videoData.detectedLanguage,
+      translateFromLang: videoHandler.translateFromLang,
+    });
 
     try {
       const requestLang =
@@ -1334,7 +1362,78 @@ export class UIManager {
     return this;
   }
 
-  async handleTranslationBtnClick() {
+  async handleRestoreTranslationClick() {
+    const videoHandler = this.videoHandler;
+    if (!videoHandler || videoHandler.site.host !== "youtube") return this;
+
+    // Resolve the current video first so the one-shot flag is tied to exactly
+    // one YouTube video and can never leak to the next navigation.
+    const videoData = await this.getVideoDataForTranslation(videoHandler);
+    if (!videoData.videoId) return this;
+
+    if (videoHandler.hasActiveSource() || this.isTranslationBusy()) {
+      await videoHandler.stopTranslation();
+      await videoHandler.waitForPendingStopTranslate();
+      await this.waitForTranslationActionSettled();
+    }
+
+    // Do not clear the normal translation cache here. The one-shot flag already
+    // bypasses it for this explicit reprocessing request. Keeping the cached
+    // finished translation intact lets the ordinary Translate action keep using
+    // the existing translation while the server-side reprocessing task is pending.
+    videoHandler.translationHandler.enableYouTubeReprocessOnce(
+      videoData.videoId,
+    );
+
+    debug.log("[VOT][restore-translation] starting one-shot reprocessing", {
+      videoId: videoData.videoId,
+      duration: videoData.duration,
+      requestDuration: videoData.duration + 300,
+      wasStream: true,
+    });
+
+    // IMPORTANT: "Restore translation" is not a second Translate toggle.
+    // The normal button handler deliberately toggles an active translation off
+    // and has normal-action cleanup semantics.  This action must always START a
+    // fresh translation flow after arming the one-shot reprocess state.
+    const actionGeneration = ++this.translationActionGeneration;
+    this.translationActionInFlight = true;
+
+    try {
+      await this.startTranslationFlow(videoHandler);
+    } catch (err) {
+      // Do not leave a reprocess flag armed when the explicit start itself fails.
+      videoHandler.translationHandler.cancelYouTubeReprocess(
+        "new translation start failed",
+      );
+
+      if (this.isAbortError(err)) {
+        this.transformBtn("none", localizationProvider.get("translateVideo"));
+        return this;
+      }
+
+      console.error("[VOT]", err);
+
+      if (!(err instanceof Error)) {
+        this.transformBtn("error", String(err));
+        return this;
+      }
+
+      const message =
+        err.name === "VOTLocalizedError"
+          ? (err as VOTLocalizedError).localizedMessage
+          : err.message;
+      this.transformBtn("error", message);
+    } finally {
+      if (this.translationActionGeneration === actionGeneration) {
+        this.translationActionInFlight = false;
+      }
+    }
+
+    return this;
+  }
+
+  async handleTranslationBtnClick(preserveYouTubeReprocess = false) {
     if (!this.votOverlayView?.isInitialized()) {
       throw new Error("[VOT] OverlayView isn't initialized");
     }
@@ -1344,7 +1443,18 @@ export class UIManager {
       return this;
     }
 
-    debug.log("[handleTranslationBtnClick] click translationBtn");
+    // A normal Translate/voice-mode action must never inherit a pending
+    // one-shot reprocessing flag from an interrupted or stale action. The
+    // explicit New Translation path is the only caller allowed to preserve it.
+    if (!preserveYouTubeReprocess) {
+      videoHandler.translationHandler.cancelYouTubeReprocess(
+        "normal translation action",
+      );
+    }
+
+    debug.log("[handleTranslationBtnClick] click translationBtn", {
+      preserveYouTubeReprocess,
+    });
 
     if (videoHandler.isAwaitingAutoplayRecovery()) {
       debug.log("[handleTranslationBtnClick] resume pending autoplay recovery");

@@ -50,6 +50,17 @@ const MAX_SHARED_LANGUAGE_STATES = 500;
 const REQUEST_LANG_SET = new Set<RequestLang>(
   availableLangs as readonly RequestLang[],
 );
+const SUPPORTED_TRANSLATION_SOURCE_LANGS = new Set<RequestLang>([
+  "ru",
+  "en",
+  "zh",
+  "ko",
+  "fr",
+  "it",
+  "es",
+  "de",
+  "ja",
+]);
 
 type ResolvedRequestLang = Exclude<RequestLang, "auto">;
 type SharedLanguageState = {
@@ -453,6 +464,82 @@ function isResolvedLanguage(
   return Boolean(value && value !== "auto");
 }
 
+function getYoutubeAudioFormatLanguage(format: any): RequestLang | undefined {
+  const direct =
+    format?.languageCode ??
+    format?.language ??
+    format?.audioTrack?.languageCode ??
+    format?.audioTrack?.language;
+  const normalizedDirect = normalizeToRequestLang(direct);
+  if (normalizedDirect) return normalizedDirect;
+
+  const trackId = format?.audioTrack?.id ?? format?.audioTrackId;
+  if (typeof trackId === "string") {
+    const match = trackId.match(
+      /(?:^|[.;:_-])([a-z]{2,3}(?:-[a-z]{2})?)(?:[.;:_-]|$)/i,
+    );
+    const normalizedTrackId = normalizeToRequestLang(match?.[1]);
+    if (normalizedTrackId) return normalizedTrackId;
+  }
+
+  try {
+    const rawUrl =
+      typeof format?.url === "string"
+        ? format.url
+        : typeof format?.signatureCipher === "string"
+          ? new URLSearchParams(format.signatureCipher).get("url")
+          : undefined;
+    const xtags = rawUrl
+      ? (new URL(rawUrl).searchParams.get("xtags") ?? "")
+      : "";
+    const match = /(?:^|:)lang=([^:]+)/i.exec(xtags);
+    const normalizedXtags = normalizeToRequestLang(match?.[1]);
+    if (normalizedXtags) return normalizedXtags;
+  } catch {}
+
+  return undefined;
+}
+
+function resolveSupportedYoutubeAudioLanguage(): RequestLang | undefined {
+  const response = YoutubeHelper.getPlayerResponse() as any;
+  const formats = [
+    ...(Array.isArray(response?.streamingData?.adaptiveFormats)
+      ? response.streamingData.adaptiveFormats
+      : []),
+    ...(Array.isArray(response?.streamingData?.formats)
+      ? response.streamingData.formats
+      : []),
+  ].filter((format: any) => {
+    const mimeType = String(format?.mimeType ?? "");
+    return mimeType.includes("audio/") && !mimeType.includes("video/");
+  });
+
+  const preferredItags = [
+    251, 140, 141, 250, 249, 139, 256, 258, 325, 327, 328, 338, 171, 172,
+  ];
+  const rank = (format: any) => {
+    const index = preferredItags.indexOf(Number(format?.itag));
+    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+  };
+
+  const supported = formats
+    .map((format: any) => ({
+      format,
+      language: getYoutubeAudioFormatLanguage(format),
+    }))
+    .filter(
+      (item: any) =>
+        item.language && SUPPORTED_TRANSLATION_SOURCE_LANGS.has(item.language),
+    )
+    .sort(
+      (a: any, b: any) =>
+        rank(a.format) - rank(b.format) ||
+        Number(b.format?.bitrate ?? 0) - Number(a.format?.bitrate ?? 0),
+    );
+
+  return supported[0]?.language;
+}
+
 function buildDetectText(title: unknown, description: unknown): string {
   const textTitle = typeof title === "string" ? title : "";
   const textDescription =
@@ -621,6 +708,7 @@ export class VOTVideoManager {
 
     const sharedLanguageState = getSharedLanguageState(videoId);
     sharedLanguageState.userLanguageOverride = normalizedLanguage;
+    sharedLanguageState.detectedLanguage = normalizedLanguage;
   }
 
   rememberDetectedLanguage(videoId: string, language: RequestLang): void {
@@ -665,35 +753,87 @@ export class VOTVideoManager {
   async ensureDetectedLanguageForTranslation(
     videoData: RuntimeVideoData | undefined,
   ): Promise<void> {
-    if (!videoData?.videoId || videoData.detectedLanguage !== "auto") {
+    if (!videoData?.videoId) {
       return;
     }
 
-    const sharedLanguageState = getSharedLanguageState(videoData.videoId);
-    const { detectedLanguage, cacheLanguage } =
-      await resolveDetectedLanguageForVideo({
-        isStream: videoData.isStream,
-        host: this.videoHandler.site.host,
-        possibleLanguage: videoData.detectedLanguage,
-        subtitles: videoData.subtitles,
-        userOverrideLanguage: sharedLanguageState.userLanguageOverride,
-        cachedDetectedLanguage: sharedLanguageState.detectedLanguage,
-        title: videoData.title,
-        description: videoData.description,
-        allowTextLanguageDetection: true,
-        detectLanguage: async (text) =>
-          await this.detectLanguageSingleFlight(videoData.videoId, text),
+    // First resolve "auto" normally. Unlike the old implementation, do NOT
+    // return merely because a language such as "pt" has already been detected:
+    // it still has to pass the translation-source whitelist.
+    if (videoData.detectedLanguage === "auto") {
+      const sharedLanguageState = getSharedLanguageState(videoData.videoId);
+      const { detectedLanguage, cacheLanguage } =
+        await resolveDetectedLanguageForVideo({
+          isStream: videoData.isStream,
+          host: this.videoHandler.site.host,
+          possibleLanguage: videoData.detectedLanguage,
+          subtitles: videoData.subtitles,
+          userOverrideLanguage: sharedLanguageState.userLanguageOverride,
+          cachedDetectedLanguage: sharedLanguageState.detectedLanguage,
+          title: videoData.title,
+          description: videoData.description,
+          allowTextLanguageDetection: true,
+          detectLanguage: async (text) =>
+            await this.detectLanguageSingleFlight(videoData.videoId, text),
+        });
+
+      if (cacheLanguage) {
+        this.setDetectedLanguageCache(videoData.videoId, cacheLanguage);
+      }
+
+      if (detectedLanguage !== "auto") {
+        videoData.detectedLanguage = detectedLanguage;
+      }
+    }
+
+    const detected = normalizeToRequestLang(videoData.detectedLanguage);
+    if (
+      detected &&
+      detected !== "auto" &&
+      SUPPORTED_TRANSLATION_SOURCE_LANGS.has(detected)
+    ) {
+      return;
+    }
+
+    // The detected language is unsupported (for example pt), or detection
+    // stayed on auto. On YouTube choose a supported language from the ACTUAL
+    // audio tracks immediately, before translateFunc/API is started.
+    if (this.videoHandler.site.host !== "youtube") {
+      return;
+    }
+
+    const supportedVideoLanguage = resolveSupportedYoutubeAudioLanguage();
+    if (!supportedVideoLanguage) {
+      debug.warn("[language] no supported YouTube audio track found", {
+        videoId: videoData.videoId,
+        detectedLanguage: videoData.detectedLanguage,
       });
-
-    if (cacheLanguage) {
-      this.setDetectedLanguageCache(videoData.videoId, cacheLanguage);
-    }
-
-    if (detectedLanguage === "auto") {
       return;
     }
 
-    videoData.detectedLanguage = detectedLanguage;
+    const previousLanguage = videoData.detectedLanguage;
+    videoData.detectedLanguage = supportedVideoLanguage;
+    this.setDetectedLanguageCache(videoData.videoId, supportedVideoLanguage);
+
+    // If the user is in auto mode, immediately switch the active video source
+    // language too. This makes every later layer see es/en/de/... instead of
+    // the unsupported detected language or "auto".
+    if (this.videoHandler.translateFromLang === "auto") {
+      this.videoHandler.translateFromLang = supportedVideoLanguage;
+      this.videoHandler.autoSourceLanguageOverride = supportedVideoLanguage;
+      this.videoHandler.autoSourceLanguageOverrideVideoId = videoData.videoId;
+      this.videoHandler.setSelectMenuValues(
+        supportedVideoLanguage,
+        videoData.responseLanguage,
+      );
+    }
+
+    debug.log("[language] unsupported language switched immediately", {
+      videoId: videoData.videoId,
+      previousLanguage,
+      supportedVideoLanguage,
+      translateFromLang: this.videoHandler.translateFromLang,
+    });
   }
 
   private shouldUseRuntimeYouTubeHelper(): boolean {
@@ -1271,10 +1411,9 @@ export class VOTVideoManager {
       console.log(`[VOT] Set translation from ${normalizedFrom} to ${to}`);
       sharedLanguageState.lastLoggedLangPair = langPairLogKey;
     }
+    videoData.detectedLanguage = normalizedFrom;
     videoData.responseLanguage = to;
-    if (this.videoHandler.translateFromLang === "auto") {
-      this.videoHandler.translateFromLang = "auto";
-    }
+    this.videoHandler.translateFromLang = normalizedFrom;
     this.videoHandler.translateToLang = to;
 
     const overlayView = this.videoHandler.uiManager.votOverlayView;

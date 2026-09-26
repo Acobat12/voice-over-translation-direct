@@ -17,6 +17,35 @@ const STORE_KEY = "__VOT_MSE_CAPTURE_STORE__";
 const STREAM_TIMEOUT_MS = 30 * 60 * 1000;
 const MESSAGE_TIMEOUT_MS = 5 * 60 * 1000;
 
+function getBridgeWindow(): Window & typeof globalThis {
+  try {
+    const unsafe = (
+      globalThis as typeof globalThis & {
+        unsafeWindow?: Window & typeof globalThis;
+      }
+    ).unsafeWindow;
+    if (unsafe?.document && unsafe.location?.hostname.endsWith("youtube.com")) {
+      return unsafe;
+    }
+  } catch {}
+
+  try {
+    const wrapped = (
+      globalThis as typeof globalThis & {
+        wrappedJSObject?: Window & typeof globalThis;
+      }
+    ).wrappedJSObject;
+    if (
+      wrapped?.document &&
+      wrapped.location?.hostname.endsWith("youtube.com")
+    ) {
+      return wrapped;
+    }
+  } catch {}
+
+  return globalThis as Window & typeof globalThis;
+}
+
 type BridgeChunk = {
   buffer: Uint8Array;
   isLastChunk: boolean;
@@ -79,7 +108,10 @@ async function* getAudioBridgeChunks(
   signal: AbortSignal,
   audioDownloadType: typeof WEB_ABR_STRATEGY | typeof WEB_MSE_PROXY_STRATEGY,
   webAbrTransportStartIndex = 0,
+  sourceLanguage?: string,
 ): AsyncGenerator<BridgeChunk> {
+  const bridgeWindow = getBridgeWindow();
+
   if (signal.aborted) {
     throw makeAbortError();
   }
@@ -99,8 +131,9 @@ async function* getAudioBridgeChunks(
 
   const finish = (error?: Error) => {
     if (error) {
-      if (failure) return;
+      if (failure || streamFinished) return;
       failure = error;
+      if (messageTimeout) clearTimeout(messageTimeout);
       debug.error("Audio downloader. Audio bridge failed", {
         videoId,
         messageId,
@@ -109,6 +142,7 @@ async function* getAudioBridgeChunks(
         error: error.message,
       });
     } else {
+      if (streamFinished) return;
       streamFinished = true;
       if (messageTimeout) clearTimeout(messageTimeout);
       debug.log("Audio downloader. Audio bridge stream finished", {
@@ -131,14 +165,14 @@ async function* getAudioBridgeChunks(
 
   const throwIfFailed = () => {
     if (!failure) return;
-    if (!globalThis.location.href.includes(videoId)) {
+    if (!bridgeWindow.location.href.includes(videoId)) {
       throw makeAbortError("URL changed during audio download");
     }
     throw failure;
   };
 
   const postAbort = () => {
-    globalThis.postMessage(
+    bridgeWindow.postMessage(
       {
         messageId,
         messageType: MESSAGE_TYPE,
@@ -152,13 +186,13 @@ async function* getAudioBridgeChunks(
 
   const onMessage = (event: MessageEvent) => {
     const message = event.data as BridgeMessage;
-    const iframe = document.getElementById(
+    const iframe = bridgeWindow.document.getElementById(
       `vot-mse-proxy-${messageId}`,
     ) as HTMLIFrameElement | null;
 
     if (
       !message ||
-      (event.source !== (globalThis as unknown as MessageEventSource) &&
+      (event.source !== (bridgeWindow as unknown as MessageEventSource) &&
         event.source !== iframe?.contentWindow) ||
       message.messageId !== messageId ||
       message.messageType !== MESSAGE_TYPE ||
@@ -188,11 +222,6 @@ async function* getAudioBridgeChunks(
       return;
     }
     if (message.isProgress) {
-      debug.log("Audio downloader. Audio bridge progress", {
-        videoId,
-        messageId,
-        audioDownloadType,
-      });
       return;
     }
 
@@ -200,15 +229,15 @@ async function* getAudioBridgeChunks(
       const chunk = parseAudioBridgeChunk(message.payload);
       chunks.push(chunk);
       receivedChunks += 1;
-      debug.log("Audio downloader. Audio bridge chunk received", {
-        videoId,
-        messageId,
-        audioDownloadType,
-        index: receivedChunks - 1,
-        size: chunk.buffer.byteLength,
-        isLastChunk: chunk.isLastChunk,
-      });
-      notify();
+
+      // The media protocol already carries an authoritative end marker on the
+      // final chunk. Do not require a second control message to unblock the
+      // consumer: that message can race with bridge cleanup or be lost.
+      if (chunk.isLastChunk) {
+        finish();
+      } else {
+        notify();
+      }
     } catch (error) {
       finish(error instanceof Error ? error : new Error(String(error)));
     }
@@ -220,12 +249,12 @@ async function* getAudioBridgeChunks(
     STREAM_TIMEOUT_MS,
   );
   const navigationInterval = setInterval(() => {
-    if (!globalThis.location.href.includes(videoId)) {
+    if (!bridgeWindow.location.href.includes(videoId)) {
       finish(makeAbortError("URL changed during audio download"));
     }
   }, 100);
 
-  globalThis.addEventListener("message", onMessage);
+  bridgeWindow.addEventListener("message", onMessage);
   signal.addEventListener("abort", onAbort, { once: true });
   resetMessageTimeout();
 
@@ -233,10 +262,12 @@ async function* getAudioBridgeChunks(
     videoId,
     messageId,
     audioDownloadType,
+    bridgeHost: bridgeWindow.location.hostname,
+    mainWorldBridge: bridgeWindow !== globalThis,
   });
 
   try {
-    globalThis.postMessage(
+    bridgeWindow.postMessage(
       {
         messageId,
         messageType: MESSAGE_TYPE,
@@ -245,6 +276,7 @@ async function* getAudioBridgeChunks(
           pureVideoId: videoId,
           audioDownloadType,
           webAbrTransportStartIndex,
+          sourceLanguage,
         },
       } satisfies BridgeMessage,
       "*",
@@ -255,18 +287,24 @@ async function* getAudioBridgeChunks(
       const chunk = chunks.shift();
       if (chunk) {
         yield chunk;
-      } else {
-        await new Promise<void>((resolve) => {
-          wake = resolve;
-        });
+        continue;
       }
+
+      // Register the waiter first, then re-check state. A message may arrive
+      // between the initial empty-queue check and waiter installation.
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+        if (failure || streamFinished || chunks.length > 0) {
+          notify();
+        }
+      });
     }
     throwIfFailed();
   } finally {
     if (messageTimeout) clearTimeout(messageTimeout);
     clearTimeout(streamTimeout);
     clearInterval(navigationInterval);
-    globalThis.removeEventListener("message", onMessage);
+    bridgeWindow.removeEventListener("message", onMessage);
     signal.removeEventListener("abort", onAbort);
     if (!streamFinished || failure) {
       postAbort();
@@ -278,6 +316,7 @@ async function getAudioFromBridge(
   { videoId, signal }: GetAudioFromAPIOptions,
   audioDownloadType: typeof WEB_ABR_STRATEGY | typeof WEB_MSE_PROXY_STRATEGY,
   webAbrTransportStartIndex = 0,
+  sourceLanguage?: string,
 ) {
   return {
     fileId: `random-${audioDownloadType}-${crypto.randomUUID()}`,
@@ -288,14 +327,18 @@ async function getAudioFromBridge(
         signal,
         audioDownloadType,
         webAbrTransportStartIndex,
+        sourceLanguage,
       ),
   };
 }
 
 export async function getAudioFromWebAbr(options: GetAudioFromAPIOptions) {
+  const extendedOptions = options as GetAudioFromAPIOptions & {
+    webAbrTransportStartIndex?: number;
+    sourceLanguage?: string;
+  };
   const webAbrTransportStartIndex = Number(
-    (options as GetAudioFromAPIOptions & { webAbrTransportStartIndex?: number })
-      .webAbrTransportStartIndex ?? 0,
+    extendedOptions.webAbrTransportStartIndex ?? 0,
   );
   return getAudioFromBridge(
     options,
@@ -304,6 +347,7 @@ export async function getAudioFromWebAbr(options: GetAudioFromAPIOptions) {
       webAbrTransportStartIndex >= 0
       ? webAbrTransportStartIndex
       : 0,
+    extendedOptions.sourceLanguage,
   );
 }
 
@@ -336,6 +380,13 @@ function getWebAbrTransportStartIndex(message: BridgeMessage): number {
   return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : 0;
 }
 
+function getSourceLanguage(message: BridgeMessage): string | undefined {
+  if (!message.payload || typeof message.payload !== "object") return undefined;
+  const value = (message.payload as { sourceLanguage?: unknown })
+    .sourceLanguage;
+  return typeof value === "string" && value ? value : undefined;
+}
+
 async function getEncryptedEmbedConfig(
   targetWindow: Window & typeof globalThis,
   videoId: string,
@@ -352,15 +403,44 @@ async function getEncryptedEmbedConfig(
   }
 
   try {
+    const ytcfg = (targetWindow as any).ytcfg;
+    const getYtcfg = (key: string): unknown => {
+      try {
+        return ytcfg?.get?.(key);
+      } catch {
+        return undefined;
+      }
+    };
+
+    const configuredClientName = getYtcfg("INNERTUBE_CONTEXT_CLIENT_NAME");
+    const configuredClientVersion = getYtcfg("INNERTUBE_CLIENT_VERSION");
+    const isMweb = targetWindow.location.hostname === "m.youtube.com";
+
+    const clientName =
+      typeof configuredClientName === "string" && configuredClientName
+        ? configuredClientName
+        : isMweb
+          ? "MWEB"
+          : "WEB";
+
+    const clientVersion =
+      typeof configuredClientVersion === "string" && configuredClientVersion
+        ? configuredClientVersion
+        : "2.20251006.01.00";
+
+    const youtubeOrigin = isMweb
+      ? "https://m.youtube.com"
+      : "https://www.youtube.com";
+
     const response = await targetWindow.fetch(
-      "https://www.youtube.com/youtubei/v1/share/get_share_panel",
+      `${youtubeOrigin}/youtubei/v1/share/get_share_panel`,
       {
         method: "POST",
         body: JSON.stringify({
           context: {
             client: {
-              clientName: "WEB",
-              clientVersion: "2.20251006.01.00",
+              clientName,
+              clientVersion,
             },
           },
           serializedSharedEntity: encodeURIComponent(
@@ -722,12 +802,6 @@ function createAudioChunkStream(
             buffer: concatBuffers(pending),
             isLastChunk,
           });
-          debug.log("Audio downloader. MSE chunk enqueued", {
-            videoId,
-            size,
-            isLastChunk,
-            totalSize,
-          });
           pending = [];
           pendingSize = 0;
         };
@@ -984,6 +1058,7 @@ async function handleIframeRequest(
     };
 
     const webAbrTransportStartIndex = getWebAbrTransportStartIndex(message);
+    const sourceLanguage = getSourceLanguage(message);
     const chunks =
       audioDownloadType === WEB_ABR_STRATEGY
         ? getWebAbrAudioChunks(
@@ -991,6 +1066,7 @@ async function handleIframeRequest(
             videoId,
             controller.signal,
             webAbrTransportStartIndex,
+            sourceLanguage,
           )
         : createAudioChunkStream(
             targetWindow,
@@ -1007,13 +1083,6 @@ async function handleIframeRequest(
 
     try {
       for await (const chunk of chunks) {
-        debug.log("Audio downloader. iframe chunk sent", {
-          videoId,
-          messageId: message.messageId,
-          audioDownloadType,
-          size: chunk.buffer.byteLength,
-          isLastChunk: chunk.isLastChunk,
-        });
         postResponse(source, event.origin, {
           ...message,
           messageDirection: "response",
@@ -1054,7 +1123,7 @@ type TopSession = {
 
 const topSessions = new Map<string, TopSession>();
 
-async function handleTopRequest(
+async function handleTopIframeRequest(
   event: MessageEvent,
   targetWindow: Window & typeof globalThis,
 ): Promise<void> {
@@ -1099,8 +1168,8 @@ async function handleTopRequest(
   iframe.setAttribute("aria-hidden", "true");
   iframe.id = `vot-mse-proxy-${message.messageId}`;
 
-  // Use the ordinary YouTube embed page as the main-world execution realm.
-  // WEB_ABR resolves its own player URL/signature/n/PO state inside this iframe.
+  // Legacy MSE fallback: keep the hidden YouTube embed execution realm.
+  // WEB_ABR/SABR no longer uses this iframe.
   const url = new URL(`/embed/${videoId}`, "https://www.youtube.com");
   url.searchParams.set("html5", "1");
   url.searchParams.set("autoplay", "0");
@@ -1177,6 +1246,124 @@ async function handleTopRequest(
   (
     targetWindow.document.body ?? targetWindow.document.documentElement
   ).appendChild(iframe);
+}
+
+async function handleTopRequest(
+  event: MessageEvent,
+  targetWindow: Window & typeof globalThis,
+): Promise<void> {
+  const message = event.data as BridgeMessage;
+  const source = event.source;
+  if (!source || !message.messageId) return;
+
+  const videoId = getVideoId(message);
+  const audioDownloadType = getAudioDownloadType(message);
+  if (!videoId || !audioDownloadType) {
+    postResponse(source, event.origin, {
+      ...message,
+      messageDirection: "response",
+      error: videoId
+        ? "Audio downloader. Unsupported audio download type"
+        : "Audio downloader. Missing video id",
+    });
+    return;
+  }
+
+  // WEB_ABR/SABR must run in the real current YouTube page realm.
+  // This preserves the native WEB context on www.youtube.com and the native
+  // MWEB context on m.youtube.com instead of forcing both through /embed.
+  if (audioDownloadType === WEB_ABR_STRATEGY) {
+    const controller = new AbortController();
+    let settled = false;
+
+    const abort = (abortEvent: MessageEvent) => {
+      const data = abortEvent.data as BridgeMessage;
+      if (
+        abortEvent.source === source &&
+        abortEvent.origin === event.origin &&
+        data.messageId === message.messageId &&
+        data.messageType === MESSAGE_TYPE &&
+        data.messageDirection === "request" &&
+        data.isAborted
+      ) {
+        controller.abort(data.payload);
+      }
+    };
+
+    targetWindow.addEventListener("message", abort);
+
+    debug.log("Audio downloader. direct SABR request started", {
+      videoId,
+      messageId: message.messageId,
+      host: targetWindow.location.hostname,
+    });
+
+    const postProgress = () => {
+      if (settled) return;
+      postResponse(source, event.origin, {
+        ...message,
+        messageDirection: "response",
+        payload: undefined,
+        isProgress: true,
+      });
+    };
+
+    const heartbeat = setInterval(postProgress, 30_000);
+    postProgress();
+
+    try {
+      const chunks = getWebAbrAudioChunks(
+        targetWindow,
+        videoId,
+        controller.signal,
+        getWebAbrTransportStartIndex(message),
+        getSourceLanguage(message),
+      );
+
+      for await (const chunk of chunks) {
+        postResponse(source, event.origin, {
+          ...message,
+          messageDirection: "response",
+          payload: chunk,
+        });
+      }
+
+      settled = true;
+      debug.log("Audio downloader. direct SABR stream finished sent", {
+        videoId,
+        messageId: message.messageId,
+        host: targetWindow.location.hostname,
+      });
+      postResponse(source, event.origin, {
+        ...message,
+        messageDirection: "response",
+        payload: undefined,
+        isStreamFinished: true,
+      });
+    } catch (error) {
+      settled = true;
+      debug.error("Audio downloader. direct SABR request failed", {
+        videoId,
+        messageId: message.messageId,
+        host: targetWindow.location.hostname,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      postResponse(source, event.origin, {
+        ...message,
+        messageDirection: "response",
+        payload: undefined,
+        error: error instanceof Error ? error.message : String(error),
+        isAborted: controller.signal.aborted || isAbortError(error),
+      });
+    } finally {
+      clearInterval(heartbeat);
+      targetWindow.removeEventListener("message", abort);
+    }
+    return;
+  }
+
+  // Keep the legacy hidden iframe only for the MSE fallback.
+  await handleTopIframeRequest(event, targetWindow);
 }
 
 export function initMseProxyHandler(): void {

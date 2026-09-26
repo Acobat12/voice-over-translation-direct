@@ -223,16 +223,31 @@
   &[data-position="top"] {
     flex-direction: row;
     align-items: center;
-    min-height: 52px !important;
-    border-radius: 22px !important;
-    padding: 6px;
+    gap: 4px;
+    min-height: 34px !important;
+    border-radius: 17px !important;
+    padding: 3px;
+
+    // Compact horizontal rail: 28px controls + 3px top/bottom padding = 34px.
+    & .vot-rail-button {
+      width: 28px !important;
+      min-width: 28px !important;
+      max-width: 28px !important;
+      height: 28px !important;
+      min-height: 28px !important;
+      max-height: 28px !important;
+      border-radius: 10px !important;
+    }
 
     & .vot-rail-button-primary {
       width: auto !important;
       min-width: 0 !important;
-      height: 40px !important;
-      min-height: 40px !important;
-      padding: 0 12px !important;
+      max-width: none !important;
+      height: 28px !important;
+      min-height: 28px !important;
+      max-height: 28px !important;
+      padding: 0 8px !important;
+      gap: 5px;
       border-radius: 0 !important;
     }
 
@@ -242,18 +257,29 @@
       align-items: center;
     }
 
+    & .vot-rail-button-label {
+      font-size: 12px;
+      line-height: 1;
+    }
+
     & .vot-rail-button-chevron {
-      width: 36px !important;
-      min-width: 36px !important;
-      max-width: 36px !important;
-      height: 40px !important;
-      min-height: 40px !important;
+      width: 26px !important;
+      min-width: 26px !important;
+      max-width: 26px !important;
+      height: 28px !important;
+      min-height: 28px !important;
+      max-height: 28px !important;
       padding: 0 !important;
       justify-content: center;
     }
 
     & .vot-rail-translate-group {
-      border-radius: 14px !important;
+      border-radius: 11px !important;
+    }
+
+    & svg {
+      width: 16px;
+      height: 16px;
     }
   }
 

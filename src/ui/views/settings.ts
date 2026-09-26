@@ -468,6 +468,8 @@ export class SettingsView {
     this.dialog = new Dialog({
       titleHtml: localizationProvider.get("VOTSettings"),
     });
+    // Keep the main settings dialog compact without shrinking other dialogs.
+    this.dialog.box.classList.add("vot-settings-dialog");
 
     this.globalPortal.appendChild(this.dialog.container);
 

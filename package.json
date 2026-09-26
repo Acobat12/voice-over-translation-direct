@@ -62,6 +62,7 @@
     "@vot.js/shared": "2.4.18",
     "bowser": "2.14.1",
     "chaimu": "1.0.6",
+    "googlevideo": "^4.1.1",
     "lit-html": "3.3.3"
   },
   "bun": {

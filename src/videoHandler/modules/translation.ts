@@ -2067,7 +2067,11 @@ export async function translateFunc(
           this.updateTranslation(nextUrl, ctx),
         scheduleTranslationRefresh: () => this.scheduleTranslationRefresh(),
       });
-    let cachedEntry = this.cacheManager.getTranslation(cacheKey);
+    const reprocessCurrentYouTube =
+      this.translationHandler.isYouTubeReprocessActive(VIDEO_ID);
+    let cachedEntry = reprocessCurrentYouTube
+      ? undefined
+      : this.cacheManager.getTranslation(cacheKey);
 
     if (!cachedEntry && videoData.host === "douyin") {
       cachedEntry = await getStoredDouyinTranslation(cacheKey);

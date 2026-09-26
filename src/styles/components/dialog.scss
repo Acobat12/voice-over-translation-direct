@@ -14,7 +14,7 @@
   position: fixed;
   max-width: initial;
   max-height: initial;
-  width: min(var(--vot-dialog-width, 512px), 100%);
+  width: min(var(--vot-dialog-width, 360px), calc(100% - 24px));
   height: fit-content;
   inset-inline-start: 0;
   inset-inline-end: 0;
@@ -28,8 +28,8 @@
   color: var(--vot-helper-onsurface);
   box-shadow: var(--vot-shadow-2);
   @include shared.vot-font-family;
-  font-size: 16px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.4;
   user-select: none;
   visibility: visible;
   overflow: auto;
@@ -128,7 +128,7 @@
     font-size: calc(15 / 13 * 100%);
     font-weight: bold !important;
     line-height: 1;
-    padding: var(--vot-space-5) var(--vot-space-5) var(--vot-space-4) !important;
+    padding: var(--vot-space-3) var(--vot-space-3) var(--vot-space-2) !important;
   }
 
   &-body-container {
@@ -137,8 +137,8 @@
     flex-direction: column;
     min-height: 1.375rem;
     overflow: auto;
-    padding: 0 var(--vot-space-5) !important;
-    gap: var(--vot-space-4);
+    padding: 0 var(--vot-space-3) !important;
+    gap: var(--vot-space-2);
     overscroll-behavior: contain;
     @include shared.vot-overlay-scrollbar;
   }
@@ -149,7 +149,7 @@
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: var(--vot-space-2);
-    padding: var(--vot-space-4) !important;
+    padding: var(--vot-space-3) !important;
 
     &:empty {
       padding: var(--vot-space-5) 0 0 0 !important;

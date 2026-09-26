@@ -11,6 +11,7 @@ export type OverlayEventType =
   | "click:downloadTranslation"
   | "click:downloadSubtitles"
   | "click:translate"
+  | "click:restoreTranslation"
   | "select:voiceMode"
   | "input:videoVolume"
   | "input:translationVolume"
@@ -33,6 +34,7 @@ export type OverlayViewEventMap = {
   "click:downloadTranslation": [];
   "click:downloadSubtitles": [];
   "click:translate": [];
+  "click:restoreTranslation": [];
   "select:voiceMode": [mode: "standard" | "lively"];
   "input:videoVolume": [volume: number];
   "input:translationVolume": [volume: number];

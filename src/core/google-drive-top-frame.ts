@@ -1094,7 +1094,7 @@ function ensureQuickMenu(): VOTMenu {
   quickMenu.container.style.top = "0";
   quickMenu.container.style.zIndex = DRIVE_TOP_FRAME_POPUP_LAYER_Z;
   quickMenu.container.style.pointerEvents = "auto";
-  quickMenu.container.style.width = "min(420px, calc(100vw - 24px))";
+  quickMenu.container.style.width = "min(260px, calc(100vw - 24px))";
   quickMenu.container.style.maxHeight = "calc(100vh - 24px)";
   quickMenu.container.style.overflow = "visible";
   quickMenu.contentWrapper.style.maxHeight = "calc(100vh - 80px)";
@@ -1279,7 +1279,7 @@ function ensureVoiceModeMenu(): VOTMenu {
   voiceModeMenu.container.style.top = "0";
   voiceModeMenu.container.style.zIndex = DRIVE_TOP_FRAME_POPUP_LAYER_Z;
   voiceModeMenu.container.style.pointerEvents = "auto";
-  voiceModeMenu.container.style.width = "min(360px, calc(100vw - 24px))";
+  voiceModeMenu.container.style.width = "min(240px, calc(100vw - 24px))";
   voiceModeMenu.container.style.maxHeight = "calc(100vh - 24px)";
   voiceModeMenu.container.style.overflow = "visible";
   voiceModeMenu.contentWrapper.style.maxHeight = "calc(100vh - 80px)";

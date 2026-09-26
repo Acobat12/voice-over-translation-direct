@@ -21,8 +21,8 @@
     system-ui,
     sans-serif
   ) !important;
-  font-size: 16px !important;
-  line-height: 1.5 !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
   text-align: start !important;
 
   & > :is(input, textarea) {
@@ -33,7 +33,7 @@
     border-color: transparent var(--vot-helper-safari2)
       var(--vot-helper-safari2) !important;
     border-radius: 4px !important;
-    padding: 15px 13px 15px !important;
+    padding: 10px 10px 10px !important;
     width: 100% !important;
     height: inherit !important;
     color: rgba(var(--vot-onsurface-rgb, 0, 0, 0), 0.87) !important;
@@ -82,7 +82,7 @@
 
     &:not(:focus):placeholder-shown + span {
       font-size: inherit !important;
-      line-height: 68px !important;
+      line-height: 48px !important;
     }
   }
 

@@ -24,13 +24,13 @@ const VOT_VERSION: string;
 // prelude. Keep them loosely typed.
 declare const GM_info: any;
 declare const GM: {
-  // Promise-based GM API (supported by most userscript managers).
-  getValue?<T>(key: string, defaultValue?: T): Promise<T>;
-  getValues?<T extends Record<string, unknown>>(data: T): Promise<T>;
-  setValue?<T>(key: string, value: T): Promise<void>;
-  deleteValue?(key: string): Promise<void>;
-  listValues?<T extends string = string>(): Promise<T[]>;
-  // Some managers expose more APIs, but we only rely on the above.
+	// Promise-based GM API (supported by most userscript managers).
+	getValue?<T>(key: string, defaultValue?: T): Promise<T>;
+	getValues?<T extends Record<string, unknown>>(data: T): Promise<T>;
+	setValue?<T>(key: string, value: T): Promise<void>;
+	deleteValue?(key: string): Promise<void>;
+	listValues?<T extends string = string>(): Promise<T[]>;
+	// Some managers expose more APIs, but we only rely on the above.
 };
 declare function GM_getValue<T>(key: string, defaultValue?: T): T;
 declare function GM_setValue<T>(key: string, value: T): void;
@@ -44,13 +44,13 @@ declare function GM_xmlhttpRequest(details: any): { abort?: () => void } | void;
 declare const chrome: any;
 
 interface Window {
-  /** Safari legacy prefix for AudioContext */
-  webkitAudioContext?: typeof AudioContext;
+	/** Safari legacy prefix for AudioContext */
+	webkitAudioContext?: typeof AudioContext;
 }
 
 // Allow side-effect style imports for styles in TS files (e.g. `import "./styles/main.scss"`).
 declare module "*.scss";
 declare module "*.scss?inline" {
-  const css: string;
-  export default css;
+	const css: string;
+	export default css;
 }

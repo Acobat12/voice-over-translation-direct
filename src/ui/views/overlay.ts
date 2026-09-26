@@ -76,6 +76,9 @@ export class OverlayView {
       OverlayViewEventMap["click:downloadSubtitles"]
     >(),
     "click:translate": new EventImpl<OverlayViewEventMap["click:translate"]>(),
+    "click:restoreTranslation": new EventImpl<
+      OverlayViewEventMap["click:restoreTranslation"]
+    >(),
     "click:subtitles": new EventImpl<OverlayViewEventMap["click:subtitles"]>(),
     "select:voiceMode": new EventImpl<
       OverlayViewEventMap["select:voiceMode"]
@@ -106,6 +109,7 @@ export class OverlayView {
   downloadTranslationButton?: DownloadButton;
   downloadSubtitlesButton?: HTMLElement;
   openSettingsButton?: HTMLElement;
+  restoreTranslationButton?: HTMLElement;
   languagePairSelect?: LanguagePairSelect<RequestLang, ResponseLang>;
   subtitlesSelectLabel?: Label;
   subtitlesSelect?: Select;
@@ -440,7 +444,7 @@ export class OverlayView {
       this.votMenu.container.style.top = "0";
       this.votMenu.container.style.zIndex = "2147483647";
       this.votMenu.container.style.pointerEvents = "auto";
-      this.votMenu.container.style.width = "min(420px, calc(100vw - 24px))";
+      this.votMenu.container.style.width = "min(260px, calc(100vw - 24px))";
       this.votMenu.container.style.maxHeight = "calc(100vh - 24px)";
       this.votMenu.container.style.overflow = "visible";
       this.votMenu.contentWrapper.style.maxHeight = "calc(100vh - 80px)";
@@ -562,7 +566,7 @@ export class OverlayView {
       this.voiceModeMenu.container.style.zIndex = "2147483647";
       this.voiceModeMenu.container.style.pointerEvents = "auto";
       this.voiceModeMenu.container.style.width =
-        "min(360px, calc(100vw - 24px))";
+        "min(240px, calc(100vw - 24px))";
       this.voiceModeMenu.container.style.maxHeight = "calc(100vh - 24px)";
       this.voiceModeMenu.container.style.overflow = "visible";
       this.voiceModeMenu.contentWrapper.style.maxHeight = "calc(100vh - 80px)";
@@ -930,12 +934,23 @@ export class OverlayView {
           this.events["click:translate"].dispatch();
           return;
         }
+        if (this.votButton?.status === "disabled") {
+          debug.log("[voice-menu] disabled translate button clicked");
+          this.setVoiceModeMenuOpen(false);
+          closeMenu();
+          this.events["click:translate"].dispatch();
+          return;
+        }
 
         if (this.votButton?.loading) {
           debug.log("[voice-menu] translate button ignored because loading");
           return;
         }
 
+        // Do not run videoValidator here. Validation may open the target-language
+        // dialog before the user has selected Standard/Lively voices. The rail
+        // translate button must first open the voice-mode menu, as in the original
+        // UI flow; validation happens when the selected mode starts translation.
         debug.log("[voice-menu] translate button opens voice mode menu");
         closeMenu();
         this.setVoiceModeMenuOpen(this.voiceModeMenu?.hidden ?? true);
@@ -1120,6 +1135,17 @@ export class OverlayView {
         { signal },
       );
     }
+
+    this.restoreTranslationButton?.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.votMenu.hidden = true;
+        this.events["click:restoreTranslation"].dispatch();
+      },
+      { signal },
+    );
 
     if (this.voiceModeMenu) {
       this.voiceModeMenu.container.addEventListener(
@@ -1309,11 +1335,9 @@ export class OverlayView {
     this.languagePairSelect.fromSelect.addEventListener(
       "selectItem",
       (language) => {
-        if (this.videoHandler) {
-          this.videoHandler.translateFromLang = language;
-        }
-
         if (this.videoHandler?.videoData) {
+          this.videoHandler.translateFromLang = language;
+          this.videoHandler.videoData.detectedLanguage = language;
           this.videoHandler.videoManager.rememberUserLanguageSelection(
             this.videoHandler.videoData.videoId,
             language,
@@ -1322,7 +1346,6 @@ export class OverlayView {
         this.events["select:fromLanguage"].dispatch(language);
       },
     );
-
     this.languagePairSelect.toSelect.addEventListener(
       "selectItem",
       async (language) => {

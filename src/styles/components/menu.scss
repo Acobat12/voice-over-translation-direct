@@ -5,7 +5,7 @@
   --vot-helper-surface: rgb(var(--vot-helper-surface-rgb));
   --vot-helper-onsurface-rgb: var(--vot-onsurface-rgb, 0, 0, 0);
   --vot-helper-onsurface: rgba(var(--vot-helper-onsurface-rgb), 0.87);
-  --vot-settings-control-width: clamp(120px, 45%, 200px);
+  --vot-settings-control-width: clamp(90px, 45%, 140px);
 
   overflow: hidden;
   position: absolute;
@@ -19,11 +19,11 @@
   border-radius: var(--vot-radius-m) !important;
   box-shadow: var(--vot-shadow-2) !important;
   @include shared.vot-font-family;
-  font-size: 16px;
-  line-height: 1.5;
-  min-width: 320px;
+  font-size: 13px;
+  line-height: 1.4;
+  min-width: 220px;
   width: fit-content;
-  max-width: min(90vw, 560px);
+  max-width: min(90vw, 360px);
   cursor: default;
   z-index: 2147483646;
 
@@ -59,8 +59,8 @@
   &-content-wrapper {
     display: flex;
     flex-direction: column;
-    min-width: 320px;
-    min-height: 100px;
+    min-width: 220px;
+    min-height: 70px;
     max-height: calc(
       var(--vot-container-height, 75vh) - (5rem + 32px + 16px) * 2
     );
@@ -98,10 +98,10 @@
 
   &-title {
     flex: 1;
-    font-size: 16px;
+    font-size: 13px;
     font-weight: 500 !important;
     line-height: 1;
-    padding: var(--vot-space-4) !important;
+    padding: var(--vot-space-2) !important;
   }
 
   &-body-container {
@@ -110,8 +110,8 @@
     flex-direction: column;
     min-height: 1.375rem;
     overflow: auto;
-    padding: 0 var(--vot-space-4) !important;
-    gap: var(--vot-space-2);
+    padding: 0 var(--vot-space-2) !important;
+    gap: var(--vot-space-1);
     overscroll-behavior: contain;
     @include shared.vot-overlay-scrollbar;
   }
@@ -120,7 +120,7 @@
     flex-shrink: 0;
     display: flex;
     justify-content: flex-end;
-    padding: var(--vot-space-4) !important;
+    padding: var(--vot-space-2) !important;
 
     &:empty {
       padding: var(--vot-space-4) 0 0 0 !important;
