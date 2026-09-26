@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Интелигентно оформление на субтитрите",
   "smartDucking": "Адаптивен обем",
   "VOTAutoSubtitles": "Субтитри на открито",
-  "VOTSubtitlesFont": "Шрифт за субтитрите"
+  "VOTSubtitlesFont": "Шрифт за субтитрите",
+  "VOTYouTubeSignInSuggested": "Влезте в YouTube и опитайте превода отново"
 }

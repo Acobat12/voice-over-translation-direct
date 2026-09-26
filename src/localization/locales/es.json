@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Diseño inteligente de subtítulos",
   "smartDucking": "Volumen adaptable",
   "VOTAutoSubtitles": "Subtítulos en abierto",
-  "VOTSubtitlesFont": "Fuente de subtítulos"
+  "VOTSubtitlesFont": "Fuente de subtítulos",
+  "VOTYouTubeSignInSuggested": "Inicia sesión en YouTube y vuelve a intentar la traducción"
 }

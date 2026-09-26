@@ -142,7 +142,7 @@ export class AudioDownloader {
   onDownloadedPartialAudio = new EventImpl<
     [string, DownloadedPartialAudioData]
   >();
-  onDownloadAudioError = new EventImpl<[string, string]>();
+  onDownloadAudioError = new EventImpl<[string, string, boolean]>();
 
   strategy: AvailableAudioDownloadType;
 
@@ -199,6 +199,19 @@ export class AudioDownloader {
           return;
         }
 
+        // Match original VOT UX: when WEB_ABR explicitly determines that the
+        // current YouTube session must be signed in, surface that state on the
+        // translation button instead of reporting a generic audio failure or
+        // sending fail-audio-js.
+        if (
+          attemptedStrategy === WEB_ABR_STRATEGY &&
+          err instanceof Error &&
+          err.message.includes("YOUTUBE_SIGN_IN_SUGGESTED")
+        ) {
+          this.onDownloadAudioError.dispatch(translationId, videoId, true);
+          return;
+        }
+
         debug.error("Audio downloader. Strategy failed", {
           videoId,
           audioDownloadType: attemptedStrategy,
@@ -210,7 +223,7 @@ export class AudioDownloader {
     debug.error("Audio downloader. All audio download strategies failed", {
       videoId,
     });
-    this.onDownloadAudioError.dispatch(translationId, videoId);
+    this.onDownloadAudioError.dispatch(translationId, videoId, false);
   }
 
   addEventListener(
@@ -223,7 +236,11 @@ export class AudioDownloader {
   ): this;
   addEventListener(
     type: "downloadAudioError",
-    listener: (translationId: string, videoId: string) => void,
+    listener: (
+      translationId: string,
+      videoId: string,
+      signInSuggested: boolean,
+    ) => void,
   ): this;
   addEventListener(
     type: "downloadedAudio" | "downloadedPartialAudio" | "downloadAudioError",
@@ -254,7 +271,11 @@ export class AudioDownloader {
   ): this;
   removeEventListener(
     type: "downloadAudioError",
-    listener: (translationId: string, videoId: string) => void,
+    listener: (
+      translationId: string,
+      videoId: string,
+      signInSuggested: boolean,
+    ) => void,
   ): this;
   removeEventListener(
     type: "downloadedAudio" | "downloadedPartialAudio" | "downloadAudioError",

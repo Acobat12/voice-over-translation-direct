@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Smart subtitle layout",
   "smartDucking": "Adaptief volume",
   "VOTAutoSubtitles": "Ondertitels op open",
-  "VOTSubtitlesFont": "Ondertiteling lettertype"
+  "VOTSubtitlesFont": "Ondertiteling lettertype",
+  "VOTYouTubeSignInSuggested": "Log in bij YouTube en probeer de vertaling opnieuw"
 }

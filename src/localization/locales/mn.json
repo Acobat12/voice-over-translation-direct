@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Smart subtitle зохион байгуулалт",
   "smartDucking": "Дасан зохицох хэмжээ",
   "VOTAutoSubtitles": "Нээлттэй дээр хадмалтай",
-  "VOTSubtitlesFont": "Хадмал үсгийн фонт"
+  "VOTSubtitlesFont": "Хадмал үсгийн фонт",
+  "VOTYouTubeSignInSuggested": "YouTube-д нэвтэрч орчуулгыг дахин оролдоно уу"
 }

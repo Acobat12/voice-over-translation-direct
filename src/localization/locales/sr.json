@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Паметан изглед титлова",
   "smartDucking": "Адаптивна јачина звука",
   "VOTAutoSubtitles": "Титлови приликом отварања",
-  "VOTSubtitlesFont": "Фонт титлова"
+  "VOTSubtitlesFont": "Фонт титлова",
+  "VOTYouTubeSignInSuggested": "Пријавите се на YouTube и покушајте поново са преводом"
 }

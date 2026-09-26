@@ -1767,6 +1767,7 @@ export class VOTTranslationHandler {
   private readonly onDownloadAudioError = async (
     translationId: string,
     videoId: string,
+    signInSuggested = false,
   ) => {
     if (!this.downloading) {
       debug.log("skip downloadAudioError");
@@ -1776,6 +1777,17 @@ export class VOTTranslationHandler {
     debug.log(`Failed to download audio ${videoId}`);
 
     const videoUrl = this.getCanonicalUrl(videoId);
+
+    // Preserve original VOT's YouTube sign-in UX. This is a YouTube account
+    // state, not VOT/Yandex authorization. Do not send fail-audio-js or an
+    // empty audio payload when signing in to YouTube is the actionable fix.
+    if (signInSuggested) {
+      this.finishDownloadFailure(
+        new VOTLocalizedError("VOTYouTubeSignInSuggested"),
+      );
+      return;
+    }
+
     const canUseYouTubeFallback =
       this.videoHandler.site.host === "youtube" &&
       Boolean(this.videoHandler.data?.useAudioDownload);

@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Älykäs tekstityksen asettelu",
   "smartDucking": "Mukautuva äänenvoimakkuus",
   "VOTAutoSubtitles": "Tekstitys auki",
-  "VOTSubtitlesFont": "Tekstityksen kirjasin"
+  "VOTSubtitlesFont": "Tekstityksen kirjasin",
+  "VOTYouTubeSignInSuggested": "Kirjaudu YouTubeen ja yritä käännöstä uudelleen"
 }

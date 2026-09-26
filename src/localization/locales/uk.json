@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "Продуманий макет субтитрів",
   "smartDucking": "Адаптивна гучність",
   "VOTAutoSubtitles": "Субтитри при відкритті",
-  "VOTSubtitlesFont": "Шрифт субтитрів"
+  "VOTSubtitlesFont": "Шрифт субтитрів",
+  "VOTYouTubeSignInSuggested": "Увійдіть у YouTube і повторіть переклад"
 }

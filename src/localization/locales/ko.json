@@ -242,5 +242,6 @@
   "subtitlesSmartLayout": "스마트 자막 레이아웃",
   "smartDucking": "적응 형 볼륨",
   "VOTAutoSubtitles": "자막 열기",
-  "VOTSubtitlesFont": "자막 글꼴"
+  "VOTSubtitlesFont": "자막 글꼴",
+  "VOTYouTubeSignInSuggested": "YouTube에 로그인한 후 번역을 다시 시도하세요"
 }
