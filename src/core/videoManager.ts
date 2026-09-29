@@ -458,86 +458,35 @@ function normalizeToRequestLang(value: unknown): RequestLang | undefined {
   return REQUEST_LANG_SET.has(normalized) ? normalized : undefined;
 }
 
+// YouTube can report a real source language that VOT/Yandex does not support
+// (for example `pt`). Do not filter that evidence through `availableLangs`,
+// otherwise an unsupported real language disappears and later text detection
+// can incorrectly replace it with `en`. The RequestLang cast is only a typing
+// bridge; support is checked separately by SUPPORTED_TRANSLATION_SOURCE_LANGS.
+function normalizeYoutubeSourceLanguage(
+  value: unknown,
+): RequestLang | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const raw = value.trim();
+  if (!raw) return undefined;
+
+  const base = raw
+    .replace(/\.\d{1,3}$/u, "")
+    .split(/[-_]/u)[0]
+    ?.trim()
+    .toLowerCase();
+
+  if (!base || base === "auto" || base === "und") return undefined;
+  if (!/^[a-z]{2,3}$/u.test(base)) return undefined;
+
+  return base as RequestLang;
+}
+
 function isResolvedLanguage(
   value: RequestLang | undefined,
 ): value is ResolvedRequestLang {
   return Boolean(value && value !== "auto");
-}
-
-function getYoutubeAudioFormatLanguage(format: any): RequestLang | undefined {
-  const direct =
-    format?.languageCode ??
-    format?.language ??
-    format?.audioTrack?.languageCode ??
-    format?.audioTrack?.language;
-  const normalizedDirect = normalizeToRequestLang(direct);
-  if (normalizedDirect) return normalizedDirect;
-
-  const trackId = format?.audioTrack?.id ?? format?.audioTrackId;
-  if (typeof trackId === "string") {
-    const match = trackId.match(
-      /(?:^|[.;:_-])([a-z]{2,3}(?:-[a-z]{2})?)(?:[.;:_-]|$)/i,
-    );
-    const normalizedTrackId = normalizeToRequestLang(match?.[1]);
-    if (normalizedTrackId) return normalizedTrackId;
-  }
-
-  try {
-    const rawUrl =
-      typeof format?.url === "string"
-        ? format.url
-        : typeof format?.signatureCipher === "string"
-          ? new URLSearchParams(format.signatureCipher).get("url")
-          : undefined;
-    const xtags = rawUrl
-      ? (new URL(rawUrl).searchParams.get("xtags") ?? "")
-      : "";
-    const match = /(?:^|:)lang=([^:]+)/i.exec(xtags);
-    const normalizedXtags = normalizeToRequestLang(match?.[1]);
-    if (normalizedXtags) return normalizedXtags;
-  } catch {}
-
-  return undefined;
-}
-
-function resolveSupportedYoutubeAudioLanguage(): RequestLang | undefined {
-  const response = YoutubeHelper.getPlayerResponse() as any;
-  const formats = [
-    ...(Array.isArray(response?.streamingData?.adaptiveFormats)
-      ? response.streamingData.adaptiveFormats
-      : []),
-    ...(Array.isArray(response?.streamingData?.formats)
-      ? response.streamingData.formats
-      : []),
-  ].filter((format: any) => {
-    const mimeType = String(format?.mimeType ?? "");
-    return mimeType.includes("audio/") && !mimeType.includes("video/");
-  });
-
-  const preferredItags = [
-    251, 140, 141, 250, 249, 139, 256, 258, 325, 327, 328, 338, 171, 172,
-  ];
-  const rank = (format: any) => {
-    const index = preferredItags.indexOf(Number(format?.itag));
-    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
-  };
-
-  const supported = formats
-    .map((format: any) => ({
-      format,
-      language: getYoutubeAudioFormatLanguage(format),
-    }))
-    .filter(
-      (item: any) =>
-        item.language && SUPPORTED_TRANSLATION_SOURCE_LANGS.has(item.language),
-    )
-    .sort(
-      (a: any, b: any) =>
-        rank(a.format) - rank(b.format) ||
-        Number(b.format?.bitrate ?? 0) - Number(a.format?.bitrate ?? 0),
-    );
-
-  return supported[0]?.language;
 }
 
 function buildDetectText(title: unknown, description: unknown): string {
@@ -547,6 +496,127 @@ function buildDetectText(title: unknown, description: unknown): string {
   return cleanText(textTitle, textDescription);
 }
 
+function resolveVkTranslationSourceLanguage(): RequestLang | undefined {
+  try {
+    const videos: HTMLVideoElement[] = [];
+    const seenVideos = new Set<HTMLVideoElement>();
+
+    const appendVideo = (video: HTMLVideoElement) => {
+      if (seenVideos.has(video)) return;
+      seenVideos.add(video);
+      videos.push(video);
+    };
+
+    // VK currently keeps the active MSE video in an open ShadowRoot.
+    // Inspect every open root rather than depending on a particular class name.
+    for (const element of Array.from(document.querySelectorAll("*"))) {
+      const root = element.shadowRoot;
+      if (!root) continue;
+
+      for (const video of Array.from(root.querySelectorAll("video"))) {
+        appendVideo(video);
+      }
+    }
+
+    // Fallback for VK builds that expose the media element in the light DOM.
+    for (const video of Array.from(document.querySelectorAll("video"))) {
+      appendVideo(video);
+    }
+
+    const scoreVideo = (video: HTMLVideoElement): number =>
+      (video.readyState > 0 ? 10 : 0) +
+      (video.currentSrc ? 5 : 0) +
+      (Number.isFinite(video.duration) ? 2 : 0) +
+      (video.videoWidth > 0 && video.videoHeight > 0 ? 1 : 0);
+
+    videos.sort((left, right) => scoreVideo(right) - scoreVideo(left));
+
+    for (const video of videos) {
+      const tracks = Array.from(video.textTracks ?? []);
+      const supportedTracks = tracks
+        .map((track) => ({
+          track,
+          language: normalizeToRequestLang(track.language),
+        }))
+        .filter(
+          (
+            item,
+          ): item is {
+            track: TextTrack;
+            language: ResolvedRequestLang;
+          } =>
+            isResolvedLanguage(item.language) &&
+            SUPPORTED_TRANSLATION_SOURCE_LANGS.has(item.language),
+        );
+
+      if (supportedTracks.length === 0) {
+        continue;
+      }
+
+      const languages = Array.from(
+        new Set(supportedTracks.map(({ language }) => language)),
+      );
+
+      debug.log("[language] VK runtime text-track languages found", {
+        languages,
+        tracks: tracks.map((track) => ({
+          id: track.id,
+          language: track.language,
+          kind: track.kind,
+          label: track.label,
+          mode: track.mode,
+        })),
+      });
+
+      // For automatic VK detection, Russian subtitle tracks are deliberately
+      // not used as a source-language hint. The user can still explicitly
+      // select Russian via the normal language selector/user override.
+      const autoSourcePriority: readonly ResolvedRequestLang[] = [
+        "en",
+        "es",
+        "it",
+        "fr",
+        "de",
+        "ja",
+        "ko",
+        "zh",
+      ];
+
+      const autoLanguage = autoSourcePriority.find((language) =>
+        languages.includes(language),
+      );
+
+      if (autoLanguage) {
+        const matchedTrack = supportedTracks.find(
+          ({ language }) => language === autoLanguage,
+        );
+
+        debug.log("[language] VK translation source resolved", {
+          language: autoLanguage,
+          source: "vk-runtime-text-track-auto-priority",
+          trackId: matchedTrack?.track.id,
+          availableLanguages: languages,
+        });
+        return autoLanguage;
+      }
+
+      // `ru` alone must not force automatic source-language detection here.
+      // Keep the result unknown so the normal fallback chain can continue.
+      debug.log(
+        "[language] VK runtime text tracks contain no auto-source candidate",
+        {
+          languages,
+          reason: "russian-is-manual-only-for-vk-text-track-hint",
+        },
+      );
+    }
+  } catch (error) {
+    debug.warn("[language] failed to inspect VK runtime text tracks", error);
+  }
+
+  return undefined;
+}
+
 function resolveHostDetectedLanguage(host: string): RequestLang | undefined {
   const forcedDetectedLanguage = FORCED_DETECTED_LANGUAGE_BY_HOST[host];
   if (forcedDetectedLanguage) {
@@ -554,8 +624,194 @@ function resolveHostDetectedLanguage(host: string): RequestLang | undefined {
   }
 
   if (host === "vk") {
+    const runtimeLanguage = resolveVkTranslationSourceLanguage();
+    if (runtimeLanguage) {
+      return runtimeLanguage;
+    }
+
+    // Legacy fallback for VK/player variants that expose a normal DOM <track>.
     const trackLang = document.getElementsByTagName("track")?.[0]?.srclang;
     return normalizeToRequestLang(trackLang);
+  }
+
+  return undefined;
+}
+
+type YoutubeRuntimeAudioTrack = {
+  id?: unknown;
+  wM?: {
+    id?: unknown;
+    name?: unknown;
+    isDefault?: unknown;
+    isAutoDubbed?: unknown;
+  };
+};
+
+function getYoutubeRuntimeAudioTracks(): {
+  current?: YoutubeRuntimeAudioTrack;
+  available: YoutubeRuntimeAudioTrack[];
+} {
+  try {
+    const player = document.querySelector("#movie_player") as
+      | (HTMLElement & {
+          getAudioTrack?: () => unknown;
+          getAvailableAudioTracks?: () => unknown;
+        })
+      | null;
+
+    const rawCurrent = player?.getAudioTrack?.();
+    const rawAvailable = player?.getAvailableAudioTracks?.();
+
+    return {
+      current:
+        rawCurrent && typeof rawCurrent === "object"
+          ? (rawCurrent as YoutubeRuntimeAudioTrack)
+          : undefined,
+      available: Array.isArray(rawAvailable)
+        ? rawAvailable.filter((track): track is YoutubeRuntimeAudioTrack =>
+            Boolean(track && typeof track === "object"),
+          )
+        : [],
+    };
+  } catch (error) {
+    debug.warn(
+      "[language] failed to inspect YouTube audio-track catalog",
+      error,
+    );
+    return { available: [] };
+  }
+}
+
+function getYoutubeTrackLanguage(
+  track: YoutubeRuntimeAudioTrack | undefined,
+): RequestLang | undefined {
+  return normalizeYoutubeSourceLanguage(track?.wM?.id);
+}
+
+function findSupportedYoutubeAlternateAudioTrack():
+  | {
+      track: YoutubeRuntimeAudioTrack;
+      language: ResolvedRequestLang;
+      trackId: string;
+    }
+  | undefined {
+  const { current, available } = getYoutubeRuntimeAudioTracks();
+  const currentTrackId =
+    typeof current?.wM?.id === "string" ? current.wM.id.trim() : "";
+
+  for (const track of available) {
+    const trackId = typeof track.wM?.id === "string" ? track.wM.id.trim() : "";
+    const language = getYoutubeTrackLanguage(track);
+
+    if (
+      !trackId ||
+      trackId === currentTrackId ||
+      !isResolvedLanguage(language) ||
+      !SUPPORTED_TRANSLATION_SOURCE_LANGS.has(language)
+    ) {
+      continue;
+    }
+
+    return { track, language, trackId };
+  }
+
+  return undefined;
+}
+
+function resolveYoutubeCurrentAudioLanguage(): RequestLang | undefined {
+  try {
+    const player = document.querySelector("#movie_player") as
+      | (HTMLElement & { getAudioTrack?: () => unknown })
+      | null;
+    const rawTrack = player?.getAudioTrack?.();
+    if (!rawTrack || typeof rawTrack !== "object") {
+      return undefined;
+    }
+
+    const track = rawTrack as {
+      id?: unknown;
+      language?: unknown;
+      languageCode?: unknown;
+      wM?: {
+        id?: unknown;
+        language?: unknown;
+        languageCode?: unknown;
+        isDefault?: unknown;
+        isAutoDubbed?: unknown;
+      };
+      captionTracks?: Array<{
+        languageCode?: unknown;
+        kind?: unknown;
+      }>;
+    };
+
+    // `wM.id` is YouTube's concrete logical audioTrackId (for example
+    // en-US.10). `track.id` is representation identity and may look like
+    // `251;<encoded attributes>`, so it must not be treated as the language id.
+    if (typeof track.wM?.id === "string") {
+      const language = normalizeYoutubeSourceLanguage(track.wM.id);
+      if (isResolvedLanguage(language)) {
+        debug.log("[language] YouTube current audio language resolved", {
+          language,
+          source: "audio-track-wM-id",
+          trackId: track.wM.id,
+          representationId: track.id,
+        });
+        return language;
+      }
+    }
+
+    // Some player builds expose the selected track language explicitly.
+    for (const value of [
+      track.languageCode,
+      track.language,
+      track.wM?.languageCode,
+      track.wM?.language,
+    ]) {
+      const language = normalizeYoutubeSourceLanguage(value);
+      if (isResolvedLanguage(language)) {
+        debug.log("[language] YouTube current audio language resolved", {
+          language,
+          source: "audio-track-language",
+          trackId: track.id,
+        });
+        return language;
+      }
+    }
+
+    // YouTube can expose the original/default audio as `und`. In that case
+    // a single ASR caption language is strong evidence for the spoken
+    // language, but only for the default non-auto-dubbed track. Do not use
+    // this fallback for dubbed/multi-audio selections.
+    if (track.wM?.isDefault === true && track.wM?.isAutoDubbed !== true) {
+      const asrLanguages = Array.from(
+        new Set(
+          (Array.isArray(track.captionTracks) ? track.captionTracks : [])
+            .filter((caption) => caption?.kind === "asr")
+            .map((caption) =>
+              normalizeYoutubeSourceLanguage(caption?.languageCode),
+            )
+            .filter(isResolvedLanguage),
+        ),
+      );
+
+      if (asrLanguages.length === 1) {
+        const language = asrLanguages[0];
+        debug.log("[language] YouTube current audio language resolved", {
+          language,
+          source: "default-audio-asr",
+          trackId: track.id,
+          isDefault: true,
+          isAutoDubbed: false,
+        });
+        return language;
+      }
+    }
+  } catch (error) {
+    debug.warn(
+      "[language] failed to inspect YouTube current audio track",
+      error,
+    );
   }
 
   return undefined;
@@ -583,14 +839,18 @@ function resolveYoutubeDetectedLanguageFromSubtitles(
       if (candidate.source !== "youtube") {
         continue;
       }
-      if (typeof candidate.translatedFromLanguage === "string") {
+      const translatedFromLanguage =
+        typeof candidate.translatedFromLanguage === "string"
+          ? candidate.translatedFromLanguage.trim()
+          : "";
+      if (translatedFromLanguage) {
         continue;
       }
       if (preferManual && candidate.isAutoGenerated === true) {
         continue;
       }
 
-      const language = normalizeToRequestLang(candidate.language);
+      const language = normalizeYoutubeSourceLanguage(candidate.language);
       if (isResolvedLanguage(language)) {
         return language;
       }
@@ -621,6 +881,28 @@ export async function resolveDetectedLanguageForVideo(
     };
   }
 
+  if (options.host === "youtube") {
+    // Prefer the language of the track that YouTube is actually playing.
+    // This must run before possibleLanguage/cache/text detection so a stale
+    // `en` cannot override an original/default `pt`, `ja`, etc.
+    const currentAudioLanguage = resolveYoutubeCurrentAudioLanguage();
+    if (isResolvedLanguage(currentAudioLanguage)) {
+      return {
+        detectedLanguage: currentAudioLanguage,
+        cacheLanguage: currentAudioLanguage,
+      };
+    }
+
+    const youtubeSubtitleDetectedLanguage =
+      resolveYoutubeDetectedLanguageFromSubtitles(options.subtitles);
+    if (isResolvedLanguage(youtubeSubtitleDetectedLanguage)) {
+      return {
+        detectedLanguage: youtubeSubtitleDetectedLanguage,
+        cacheLanguage: youtubeSubtitleDetectedLanguage,
+      };
+    }
+  }
+
   const normalizedPossibleLanguage = normalizeToRequestLang(
     options.possibleLanguage,
   );
@@ -628,17 +910,6 @@ export async function resolveDetectedLanguageForVideo(
     return {
       detectedLanguage: normalizedPossibleLanguage,
       cacheLanguage: normalizedPossibleLanguage,
-    };
-  }
-
-  const youtubeSubtitleDetectedLanguage =
-    options.host === "youtube"
-      ? resolveYoutubeDetectedLanguageFromSubtitles(options.subtitles)
-      : undefined;
-  if (isResolvedLanguage(youtubeSubtitleDetectedLanguage)) {
-    return {
-      detectedLanguage: youtubeSubtitleDetectedLanguage,
-      cacheLanguage: youtubeSubtitleDetectedLanguage,
     };
   }
 
@@ -795,45 +1066,39 @@ export class VOTVideoManager {
       return;
     }
 
-    // The detected language is unsupported (for example pt), or detection
-    // stayed on auto. On YouTube choose a supported language from the ACTUAL
-    // audio tracks immediately, before translateFunc/API is started.
-    if (this.videoHandler.site.host !== "youtube") {
-      return;
+    // A confidently detected unsupported YouTube original is not necessarily
+    // a dead end: the player may expose a real supported alternate/dubbed track.
+    // Use only the concrete runtime AudioTrack catalog; never infer an alternate
+    // from duplicate adaptive-format itags.
+    if (
+      detected &&
+      detected !== "auto" &&
+      this.videoHandler.site.host === "youtube"
+    ) {
+      const alternate = findSupportedYoutubeAlternateAudioTrack();
+      if (alternate) {
+        videoData.detectedLanguage = alternate.language;
+        this.setDetectedLanguageCache(videoData.videoId, alternate.language);
+        debug.log("[language] supported YouTube alternate audio track found", {
+          videoId: videoData.videoId,
+          originalLanguage: detected,
+          selectedLanguage: alternate.language,
+          audioTrackId: alternate.trackId,
+          isAutoDubbed: alternate.track.wM?.isAutoDubbed === true,
+          action: "allow-translation-with-concrete-alternate-track",
+        });
+        return;
+      }
     }
 
-    const supportedVideoLanguage = resolveSupportedYoutubeAudioLanguage();
-    if (!supportedVideoLanguage) {
-      debug.warn("[language] no supported YouTube audio track found", {
+    if (detected && detected !== "auto") {
+      debug.warn("[language] detected source language is not supported", {
         videoId: videoData.videoId,
-        detectedLanguage: videoData.detectedLanguage,
+        detectedLanguage: detected,
+        host: this.videoHandler.site.host,
+        action: "no-supported-concrete-alternate-track",
       });
-      return;
     }
-
-    const previousLanguage = videoData.detectedLanguage;
-    videoData.detectedLanguage = supportedVideoLanguage;
-    this.setDetectedLanguageCache(videoData.videoId, supportedVideoLanguage);
-
-    // If the user is in auto mode, immediately switch the active video source
-    // language too. This makes every later layer see es/en/de/... instead of
-    // the unsupported detected language or "auto".
-    if (this.videoHandler.translateFromLang === "auto") {
-      this.videoHandler.translateFromLang = supportedVideoLanguage;
-      this.videoHandler.autoSourceLanguageOverride = supportedVideoLanguage;
-      this.videoHandler.autoSourceLanguageOverrideVideoId = videoData.videoId;
-      this.videoHandler.setSelectMenuValues(
-        supportedVideoLanguage,
-        videoData.responseLanguage,
-      );
-    }
-
-    debug.log("[language] unsupported language switched immediately", {
-      videoId: videoData.videoId,
-      previousLanguage,
-      supportedVideoLanguage,
-      translateFromLang: this.videoHandler.translateFromLang,
-    });
   }
 
   private shouldUseRuntimeYouTubeHelper(): boolean {
@@ -1288,6 +1553,51 @@ export class VOTVideoManager {
       this.videoHandler.translateFromLang === "auto"
         ? this.videoHandler.videoData.detectedLanguage
         : this.videoHandler.translateFromLang;
+
+    // Stop before translateFunc/API/downloader when the real source language
+    // is known but Yandex VOT does not support it. In auto mode this preserves
+    // YouTube's real language (for example pt) instead of silently changing it
+    // to en and uploading the wrong audio.
+    const normalizedSourceLanguage =
+      this.videoHandler.site.host === "youtube"
+        ? normalizeYoutubeSourceLanguage(sourceLanguage)
+        : normalizeToRequestLang(sourceLanguage);
+    if (
+      normalizedSourceLanguage &&
+      normalizedSourceLanguage !== "auto" &&
+      !SUPPORTED_TRANSLATION_SOURCE_LANGS.has(normalizedSourceLanguage)
+    ) {
+      if (this.videoHandler.site.host === "youtube") {
+        const alternate = findSupportedYoutubeAlternateAudioTrack();
+        if (alternate) {
+          videoData.detectedLanguage = alternate.language;
+          this.videoHandler.translateFromLang = alternate.language;
+          this.setDetectedLanguageCache(videoData.videoId, alternate.language);
+          debug.log("[language] validator allows supported YouTube alternate", {
+            videoId: videoData.videoId,
+            originalLanguage: normalizedSourceLanguage,
+            selectedLanguage: alternate.language,
+            audioTrackId: alternate.trackId,
+            isAutoDubbed: alternate.track.wM?.isAutoDubbed === true,
+          });
+        } else {
+          debug.warn("[language] translation blocked for unsupported source", {
+            videoId: videoData.videoId,
+            sourceLanguage: normalizedSourceLanguage,
+            host: this.videoHandler.site.host,
+            reason: "no-supported-concrete-alternate-track",
+          });
+          throw new VOTLocalizedError("requestTranslationFailed");
+        }
+      } else {
+        debug.warn("[language] translation blocked for unsupported source", {
+          videoId: videoData.videoId,
+          sourceLanguage: normalizedSourceLanguage,
+          host: this.videoHandler.site.host,
+        });
+        throw new VOTLocalizedError("requestTranslationFailed");
+      }
+    }
 
     if (
       this.videoHandler.data.enabledDontTranslateLanguages &&
