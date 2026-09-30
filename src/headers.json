@@ -1,7 +1,7 @@
 {
   "name": "[FORK] - Voice Over Translation",
   "description": "A small extension that adds a Yandex Browser video translation to other browsers",
-  "version": "1.11.6.23",
+  "version": "1.11.6.24",
   "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12",
   "namespace": "vot-direct",
   "icon": "https://translate.yandex.ru/icons/favicon.ico",
@@ -155,7 +155,7 @@
   ],
   "grant": ["window.focus", "GM_xmlhttpRequest"],
   "exclude": [
-    "*://*.accounts.youtube.com/*",
+    "*://accounts.youtube.com/*",
     "*://github.com/*",
     "*://*.github.com/*",
     "*://githubusercontent.com/*",
