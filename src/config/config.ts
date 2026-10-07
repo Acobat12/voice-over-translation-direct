@@ -46,7 +46,11 @@ export const defaultTranslationService: "yandexbrowser" | "msedge" =
 export const defaultDetectService: "yandexbrowser" | "msedge" | "rust-server" =
   "yandexbrowser";
 
-export const nonProxyExtensions: string[] = ["Tampermonkey", "Violentmonkey"];
+export const nonProxyExtensions: string[] = [
+  "Tampermonkey",
+  "Violentmonkey",
+  "VOT Extension",
+];
 export const proxyOnlyCountries: string[] = ["UA", "LV", "LT"];
 
 export const defaultAutoHideDelay = 1000;
