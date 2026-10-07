@@ -833,7 +833,7 @@ export const SubtitlesProcessor = {
   ): ProcessedSubtitles {
     const events = subtitles.events ?? [];
     if (!events.length) {
-      console.error("[VOT] Invalid YouTube subtitles format:", subtitles);
+      console.error("[FORK] Invalid YouTube subtitles format:", subtitles);
       return { format: "json", subtitles: [] };
     }
 
@@ -1019,10 +1019,10 @@ export const SubtitlesProcessor = {
         descriptor,
       );
 
-      debug.log("[VOT] Processed subtitles:", subtitlesWithTokens);
+      debug.log("[FORK] Processed subtitles:", subtitlesWithTokens);
       return subtitlesWithTokens;
     } catch (error) {
-      console.error("[VOT] Failed to process subtitles:", error);
+      console.error("[FORK] Failed to process subtitles:", error);
       return { format: "json", subtitles: [] };
     }
   },
@@ -1075,9 +1075,9 @@ export const SubtitlesProcessor = {
       ]);
 
       const res = response as SubtitlesResponsePayload;
-      debug.log("[VOT] Subtitles response:", res);
+      debug.log("[FORK] Subtitles response:", res);
       if (res.waiting) {
-        console.error("[VOT] Failed to get Yandex subtitles");
+        console.error("[FORK] Failed to get Yandex subtitles");
       }
 
       const yandexSubs = buildYandexSubtitles(res);
@@ -1089,7 +1089,7 @@ export const SubtitlesProcessor = {
       if (error instanceof Error && error.message === "Timeout") {
         message = "Failed to get Yandex subtitles: timeout";
       }
-      console.error(`[VOT] ${message}`, error);
+      console.error(`[FORK] ${message}`, error);
       throw error;
     }
   },

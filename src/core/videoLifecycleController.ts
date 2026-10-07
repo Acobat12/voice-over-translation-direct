@@ -92,7 +92,7 @@ export class VideoLifecycleController {
     }
 
     console.log(
-      `[VOT][mobile-overlay][lifecycle-controller] ${message}`,
+      `[FORK][mobile-overlay][lifecycle-controller] ${message}`,
       details ?? {},
     );
   }
@@ -364,7 +364,7 @@ export class VideoLifecycleController {
       const sourceAudioState = this.host.syncSourceAudioAvailabilityUi({
         forceVisible: true,
       });
-      console.log("[VOT][source-audio] status refresh after setCanPlay", {
+      console.log("[FORK][source-audio] status refresh after setCanPlay", {
         sourceKey,
         kind: sourceAudioState.kind,
         ready: sourceAudioState.ready,
@@ -411,7 +411,7 @@ export class VideoLifecycleController {
 
     this.host.videoData = nextVideoData;
     if (isVkProbeHost()) {
-      console.log("[VOT][VK probe] videoData", {
+      console.log("[FORK][VK probe] videoData", {
         videoId: nextVideoData?.videoId,
         host: nextVideoData?.host,
         url: nextVideoData?.url,

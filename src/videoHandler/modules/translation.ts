@@ -291,7 +291,7 @@ function setPendingAutoplayDebugValue(
       globalRecord.__VOT_PENDING_AUTOPLAY_RECOVERY__ = null;
     } catch (error) {
       debug.log(
-        "[VOT][audio] failed to reset pending autoplay debug value",
+        "[FORK][audio] failed to reset pending autoplay debug value",
         error,
       );
     }
@@ -306,7 +306,7 @@ function setPendingAutoplayDebugValue(
     };
   } catch (error) {
     debug.log(
-      "[VOT][audio] failed to store pending autoplay debug value",
+      "[FORK][audio] failed to store pending autoplay debug value",
       error,
     );
   }
@@ -406,7 +406,7 @@ async function resumePendingAutoplayRecoveryInternal(
     return false;
   }
 
-  debug.log("[VOT][audio] retrying translated audio after user gesture", {
+  debug.log("[FORK][audio] retrying translated audio after user gesture", {
     trigger,
     sourceUrl: pending.sourceUrl,
     videoId: pending.videoId,
@@ -436,7 +436,7 @@ async function resumePendingAutoplayRecoveryInternal(
     );
 
     if (applyResult.status !== "success") {
-      debug.log("[VOT][audio] failed to restore pending translated source", {
+      debug.log("[FORK][audio] failed to restore pending translated source", {
         trigger,
         applyResult,
       });
@@ -447,7 +447,7 @@ async function resumePendingAutoplayRecoveryInternal(
   const resumeResult = await resumePlayerAudioContextIfNeeded(handler);
   if (resumeResult === "failed") {
     debug.log(
-      "[VOT][audio] AudioContext resume failed during autoplay recovery",
+      "[FORK][audio] AudioContext resume failed during autoplay recovery",
     );
   }
 
@@ -460,7 +460,7 @@ async function resumePendingAutoplayRecoveryInternal(
   );
   if (!started) {
     debug.log(
-      "[VOT][audio] translated audio still did not start after gesture",
+      "[FORK][audio] translated audio still did not start after gesture",
       {
         trigger,
         sourceUrl: pending.sourceUrl,
@@ -497,7 +497,7 @@ function markAutoplayRecoveryPending(
   ] as const;
   const onUserGesture = (event: Event) => {
     debug.log(
-      "[VOT][audio] user gesture detected while autoplay recovery is pending",
+      "[FORK][audio] user gesture detected while autoplay recovery is pending",
       {
         type: event.type,
         sourceUrl,
@@ -636,13 +636,13 @@ export async function primePlaybackByGesture(
     }
 
     const result = await resumePlayerAudioContextIfNeeded(this);
-    debug.log("[VOT][audio] primed playback context from user gesture", {
+    debug.log("[FORK][audio] primed playback context from user gesture", {
       trigger,
       result,
       player: this.audioPlayer?.player?.constructor?.name ?? "unknown",
     });
   } catch (error) {
-    debug.log("[VOT][audio] failed to prime playback context", {
+    debug.log("[FORK][audio] failed to prime playback context", {
       trigger,
       error,
     });
@@ -1313,7 +1313,7 @@ async function requestApplyAndCacheTranslation(
     if (cachedValue) {
       await setStoredDouyinTranslation(options.cacheKey, cachedValue);
 
-      debug.log("[VOT][douyin] persistent translation cache saved", {
+      debug.log("[FORK][douyin] persistent translation cache saved", {
         cacheKey: options.cacheKey,
         videoId: options.cacheVideoId,
       });
@@ -1390,7 +1390,7 @@ export function proxifyAudio(this: VideoHandler, audioUrl: string): string {
     proxyWorkerHost: this.data?.proxyWorkerHost,
   });
   if (proxiedAudioUrl !== audioUrl) {
-    debug.log(`[VOT] Audio proxied via ${proxiedAudioUrl}`);
+    debug.log(`[FORK] Audio proxied via ${proxiedAudioUrl}`);
   }
   return proxiedAudioUrl;
 }
@@ -1403,7 +1403,7 @@ export async function handleProxySettingsChanged(
   this: VideoHandler,
   reason = "proxySettingsChanged",
 ) {
-  debug.log(`[VOT] ${reason}: clearing translation/subtitles cache`);
+  debug.log(`[FORK] ${reason}: clearing translation/subtitles cache`);
   try {
     this.cacheManager.clear();
     this.activeTranslation = null;
@@ -1865,7 +1865,7 @@ export async function updateTranslation(
 
       if (isLikelyAutoplayBlocked(this)) {
         debug.log(
-          "[VOT][audio] translated audio is waiting for a user gesture",
+          "[FORK][audio] translated audio is waiting for a user gesture",
           {
             sourceUrl: nextAudioUrl,
             videoId: actionContext?.videoId ?? this.videoData?.videoId,
@@ -2078,7 +2078,7 @@ export async function translateFunc(
 
       if (cachedEntry) {
         this.cacheManager.setTranslation(cacheKey, cachedEntry);
-        debug.log("[VOT][douyin] persistent cached translation was found", {
+        debug.log("[FORK][douyin] persistent cached translation was found", {
           cacheKey,
           videoId: VIDEO_ID,
         });

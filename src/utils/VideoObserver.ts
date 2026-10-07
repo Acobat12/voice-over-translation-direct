@@ -334,7 +334,7 @@ export class VideoObserver {
   private stopObservingDom(): void {
     if (shouldLogMobileOverlay()) {
       console.log(
-        "[VOT][mobile-overlay][video-observer] disconnect DOM observer",
+        "[FORK][mobile-overlay][video-observer] disconnect DOM observer",
       );
     }
     this.observer.disconnect();
@@ -904,7 +904,7 @@ export class VideoObserver {
     if (!this.enabled) return;
 
     if (shouldLogMobileOverlay()) {
-      console.log("[VOT][mobile-overlay][video-observer] disable observer");
+      console.log("[FORK][mobile-overlay][video-observer] disable observer");
     }
     this.enabled = false;
 

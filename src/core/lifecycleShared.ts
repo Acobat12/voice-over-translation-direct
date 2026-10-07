@@ -26,7 +26,7 @@ function logMobileOverlayLifecycle(message: string, details?: unknown): void {
     return;
   }
 
-  console.log(`[VOT][mobile-overlay][lifecycle] ${message}`, details ?? {});
+  console.log(`[FORK][mobile-overlay][lifecycle] ${message}`, details ?? {});
 }
 
 export function resetLifecycleTranslation(

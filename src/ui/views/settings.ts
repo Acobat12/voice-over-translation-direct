@@ -265,14 +265,14 @@ export class SettingsView {
 
       if (event.origin !== authCallbackOrigin) {
         debug.log(
-          "[VOT] Ignoring OAuth message from unexpected origin:",
+          "[FORK] Ignoring OAuth message from unexpected origin:",
           event.origin,
         );
         return;
       }
 
       if (data.type === "error") {
-        debug.log("[VOT] OAuth error:", data.error, data.error_description);
+        debug.log("[FORK] OAuth error:", data.error, data.error_description);
         return;
       }
 
@@ -281,7 +281,7 @@ export class SettingsView {
       const expectedState =
         sessionStorage.getItem("vot-yandex-oauth-state") ?? undefined;
       if (!data.state || !expectedState || data.state !== expectedState) {
-        debug.log("[VOT] OAuth state mismatch");
+        debug.log("[FORK] OAuth state mismatch");
         return;
       }
 
@@ -295,9 +295,9 @@ export class SettingsView {
           expires: Date.now() + tokenData.expires_in * 1000,
         };
 
-        debug.log("[VOT] OAuth login success");
+        debug.log("[FORK] OAuth login success");
       } catch (err) {
-        console.error("[VOT] OAuth token exchange failed:", err);
+        console.error("[FORK] OAuth token exchange failed:", err);
         return;
       }
 
@@ -305,11 +305,11 @@ export class SettingsView {
         try {
           this.updateAccountInfo();
         } catch (err) {
-          console.warn("[VOT] Failed to update account UI:", err);
+          console.warn("[FORK] Failed to update account UI:", err);
         }
       } else {
         debug.log(
-          "[VOT] SettingsView is not initialized, skipping account UI update",
+          "[FORK] SettingsView is not initialized, skipping account UI update",
         );
       }
     });
@@ -462,7 +462,7 @@ export class SettingsView {
 
   initUI() {
     if (this.isInitialized()) {
-      throw new Error("[VOT] SettingsView is already initialized");
+      throw new Error("[FORK] SettingsView is already initialized");
     }
 
     this.dialog = new Dialog({
@@ -1222,7 +1222,7 @@ export class SettingsView {
 
   initUIEvents() {
     if (!this.isInitialized()) {
-      throw new Error("[VOT] SettingsView isn't initialized");
+      throw new Error("[FORK] SettingsView isn't initialized");
     }
 
     this.bindOAuthMessageListener();
@@ -1790,7 +1790,7 @@ export class SettingsView {
 
   updateAccountInfo() {
     if (!this.isInitialized()) {
-      throw new Error("[VOT] SettingsView isn't initialized");
+      throw new Error("[FORK] SettingsView isn't initialized");
     }
 
     const loggedIn = !!this.data.account?.token;
@@ -1806,7 +1806,7 @@ export class SettingsView {
 
   open() {
     if (!this.isInitialized()) {
-      throw new Error("[VOT] SettingsView isn't initialized");
+      throw new Error("[FORK] SettingsView isn't initialized");
     }
 
     return this.dialog.open();
@@ -1814,7 +1814,7 @@ export class SettingsView {
 
   close() {
     if (!this.isInitialized()) {
-      throw new Error("[VOT] SettingsView isn't initialized");
+      throw new Error("[FORK] SettingsView isn't initialized");
     }
 
     return this.dialog.close();

@@ -60,7 +60,7 @@ function logMobileOverlay(message: string, details?: unknown): void {
     return;
   }
 
-  console.log(`[VOT][mobile-overlay][observer] ${message}`, details ?? {});
+  console.log(`[FORK][mobile-overlay][observer] ${message}`, details ?? {});
 }
 
 function isGracefulMobileYouTubeSite(site: ServiceConf): boolean {
@@ -161,13 +161,13 @@ function logNativeSubtitleTracks(video: HTMLVideoElement): void {
 
   if (!trackEntries.length) {
     console.log(
-      "[VOT][subtitles][native] no <track> subtitle URLs detected for video",
+      "[FORK][subtitles][native] no <track> subtitle URLs detected for video",
     );
     return;
   }
 
   console.log(
-    `[VOT][subtitles][native] detected ${trackEntries.length} <track> subtitle URL(s). Inspect window.__VOT_DETECTED_NATIVE_SUBTITLE_TRACKS__.`,
+    `[FORK][subtitles][native] detected ${trackEntries.length} <track> subtitle URL(s). Inspect window.__VOT_DETECTED_NATIVE_SUBTITLE_TRACKS__.`,
   );
   console.table(trackEntries);
 }
@@ -313,7 +313,7 @@ export function bindObserverListeners(
     try {
       await videoHandler.release();
     } catch (error) {
-      console.error(`[VOT] Failed to release videoHandler (${reason})`, error);
+      console.error(`[FORK] Failed to release videoHandler (${reason})`, error);
     } finally {
       videosWrappers.delete(video);
     }
@@ -353,7 +353,7 @@ export function bindObserverListeners(
 
     youtubeObserverStoppedAfterPrimaryAttach = true;
     console.log(
-      "[VOT][observer] disabling video discovery after first successful YouTube attach",
+      "[FORK][observer] disabling video discovery after first successful YouTube attach",
       {
         host: globalThis.location.hostname,
         path: globalThis.location.pathname,
@@ -401,7 +401,7 @@ export function bindObserverListeners(
           await videosWrappers.get(video)?.setCanPlay();
         } catch (error) {
           console.error(
-            "[VOT] Failed to restore reconnected mobile YouTube video",
+            "[FORK] Failed to restore reconnected mobile YouTube video",
             error,
           );
         }
@@ -497,7 +497,7 @@ export function bindObserverListeners(
           await videosWrappers.get(video)?.setCanPlay();
         } catch (error) {
           console.error(
-            "[VOT] Failed to refresh reattached mobile YouTube handler",
+            "[FORK] Failed to refresh reattached mobile YouTube handler",
             error,
           );
         }
@@ -511,7 +511,7 @@ export function bindObserverListeners(
       try {
         await ensureRuntimeActivated("video-detected");
       } catch (err) {
-        console.error("[VOT] Failed to activate runtime", err);
+        console.error("[FORK] Failed to activate runtime", err);
         return;
       }
 
@@ -522,7 +522,7 @@ export function bindObserverListeners(
         if (isVkProbeHost()) {
           const rect = video.getBoundingClientRect();
           console.warn(
-            "[VOT][VK probe] video detected but no site/container match",
+            "[FORK][VK probe] video detected but no site/container match",
             {
               src: video.currentSrc || video.src || "",
               w: rect.width,
@@ -534,7 +534,7 @@ export function bindObserverListeners(
         return;
       }
       const { site, container } = match;
-      console.log("[VOT][source-audio] video detected", {
+      console.log("[FORK][source-audio] video detected", {
         host: site.host,
         path: globalThis.location.pathname,
         currentTime: Number(video.currentTime.toFixed(3)),
@@ -544,7 +544,7 @@ export function bindObserverListeners(
       });
       if (isVkProbeHost()) {
         const rect = video.getBoundingClientRect();
-        console.log("[VOT][VK probe] matched video", {
+        console.log("[FORK][VK probe] matched video", {
           site: site.host,
           selector: site.selector,
           container: container?.tagName,
@@ -595,7 +595,7 @@ export function bindObserverListeners(
           return;
         }
 
-        console.log("[VOT][observer] video attached", {
+        console.log("[FORK][observer] video attached", {
           host: site.host,
           path: globalThis.location.pathname,
           src: video.currentSrc || video.src || "",
@@ -611,7 +611,7 @@ export function bindObserverListeners(
 
           if (verified) {
             console.log(
-              "[VOT][observer] discovery disabled only after verified overlay",
+              "[FORK][observer] discovery disabled only after verified overlay",
               {
                 host: site.host,
                 path: globalThis.location.pathname,
@@ -630,7 +630,7 @@ export function bindObserverListeners(
         try {
           await videoHandler.setCanPlay();
         } catch (err) {
-          console.error("[VOT] Failed to get video data", err);
+          console.error("[FORK] Failed to get video data", err);
         }
       } catch (err) {
         if (videosWrappers.get(video) === videoHandler) {
@@ -639,7 +639,7 @@ export function bindObserverListeners(
           clearPendingVideo(container);
           await promotePendingVideo(container);
         }
-        console.error("[VOT] Failed to initialize videoHandler", err);
+        console.error("[FORK] Failed to initialize videoHandler", err);
       }
     } finally {
       initializingVideos.delete(video);

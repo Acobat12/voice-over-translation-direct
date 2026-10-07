@@ -95,7 +95,7 @@ function resolveActivePlaybackVideo(video: HTMLVideoElement): HTMLVideoElement {
 
   if (active && active !== video) {
     console.log(
-      "[VOT][source-audio] using active YouTube video instead of stale handler video",
+      "[FORK][source-audio] using active YouTube video instead of stale handler video",
       {
         handlerPaused: video.paused,
         handlerCurrentTime: Number(video.currentTime.toFixed(3)),
@@ -246,7 +246,7 @@ function maybeLogSourceAudioState(
   });
   if (lastLoggedAudioSignatureByVideo.get(video) !== audioSignature) {
     lastLoggedAudioSignatureByVideo.set(video, audioSignature);
-    console.log("[VOT][source-audio] audio detected", {
+    console.log("[FORK][source-audio] audio detected", {
       audioDetected: state.audioDetected,
       detectionSource: state.detectionSource,
       signals: details.signals,
@@ -268,7 +268,7 @@ function maybeLogSourceAudioState(
   });
   if (lastLoggedStatusSignatureByVideo.get(video) !== statusSignature) {
     lastLoggedStatusSignatureByVideo.set(video, statusSignature);
-    console.log("[VOT][source-audio] status selected", {
+    console.log("[FORK][source-audio] status selected", {
       kind: state.kind,
       ready: state.ready,
       localizationKey: state.localizationKey ?? null,

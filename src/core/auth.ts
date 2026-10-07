@@ -117,11 +117,11 @@ function gmPostForm(
         });
       },
       onerror: (err) => {
-        console.error("[VOT] GM OAuth request failed:", err);
-        reject(new Error("[VOT] GM OAuth request network error"));
+        console.error("[FORK] GM OAuth request failed:", err);
+        reject(new Error("[FORK] GM OAuth request network error"));
       },
       ontimeout: () => {
-        reject(new Error("[VOT] GM OAuth request timeout"));
+        reject(new Error("[FORK] GM OAuth request timeout"));
       },
     });
   });
@@ -134,7 +134,7 @@ export async function exchangeCodeForToken(code: string): Promise<{
 }> {
   const codeVerifier = sessionStorage.getItem("vot-yandex-oauth-code-verifier");
   if (!codeVerifier) {
-    throw new Error("[VOT] Missing PKCE code_verifier in opener");
+    throw new Error("[FORK] Missing PKCE code_verifier in opener");
   }
 
   const body = new URLSearchParams({
@@ -160,19 +160,19 @@ export async function exchangeCodeForToken(code: string): Promise<{
     const err = data?.error ?? `http_${res.status}`;
     const desc = data?.error_description ? ` (${data.error_description})` : "";
     throw new Error(
-      `[VOT] Failed to exchange verification code: ${err}${desc}. Response: ${rawText}`,
+      `[FORK] Failed to exchange verification code: ${err}${desc}. Response: ${rawText}`,
     );
   }
 
   if (!data?.access_token) {
     throw new Error(
-      `[VOT] access_token was not returned by Yandex. Response: ${rawText}`,
+      `[FORK] access_token was not returned by Yandex. Response: ${rawText}`,
     );
   }
 
   if (typeof data.expires_in !== "number") {
     throw new Error(
-      `[VOT] expires_in was not returned or invalid. Response: ${rawText}`,
+      `[FORK] expires_in was not returned or invalid. Response: ${rawText}`,
     );
   }
 
@@ -250,12 +250,12 @@ async function handleAuthCallbackPage() {
 async function handleProfilePage() {
   const payload = getProfilePayload();
   if (!payload) {
-    throw new Error("[VOT] Invalid user data");
+    throw new Error("[FORK] Invalid user data");
   }
 
   const data = await votStorage.get<Account>("account");
   if (!data) {
-    throw new Error("[VOT] No account data found");
+    throw new Error("[FORK] No account data found");
   }
 
   await votStorage.set<Account>("account", {

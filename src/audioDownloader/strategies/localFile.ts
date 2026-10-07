@@ -9,14 +9,14 @@ async function fetchLocalMedia(
   signal: AbortSignal,
 ): Promise<Response> {
   if (!src) {
-    throw new Error("[VOT] Local file: empty media src");
+    throw new Error("[FORK] Local file: empty media src");
   }
 
   if (src.startsWith("blob:")) {
     const res = await fetch(src, { signal });
     if (!res.ok) {
       throw new Error(
-        `[VOT] Local file: failed to fetch blob media: ${res.status}`,
+        `[FORK] Local file: failed to fetch blob media: ${res.status}`,
       );
     }
     return res;
@@ -34,7 +34,7 @@ async function fetchLocalMedia(
   const gmRes = await GM_fetch(src, { signal, timeout: 0 });
   if (!gmRes.ok) {
     throw new Error(
-      `[VOT] Local file: failed to fetch media source: ${gmRes.status}`,
+      `[FORK] Local file: failed to fetch media source: ${gmRes.status}`,
     );
   }
 
@@ -60,7 +60,7 @@ export async function getAudioFromLocalFile({
   const video = document.querySelector("video");
 
   if (!(video instanceof HTMLVideoElement)) {
-    throw new Error("[VOT] Local file: video element not found");
+    throw new Error("[FORK] Local file: video element not found");
   }
 
   const sourceEl = video.querySelector("source");
@@ -72,7 +72,7 @@ export async function getAudioFromLocalFile({
     "";
 
   if (!src) {
-    throw new Error("[VOT] Local file: empty video src");
+    throw new Error("[FORK] Local file: empty video src");
   }
 
   const response = await fetchLocalMedia(src, signal);
@@ -133,7 +133,7 @@ export async function getAudioFromLocalFile({
   const bytes = new Uint8Array(buffer);
 
   if (!bytes.byteLength) {
-    throw new Error("[VOT] Local file: empty media bytes");
+    throw new Error("[FORK] Local file: empty media bytes");
   }
 
   const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));

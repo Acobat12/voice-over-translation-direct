@@ -378,7 +378,7 @@ export class OverlayView {
 
   initUI(buttonPosition: Position = "default") {
     if (this.isInitialized()) {
-      throw new Error("[VOT] OverlayView is already initialized");
+      throw new Error("[FORK] OverlayView is already initialized");
     }
 
     this.initialized = true;
@@ -855,7 +855,7 @@ export class OverlayView {
 
   initUIEvents() {
     if (!this.isInitialized()) {
-      throw new Error("[VOT] OverlayView isn't initialized");
+      throw new Error("[FORK] OverlayView isn't initialized");
     }
 
     this.abortController = new AbortController();
@@ -1676,7 +1676,7 @@ export class OverlayView {
 
   private doReleaseUI(): void {
     if (this.shouldLogMobileOverlay()) {
-      console.log("[VOT][mobile-overlay][ui] remove overlay UI nodes", {
+      console.log("[FORK][mobile-overlay][ui] remove overlay UI nodes", {
         hasButton: Boolean(this.votButton?.container?.isConnected),
         hasMenu: Boolean(this.votMenu?.container?.isConnected),
       });
@@ -1707,7 +1707,7 @@ export class OverlayView {
     }
 
     if (this.shouldLogMobileOverlay()) {
-      console.log("[VOT][mobile-overlay][ui] overlay view release");
+      console.log("[FORK][mobile-overlay][ui] overlay view release");
     }
     // Release events first to prevent late handlers from touching removed DOM.
     this.doReleaseUIEvents();

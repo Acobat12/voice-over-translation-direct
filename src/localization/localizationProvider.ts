@@ -190,7 +190,7 @@ class LocalizationProvider {
       return currentHash === nextHash ? false : nextHash;
     } catch (err) {
       console.error(
-        "[VOT] [localizationProvider] Failed to get locales hash:",
+        "[FORK] [localizationProvider] Failed to get locales hash:",
         err,
       );
       return null;
@@ -243,7 +243,7 @@ class LocalizationProvider {
         votStorage.set("localeUpdatedAt", timestamp),
       ]);
     } catch (err) {
-      console.error("[VOT] [localizationProvider] Failed to get locale:", err);
+      console.error("[FORK] [localizationProvider] Failed to get locale:", err);
       const storedLocaleLang = await votStorage.get<string>("localeLang", "");
       const storedLocalePhrases = await votStorage.get("localePhrases", "");
       if (storedLocalePhrases && storedLocaleLang === this.lang) {
@@ -276,7 +276,7 @@ class LocalizationProvider {
         ? { ...bundledLocale, ...parsedLocale }
         : parsedLocale;
     } catch (err) {
-      console.error("[VOT] [localizationProvider]", err);
+      console.error("[FORK] [localizationProvider]", err);
       this.locale = {};
     }
 
@@ -305,7 +305,7 @@ class LocalizationProvider {
 
     this.warnedMissingKeys.add(warningKey);
     console.warn(
-      "[VOT] [localizationProvider] locale",
+      "[FORK] [localizationProvider] locale",
       locale,
       "doesn't contain key",
       key,

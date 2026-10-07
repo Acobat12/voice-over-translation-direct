@@ -30,7 +30,7 @@ export class EventImpl<Args extends unknown[] = unknown[]> {
       try {
         handler(...args);
       } catch (exception) {
-        console.error("[VOT]", exception);
+        console.error("[FORK]", exception);
       }
     }
   }
@@ -45,7 +45,7 @@ export class EventImpl<Args extends unknown[] = unknown[]> {
           pending.push(Promise.resolve(result));
         }
       } catch (exception) {
-        console.error("[VOT]", exception);
+        console.error("[FORK]", exception);
       }
     }
 
@@ -56,7 +56,7 @@ export class EventImpl<Args extends unknown[] = unknown[]> {
     const settled = await Promise.allSettled(pending);
     for (const item of settled) {
       if (item.status === "rejected") {
-        console.error("[VOT]", item.reason);
+        console.error("[FORK]", item.reason);
       }
     }
   }

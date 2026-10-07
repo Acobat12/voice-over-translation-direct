@@ -162,7 +162,7 @@ function pickDouyinAudioMediaUrl(): string {
       /media-audio-und-mp4a\//i.test(url)
     ) {
       const selectedUrl = normalizeDouyinTranslationUrl(url);
-      console.log("[VOT][douyin] FINAL TRANSLATION URL", {
+      console.log("[FORK][douyin] FINAL TRANSLATION URL", {
         selectedUrl,
         source: "performance-resource",
         originalUrl: url,
@@ -171,7 +171,7 @@ function pickDouyinAudioMediaUrl(): string {
     }
   }
 
-  console.warn("[VOT][douyin] no media-audio-und-mp4a candidate found", {
+  console.warn("[FORK][douyin] no media-audio-und-mp4a candidate found", {
     href: globalThis.location.href,
     entries: entries.length,
   });
@@ -346,7 +346,7 @@ function createRuntimeHelperClass(
         buildResolverContext(this, snapshot),
       );
 
-      console.log("[VOT][runtime-helper] getVideoId fallback", {
+      console.log("[FORK][runtime-helper] getVideoId fallback", {
         host,
         originalResult,
         originalError,
@@ -391,7 +391,7 @@ function createRuntimeHelperClass(
           videoId,
         );
 
-      console.log("[VOT][runtime-helper] getVideoData fallback", {
+      console.log("[FORK][runtime-helper] getVideoData fallback", {
         host,
         videoId,
         originalResult,
@@ -426,7 +426,7 @@ export function installRuntimeHelperOverrides(): void {
       createRuntimeHelperClass(host, OriginalHelper) as never;
     installedHelperHosts.add(host);
 
-    console.log("[VOT][runtime-helper] override installed", {
+    console.log("[FORK][runtime-helper] override installed", {
       host,
       runtime: getScriptHandlerName(),
     });

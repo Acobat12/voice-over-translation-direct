@@ -103,7 +103,7 @@ function mapVotClientErrorForUi(error: unknown, siteHost?: string): unknown {
   const serverMessage =
     typeof err.data?.message === "string" ? err.data.message : "";
 
-  console.log("[VOT][mapVotClientErrorForUi]", {
+  console.log("[FORK][mapVotClientErrorForUi]", {
     siteHost,
     originalMessage: message,
     serverMessage,
@@ -214,11 +214,167 @@ export class VOTTranslationHandler {
   private activeYandexDiskResolvedVideoData?: VideoData;
   private reprocessYouTubeVideoId?: string;
   private reprocessYouTubePhase?: "kick" | "after-audio-request";
+  private reprocessYouTubeStrategyIndex = 0;
 
-  enableYouTubeReprocessOnce(videoId: string): void {
+  private static readonly YOUTUBE_REPROCESS_STRATEGIES = [
+    // Index 0 is intentionally the exact legacy restore request shape.
+    {
+      name: "original +300 / stream",
+      durationOffset: 300,
+      wasStream: true,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "baseline",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "forceSourceLang=true",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: true,
+    },
+    {
+      name: "bypassCache=true",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: true,
+      forceSourceLang: false,
+    },
+    {
+      name: "wasStream=true",
+      durationOffset: 0,
+      wasStream: true,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "duration=0",
+      durationAbsolute: 0,
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "duration=1",
+      durationAbsolute: 1,
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "duration=30",
+      durationAbsolute: 30,
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "duration=310",
+      durationAbsolute: 310,
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "duration=3600",
+      durationAbsolute: 3600,
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+    },
+    {
+      name: "url:youtube:short",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+      urlVariant: "short",
+    },
+    {
+      name: "url:youtube:embed",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+      urlVariant: "embed",
+    },
+    {
+      name: "url:feature=shared",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+      urlVariant: "feature-shared",
+    },
+    {
+      name: "url:app=desktop",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: false,
+      forceSourceLang: false,
+      urlVariant: "app-desktop",
+    },
+    {
+      name: "matrix: stream+bypass",
+      durationOffset: 0,
+      wasStream: true,
+      bypassCache: true,
+      forceSourceLang: false,
+    },
+    {
+      name: "matrix: force+stream",
+      durationOffset: 0,
+      wasStream: true,
+      bypassCache: false,
+      forceSourceLang: true,
+    },
+    {
+      name: "matrix: force+bypass",
+      durationOffset: 0,
+      wasStream: false,
+      bypassCache: true,
+      forceSourceLang: true,
+    },
+    {
+      name: "matrix: force+stream+bypass",
+      durationOffset: 0,
+      wasStream: true,
+      bypassCache: true,
+      forceSourceLang: true,
+    },
+  ] as const;
+
+  private getYouTubeReprocessStrategy() {
+    return VOTTranslationHandler.YOUTUBE_REPROCESS_STRATEGIES[
+      Math.min(
+        this.reprocessYouTubeStrategyIndex,
+        VOTTranslationHandler.YOUTUBE_REPROCESS_STRATEGIES.length - 1,
+      )
+    ];
+  }
+
+  enableYouTubeReprocessOnce(videoId: string, strategyIndex = 0): void {
     this.reprocessYouTubeVideoId = videoId;
     this.reprocessYouTubePhase = "kick";
-    debug.log("[VOT][restore-translation] enabled", {
+    this.reprocessYouTubeStrategyIndex = Math.max(
+      0,
+      Math.min(
+        strategyIndex,
+        VOTTranslationHandler.YOUTUBE_REPROCESS_STRATEGIES.length - 1,
+      ),
+    );
+    debug.log("[FORK][restore-translation] enabled", {
       videoId,
       phase: this.reprocessYouTubePhase,
     });
@@ -234,12 +390,13 @@ export class VOTTranslationHandler {
 
   private finishYouTubeReprocess(reason: string): void {
     if (!this.reprocessYouTubeVideoId) return;
-    debug.log("[VOT][restore-translation] disabled", {
+    debug.log("[FORK][restore-translation] disabled", {
       videoId: this.reprocessYouTubeVideoId,
       reason,
     });
     this.reprocessYouTubeVideoId = undefined;
     this.reprocessYouTubePhase = undefined;
+    this.reprocessYouTubeStrategyIndex = 0;
   }
 
   constructor(videoHandler: VideoHandler) {
@@ -251,7 +408,7 @@ export class VOTTranslationHandler {
         : this.videoHandler.site.host === "youtube"
           ? WEB_ABR_STRATEGY
           : this.videoHandler.site.host === "yandexdisk"
-            ? "yandexDisk"
+            ? "localFile"
             : this.videoHandler.site.host === "douyin"
               ? DOUYIN_AUDIO_STRATEGY
               : this.videoHandler.site.host === "custom"
@@ -272,7 +429,7 @@ export class VOTTranslationHandler {
   }
 
   resetTranslationRequestState(reason?: unknown): void {
-    debug.log("[VOT][translate] reset request state", { reason });
+    debug.log("[FORK][translate] reset request state", { reason });
     this.translationRequestStateUrl = undefined;
     this.translationRequestStateLangKey = undefined;
     this.activeAudioUploadUrl = undefined;
@@ -333,7 +490,7 @@ export class VOTTranslationHandler {
 
     if (activeYouTubeVideo) {
       console.log(
-        "[VOT][source-audio-upload] handler video is stale/paused; active YouTube video is playing",
+        "[FORK][source-audio-upload] handler video is stale/paused; active YouTube video is playing",
         {
           videoId: this.videoHandler.videoData?.videoId,
           handlerCurrentTime: Number(handlerVideo.currentTime.toFixed(3)),
@@ -346,7 +503,7 @@ export class VOTTranslationHandler {
 
     // Only ask the user to start playback when no currently-playing YouTube
     // media element can be found at all.
-    console.log("[VOT][source-audio-upload] waiting for YouTube playback", {
+    console.log("[FORK][source-audio-upload] waiting for YouTube playback", {
       videoId: this.videoHandler.videoData?.videoId,
       currentTime: Number(handlerVideo.currentTime.toFixed(3)),
       readyState: handlerVideo.readyState,
@@ -544,7 +701,7 @@ export class VOTTranslationHandler {
 
       return new URL(`${parsed.origin}${normalizedPath}`);
     } catch (error) {
-      console.log("[VOT][upload] invalid m3u8 proxy host", {
+      console.log("[FORK][upload] invalid m3u8 proxy host", {
         rawHost,
         error,
       });
@@ -578,7 +735,7 @@ export class VOTTranslationHandler {
       proxyUrl.hash = "playlist.m3u8";
       return proxyUrl.toString();
     } catch (error) {
-      console.log("[VOT][upload] failed to build proxied hls url", {
+      console.log("[FORK][upload] failed to build proxied hls url", {
         rawUrl,
         error,
       });
@@ -597,7 +754,7 @@ export class VOTTranslationHandler {
         ? videoData.videoId
         : currentUrl;
 
-    console.log("[VOT][upload] custom-link workflow input", {
+    console.log("[FORK][upload] custom-link workflow input", {
       originalUrl: currentUrl,
       requestUrl,
       host: videoData.host,
@@ -711,7 +868,7 @@ export class VOTTranslationHandler {
       : isVkCdnContext
         ? VK_AUDIO_STRATEGY
         : this.videoHandler.site.host === "yandexdisk"
-          ? "yandexDisk"
+          ? "localFile"
           : this.videoHandler.site.host === "douyin"
             ? DOUYIN_AUDIO_STRATEGY
             : this.videoHandler.site.host === "youtube"
@@ -723,7 +880,7 @@ export class VOTTranslationHandler {
     }
 
     this.audioDownloader.strategy = nextStrategy;
-    console.log("[VOT][audio] switched downloader strategy", {
+    console.log("[FORK][audio] switched downloader strategy", {
       siteHost: this.videoHandler.site.host,
       videoHost: videoData?.host,
       strategy: nextStrategy,
@@ -925,7 +1082,7 @@ export class VOTTranslationHandler {
         },
         onload: (res) => {
           try {
-            console.log("[VOT][yandexdisk] GM response", {
+            console.log("[FORK][yandexdisk] GM response", {
               url,
               status: res.status,
               responseText: String(res.responseText || "").slice(0, 1000),
@@ -1119,7 +1276,7 @@ export class VOTTranslationHandler {
     try {
       const payload = await this.gmGetJson(apiUrl.toString());
 
-      console.log("[VOT][yandexdisk] public API payload", {
+      console.log("[FORK][yandexdisk] public API payload", {
         relativePathRaw,
         relativePath,
         publicKey,
@@ -1136,7 +1293,7 @@ export class VOTTranslationHandler {
       }
 
       if ("error" in payload && payload.error) {
-        console.log("[VOT][yandexdisk] public API returned error", {
+        console.log("[FORK][yandexdisk] public API returned error", {
           error: payload.error,
           message: payload.message,
           description: payload.description,
@@ -1156,7 +1313,7 @@ export class VOTTranslationHandler {
         }
 
         if (this.isYandexDiskFolderRootTarget(target, parsed)) {
-          console.log("[VOT][yandexdisk] skip folder-root target from API", {
+          console.log("[FORK][yandexdisk] skip folder-root target from API", {
             target,
             relativePath,
           });
@@ -1168,7 +1325,7 @@ export class VOTTranslationHandler {
           parsed.pathname,
         );
 
-        console.log("[VOT][yandexdisk] public target from API", {
+        console.log("[FORK][yandexdisk] public target from API", {
           target,
           candidate,
           relativePath,
@@ -1188,7 +1345,7 @@ export class VOTTranslationHandler {
       ) {
         const directUrl = this.normalizeUrlForRequest(payload.file);
 
-        console.log("[VOT][yandexdisk] use direct file url from API", {
+        console.log("[FORK][yandexdisk] use direct file url from API", {
           directUrl,
           relativePath,
         });
@@ -1202,7 +1359,7 @@ export class VOTTranslationHandler {
 
       if (payload.type === "file") {
         console.log(
-          "[VOT][yandexdisk] API did not return usable public target, continue fallback chain",
+          "[FORK][yandexdisk] API did not return usable public target, continue fallback chain",
           {
             public_url: payload.public_url,
             short_url: payload.short_url,
@@ -1214,12 +1371,15 @@ export class VOTTranslationHandler {
         return null;
       }
     } catch (error) {
-      console.log("[VOT][yandexdisk] failed to resolve public target via API", {
-        relativePathRaw,
-        relativePath,
-        publicKey,
-        error,
-      });
+      console.log(
+        "[FORK][yandexdisk] failed to resolve public target via API",
+        {
+          relativePathRaw,
+          relativePath,
+          publicKey,
+          error,
+        },
+      );
     }
 
     return null;
@@ -1328,10 +1488,13 @@ export class VOTTranslationHandler {
 
       const found = scan(w[key], 6);
       if (found) {
-        console.log("[VOT][yandexdisk] use stream url from deep player state", {
-          key,
-          url: found,
-        });
+        console.log(
+          "[FORK][yandexdisk] use stream url from deep player state",
+          {
+            key,
+            url: found,
+          },
+        );
 
         return {
           url: found,
@@ -1348,7 +1511,7 @@ export class VOTTranslationHandler {
     try {
       const entries = performance.getEntriesByType("resource");
 
-      console.log("[VOT][yandexdisk] inspect performance resources", {
+      console.log("[FORK][yandexdisk] inspect performance resources", {
         count: entries.length,
       });
 
@@ -1361,7 +1524,7 @@ export class VOTTranslationHandler {
           continue;
         }
 
-        console.log("[VOT][yandexdisk] use stream url from performance", {
+        console.log("[FORK][yandexdisk] use stream url from performance", {
           url: normalized,
         });
 
@@ -1372,9 +1535,12 @@ export class VOTTranslationHandler {
         };
       }
     } catch (error) {
-      console.log("[VOT][yandexdisk] failed to inspect performance resources", {
-        error,
-      });
+      console.log(
+        "[FORK][yandexdisk] failed to inspect performance resources",
+        {
+          error,
+        },
+      );
     }
 
     return null;
@@ -1404,7 +1570,7 @@ export class VOTTranslationHandler {
     const sourceUrl = this.getYandexDiskSourceUrl(videoData);
     const parsed = this.parseYandexDiskUrl(sourceUrl);
 
-    console.log("[VOT][yandexdisk] build source", {
+    console.log("[FORK][yandexdisk] build source", {
       pageUrl: globalThis.location.href,
       videoDataUrl: videoData.url,
       sourceUrl,
@@ -1432,7 +1598,7 @@ export class VOTTranslationHandler {
             ? normalizedUrl
             : this.getYandexDiskServiceVideoId(normalizedUrl, parsed.pathname);
 
-        console.log("[VOT][yandexdisk] resolved folder file target", {
+        console.log("[FORK][yandexdisk] resolved folder file target", {
           sourceUrl,
           resolvedUrl: normalizedUrl,
           videoId: serviceVideoId,
@@ -1525,7 +1691,7 @@ export class VOTTranslationHandler {
     const cached = this.cachedAudioUpload;
     if (!cached || cached.key !== audioRequestKey) {
       console.warn(
-        "[VOT][source-audio-upload] no cached payload available for replay",
+        "[FORK][source-audio-upload] no cached payload available for replay",
         {
           audioRequestKey,
         },
@@ -1535,7 +1701,7 @@ export class VOTTranslationHandler {
 
     signal.throwIfAborted();
     console.warn(
-      "[VOT][source-audio-upload] replaying the same audio payload",
+      "[FORK][source-audio-upload] replaying the same audio payload",
       {
         translationId: cached.translationId,
         videoId: cached.videoId,
@@ -1580,28 +1746,28 @@ export class VOTTranslationHandler {
     return true;
   }
 
-  private static readonly AUDIO_UPLOAD_MAX_RETRIES = 15;
+  private static readonly AUDIO_UPLOAD_MAX_RETRIES = 1;
   private static readonly AUDIO_UPLOAD_RETRY_DELAY_MS = 1500;
 
   private async retryAudioUpload<T>(fn: () => Promise<T>): Promise<T> {
     const maxRetries = VOTTranslationHandler.AUDIO_UPLOAD_MAX_RETRIES;
     const delayMs = VOTTranslationHandler.AUDIO_UPLOAD_RETRY_DELAY_MS;
-    let lastError: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         return await fn();
       } catch (error) {
-        lastError = error;
         if (attempt === maxRetries) throw error;
+
         debug.log(
           `[AudioUpload] retry ${attempt + 1}/${maxRetries} after ${delayMs}ms`,
         );
+
         await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
       }
     }
 
-    throw lastError;
+    throw new Error("Audio upload retry loop exited unexpectedly");
   }
 
   private readonly onDownloadedAudio = async (
@@ -1618,7 +1784,7 @@ export class VOTTranslationHandler {
     const videoUrl = this.activeAudioUploadUrl || this.getCanonicalUrl(videoId);
 
     try {
-      console.log("[VOT] Uploading full audio", {
+      console.log("[FORK] Uploading full audio", {
         translationId,
         videoId,
         fileId,
@@ -1636,7 +1802,7 @@ export class VOTTranslationHandler {
           },
         ),
       );
-      console.log("[VOT] Upload full audio response", {
+      console.log("[FORK] Upload full audio response", {
         translationId,
         videoId,
         fileId,
@@ -1657,7 +1823,7 @@ export class VOTTranslationHandler {
       }
     } catch (error) {
       debug.error("Failed to upload downloaded audio", error);
-      console.log("[VOT] Upload full audio failed", {
+      console.log("[FORK] Upload full audio failed", {
         message: getErrorMessage(error),
         serverMessage: getServerErrorMessage(error),
         error: asVotClientErrorShape(error),
@@ -1685,7 +1851,7 @@ export class VOTTranslationHandler {
     const videoUrl = this.activeAudioUploadUrl || this.getCanonicalUrl(videoId);
 
     try {
-      console.log("[VOT] Uploading audio chunk", {
+      console.log("[FORK] Uploading audio chunk", {
         translationId,
         videoId,
         fileId,
@@ -1710,7 +1876,7 @@ export class VOTTranslationHandler {
           },
         ),
       );
-      console.log("[VOT] Upload audio chunk response", {
+      console.log("[FORK] Upload audio chunk response", {
         translationId,
         videoId,
         fileId,
@@ -1745,7 +1911,7 @@ export class VOTTranslationHandler {
       }
     } catch (error) {
       debug.error("Failed to upload downloaded audio chunk", error);
-      console.log("[VOT] Upload audio chunk failed", {
+      console.log("[FORK] Upload audio chunk failed", {
         message: getErrorMessage(error),
         serverMessage: getServerErrorMessage(error),
         error: asVotClientErrorShape(error),
@@ -1884,7 +2050,7 @@ export class VOTTranslationHandler {
     delayMs: number,
     signal: AbortSignal,
   ): Promise<T> {
-    console.log("[VOT][translate-retry] scheduled", {
+    console.log("[FORK][translate-retry] scheduled", {
       delayMs,
       host: this.videoHandler.site.host,
       videoId: this.videoHandler.videoData?.videoId,
@@ -1903,7 +2069,7 @@ export class VOTTranslationHandler {
       };
 
       const onAbort = () => {
-        console.warn("[VOT][translate-retry] aborted", {
+        console.warn("[FORK][translate-retry] aborted", {
           delayMs,
           host: this.videoHandler.site.host,
           videoId: this.videoHandler.videoData?.videoId,
@@ -1928,7 +2094,7 @@ export class VOTTranslationHandler {
         cleanup();
 
         try {
-          console.log("[VOT][translate-retry] fired", {
+          console.log("[FORK][translate-retry] fired", {
             delayMs,
             host: this.videoHandler.site.host,
             videoId: this.videoHandler.videoData?.videoId,
@@ -1937,7 +2103,7 @@ export class VOTTranslationHandler {
           const result = await fn();
           resolve(result);
         } catch (error) {
-          console.warn("[VOT][translate-retry] failed", {
+          console.warn("[FORK][translate-retry] failed", {
             delayMs,
             host: this.videoHandler.site.host,
             videoId: this.videoHandler.videoData?.videoId,
@@ -2050,7 +2216,7 @@ export class VOTTranslationHandler {
 
     this.activeTranslationUrl = normalizedVideoData.url;
 
-    console.log("[VOT][upload] translateVideoYDImpl input", {
+    console.log("[FORK][upload] translateVideoYDImpl input", {
       host: normalizedVideoData.host,
       url: normalizedVideoData.url,
       videoId: normalizedVideoData.videoId,
@@ -2080,7 +2246,7 @@ export class VOTTranslationHandler {
         throw new Error("Failed to get translation response");
       }
 
-      console.log("[VOT][upload] translate response", {
+      console.log("[FORK][upload] translate response", {
         translated: res.translated,
         status: res.status,
         remainingTime: res.remainingTime,
@@ -2191,7 +2357,7 @@ export class VOTTranslationHandler {
           this.videoHandler.notifier.translationFailed(params),
       });
 
-      console.error("[VOT][upload]", err);
+      console.error("[FORK][upload]", err);
       this.resetTranslationRequestState("translateVideoYDImpl error");
       return null;
     }
@@ -2297,14 +2463,30 @@ export class VOTTranslationHandler {
     const reprocessCurrentYouTube =
       this.isYouTubeTranslationRequest(requestVideoData) &&
       this.isYouTubeReprocessActive(requestVideoData.videoId);
-    if (reprocessCurrentYouTube) {
-      // Explicit "Restore translation": use the real video duration plus 300 seconds
-      // for both the initial request and the recursive request after source-audio
-      // upload. Once the backend enters WAITING/LONG_WAITING, reprocess is cleared
-      // and normal polling returns to the real duration with wasStream omitted.
+    const reprocessStrategy = reprocessCurrentYouTube
+      ? this.getYouTubeReprocessStrategy()
+      : undefined;
+    if (reprocessStrategy) {
+      let strategyUrl = requestVideoData.url;
+      if (reprocessStrategy.urlVariant && requestVideoData.videoId) {
+        const id = encodeURIComponent(requestVideoData.videoId);
+        const watch = `https://www.youtube.com/watch?v=${id}`;
+        if (reprocessStrategy.urlVariant === "short")
+          strategyUrl = `https://youtu.be/${id}`;
+        else if (reprocessStrategy.urlVariant === "embed")
+          strategyUrl = `https://www.youtube.com/embed/${id}`;
+        else if (reprocessStrategy.urlVariant === "feature-shared")
+          strategyUrl = `${watch}&feature=shared`;
+        else if (reprocessStrategy.urlVariant === "app-desktop")
+          strategyUrl = `${watch}&app=desktop`;
+      }
       requestVideoData = {
         ...requestVideoData,
-        duration: requestVideoData.duration + 300,
+        url: strategyUrl,
+        duration:
+          "durationAbsolute" in reprocessStrategy
+            ? reprocessStrategy.durationAbsolute
+            : requestVideoData.duration + reprocessStrategy.durationOffset,
       };
     }
 
@@ -2379,7 +2561,13 @@ export class VOTTranslationHandler {
           const useMinimalYouTubePollingPayload = false;
           const extraOpts = {
             useLivelyVoice,
-            ...(reprocessCurrentYouTube ? { wasStream: true } : {}),
+            ...(reprocessStrategy
+              ? {
+                  wasStream: reprocessStrategy.wasStream,
+                  bypassCache: reprocessStrategy.bypassCache,
+                  forceSourceLang: reprocessStrategy.forceSourceLang,
+                }
+              : {}),
             ...(forceSameYouTubeSourceLang ? { forceSourceLang: true } : {}),
             videoTitle:
               requestVideoData.title ??
@@ -2387,7 +2575,7 @@ export class VOTTranslationHandler {
               "",
           };
 
-          console.log("[VOT][youtube/request-snapshot]", {
+          console.log("[FORK][youtube/request-snapshot]", {
             host: requestVideoData.host,
             url: requestVideoData.url,
             videoId: requestVideoData.videoId,
@@ -2396,7 +2584,9 @@ export class VOTTranslationHandler {
             responseLang,
             forceSameYouTubeSourceLang,
             forceSourceLang: forceSameYouTubeSourceLang,
-            wasStream: reprocessCurrentYouTube,
+            wasStream: reprocessStrategy?.wasStream ?? false,
+            bypassCache: reprocessStrategy?.bypassCache ?? false,
+            reprocessStrategy: reprocessStrategy?.name,
             reprocessCurrentYouTube,
             translationHelpCount: translationHelp?.length ?? 0,
             useLivelyVoice,
@@ -2420,7 +2610,7 @@ export class VOTTranslationHandler {
           this.translationRequestStarted = true;
           this.postAudioTranslateRetryCount = 0;
 
-          console.log("[VOT][translate] translate response", {
+          console.log("[FORK][translate] translate response", {
             translated: res.translated,
             status: res.status,
             remainingTime: res.remainingTime,
@@ -2462,16 +2652,16 @@ export class VOTTranslationHandler {
       }
 
       debug.log("Translate video result", res);
-      console.log("[VOT] host:", this.videoHandler.site.host);
-      console.log("[VOT] status:", res.status);
-      console.log("[VOT] translated:", res.translated);
-      console.log("[VOT] remainingTime:", res.remainingTime);
-      console.log("[VOT] translationId:", res.translationId);
+      console.log("[FORK] host:", this.videoHandler.site.host);
+      console.log("[FORK] status:", res.status);
+      console.log("[FORK] translated:", res.translated);
+      console.log("[FORK] remainingTime:", res.remainingTime);
+      console.log("[FORK] translationId:", res.translationId);
       console.log(
-        "[VOT] canUploadAudio:",
+        "[FORK] canUploadAudio:",
         this.videoHandler.canUploadAudioForCurrentSite(),
       );
-      console.log("[VOT] downloader strategy:", this.audioDownloader.strategy);
+      console.log("[FORK] downloader strategy:", this.audioDownloader.strategy);
 
       if (
         this.videoHandler.site.host === "vk" &&
@@ -2481,7 +2671,7 @@ export class VOTTranslationHandler {
         res.translationId &&
         videoData.videoId
       ) {
-        debug.log("[VOT][VK subtitles] force audio upload", {
+        debug.log("[FORK][VK subtitles] force audio upload", {
           videoId: videoData.videoId,
           translationId: res.translationId,
           strategy: this.audioDownloader.strategy,
@@ -2499,7 +2689,7 @@ export class VOTTranslationHandler {
           await this.waitForAudioDownloadCompletion(signal, 20000);
         } catch (error) {
           debug.log(
-            "[VOT][VK subtitles] force audio upload failed after successful translation",
+            "[FORK][VK subtitles] force audio upload failed after successful translation",
             {
               videoId: videoData.videoId,
               translationId: res.translationId,
@@ -2522,7 +2712,7 @@ export class VOTTranslationHandler {
             "server returned cached FINISHED during explicit reprocess",
           );
           console.warn(
-            "[VOT][restore-translation] server returned FINISHED instead of AUDIO_REQUESTED; cached audio will not be played",
+            "[FORK][restore-translation] server returned FINISHED instead of AUDIO_REQUESTED; cached audio will not be played",
             {
               videoId: requestVideoData.videoId,
               translationId: res.translationId,
@@ -2596,7 +2786,7 @@ export class VOTTranslationHandler {
           retryDelayMs = this.getYouTubeServerPollDelayMs(res.remainingTime);
 
           console.log(
-            "[VOT][youtube/server-poll] accepted task; scheduling VOT-parity poll",
+            "[FORK][youtube/server-poll] accepted task; scheduling VOT-parity poll",
             {
               translationId: res.translationId,
               status: res.status,
@@ -2644,7 +2834,7 @@ export class VOTTranslationHandler {
       ) {
         this.reprocessYouTubePhase = "after-audio-request";
         debug.log(
-          "[VOT][restore-translation] AUDIO_REQUESTED reached; keeping realDuration+300",
+          "[FORK][restore-translation] AUDIO_REQUESTED reached; keeping realDuration+300",
           {
             videoId: requestVideoData.videoId,
             translationId: res.translationId,
@@ -2671,7 +2861,7 @@ export class VOTTranslationHandler {
 
         if (this.handledAudioRequestKey === audioRequestKey) {
           this.repeatedAudioRequestCount += 1;
-          console.warn("[VOT][source-audio-upload] repeated AUDIO_REQUESTED", {
+          console.warn("[FORK][source-audio-upload] repeated AUDIO_REQUESTED", {
             translationId,
             videoId: videoData.videoId,
             repeatedCount: this.repeatedAudioRequestCount,
@@ -2804,7 +2994,7 @@ export class VOTTranslationHandler {
         this.videoHandler.hadAsyncWait = true;
 
         console.warn(
-          "[VOT][youtube/server-poll] transient poll failure; retrying without resetting translation state",
+          "[FORK][youtube/server-poll] transient poll failure; retrying without resetting translation state",
           {
             attempt: this.youtubeServerPollErrorCount,
             maxAttempts: MAX_YOUTUBE_SERVER_POLL_ERROR_RETRIES,
@@ -2850,7 +3040,7 @@ export class VOTTranslationHandler {
         this.videoHandler.hadAsyncWait = true;
 
         console.warn(
-          "[VOT][source-audio-upload] post-audio translate failed; retrying",
+          "[FORK][source-audio-upload] post-audio translate failed; retrying",
           {
             attempt: this.postAudioTranslateRetryCount,
             maxAttempts: MAX_POST_AUDIO_TRANSLATE_RETRIES,
@@ -2903,7 +3093,7 @@ export class VOTTranslationHandler {
           this.videoHandler.notifier.translationFailed(params),
       });
 
-      console.error("[VOT]", err);
+      console.error("[FORK]", err);
       this.resetTranslationRequestState("translateVideoImpl error");
       return null;
     }

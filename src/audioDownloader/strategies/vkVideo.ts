@@ -190,7 +190,7 @@ async function fetchVkMedia(
 
     if (!gmRes.ok) {
       throw new Error(
-        `[VOT] VK: failed to fetch media source via GM_fetch: ${gmRes.status}`,
+        `[FORK] VK: failed to fetch media source via GM_fetch: ${gmRes.status}`,
       );
     }
 
@@ -214,7 +214,7 @@ async function fetchVkMedia(
   });
 
   if (!gmRes.ok) {
-    throw new Error(`[VOT] VK: failed to fetch media source: ${gmRes.status}`);
+    throw new Error(`[FORK] VK: failed to fetch media source: ${gmRes.status}`);
   }
 
   return gmRes;
@@ -270,7 +270,7 @@ async function resolveMpdAudioSegments(
   const xml = new DOMParser().parseFromString(manifestText, "application/xml");
 
   if (xml.querySelector("parsererror")) {
-    throw new Error("[VOT] VK: failed to parse MPD");
+    throw new Error("[FORK] VK: failed to parse MPD");
   }
 
   const adaptationSets = Array.from(xml.querySelectorAll("AdaptationSet"));
@@ -286,7 +286,7 @@ async function resolveMpdAudioSegments(
   });
 
   if (!audioSet) {
-    throw new Error("[VOT] VK: MPD audio AdaptationSet not found");
+    throw new Error("[FORK] VK: MPD audio AdaptationSet not found");
   }
 
   const representations = Array.from(
@@ -294,7 +294,7 @@ async function resolveMpdAudioSegments(
   );
 
   if (!representations.length) {
-    throw new Error("[VOT] VK: MPD audio Representation not found");
+    throw new Error("[FORK] VK: MPD audio Representation not found");
   }
 
   // Для распознавания речи нет смысла скачивать самый тяжёлый вариант.
@@ -315,14 +315,14 @@ async function resolveMpdAudioSegments(
     audioSet.querySelector(":scope > SegmentTemplate");
 
   if (!segmentTemplate) {
-    throw new Error("[VOT] VK: MPD audio SegmentTemplate not found");
+    throw new Error("[FORK] VK: MPD audio SegmentTemplate not found");
   }
 
   const initialization = segmentTemplate.getAttribute("initialization");
   const media = segmentTemplate.getAttribute("media");
 
   if (!initialization || !media) {
-    throw new Error("[VOT] VK: invalid MPD audio SegmentTemplate");
+    throw new Error("[FORK] VK: invalid MPD audio SegmentTemplate");
   }
 
   let segmentNumber = Number(
@@ -352,7 +352,7 @@ async function resolveMpdAudioSegments(
   const timeline = segmentTemplate.querySelector("SegmentTimeline");
 
   if (!timeline) {
-    throw new Error("[VOT] VK: MPD SegmentTimeline not found");
+    throw new Error("[FORK] VK: MPD SegmentTimeline not found");
   }
 
   const segments = Array.from(timeline.querySelectorAll(":scope > S"));
@@ -385,7 +385,7 @@ export async function getAudioFromVkVideo({
   const video = videos[0];
 
   if (!(video instanceof HTMLVideoElement)) {
-    throw new Error("[VOT] VK: video element not found");
+    throw new Error("[FORK] VK: video element not found");
   }
 
   const sniffedManifestUrl = getLastManifestUrl();
@@ -401,14 +401,14 @@ export async function getAudioFromVkVideo({
     selectedVideoSrc,
   ]);
 
-  debug.log("[VOT] VK strategy videoId:", videoId);
-  debug.log("[VOT] VK strategy manifest:", sniffedManifestUrl);
-  debug.log("[VOT] VK strategy performance media:", performanceMediaUrl);
-  debug.log("[VOT] VK strategy currentSrc:", video.currentSrc);
-  debug.log("[VOT] VK strategy src:", video.src);
-  debug.log("[VOT] VK strategy selected video src:", selectedVideoSrc);
+  debug.log("[FORK] VK strategy videoId:", videoId);
+  debug.log("[FORK] VK strategy manifest:", sniffedManifestUrl);
+  debug.log("[FORK] VK strategy performance media:", performanceMediaUrl);
+  debug.log("[FORK] VK strategy currentSrc:", video.currentSrc);
+  debug.log("[FORK] VK strategy src:", video.src);
+  debug.log("[FORK] VK strategy selected video src:", selectedVideoSrc);
   debug.log(
-    "[VOT] VK strategy candidate videos:",
+    "[FORK] VK strategy candidate videos:",
     videos.map((candidate) => ({
       src: getVideoSrc(candidate),
       visible: isVisibleVideo(candidate),
@@ -417,15 +417,15 @@ export async function getAudioFromVkVideo({
       score: scoreVideoCandidate(candidate, preferredVideo),
     })),
   );
-  debug.log("[VOT] VK strategy selected src:", src);
+  debug.log("[FORK] VK strategy selected src:", src);
 
   if (!src) {
-    throw new Error("[VOT] VK: empty video src");
+    throw new Error("[FORK] VK: empty video src");
   }
 
   if (src.startsWith("blob:")) {
     throw new Error(
-      "[VOT] VK: blob source detected; need direct mp4/webm/m3u8/mpd URL from player/network",
+      "[FORK] VK: blob source detected; need direct mp4/webm/m3u8/mpd URL from player/network",
     );
   }
 
@@ -435,13 +435,13 @@ export async function getAudioFromVkVideo({
     const segmentUrls = await resolveMpdAudioSegments(src, signal);
 
     if (!segmentUrls.length) {
-      throw new Error("[VOT] VK: empty MPD audio segment list");
+      throw new Error("[FORK] VK: empty MPD audio segment list");
     }
 
-    debug.log("[VOT] VK strategy MPD audio segments:", segmentUrls.length);
-    debug.log("[VOT] VK strategy MPD first segment:", segmentUrls[0]);
+    debug.log("[FORK] VK strategy MPD audio segments:", segmentUrls.length);
+    debug.log("[FORK] VK strategy MPD first segment:", segmentUrls[0]);
     debug.log(
-      "[VOT] VK strategy MPD last segment:",
+      "[FORK] VK strategy MPD last segment:",
       segmentUrls[segmentUrls.length - 1],
     );
 
@@ -458,7 +458,7 @@ export async function getAudioFromVkVideo({
 
       if (!bytes.byteLength) {
         throw new Error(
-          `[VOT] VK: empty MPD audio segment ${i}/${segmentUrls.length}`,
+          `[FORK] VK: empty MPD audio segment ${i}/${segmentUrls.length}`,
         );
       }
 
@@ -466,12 +466,12 @@ export async function getAudioFromVkVideo({
       totalLength += bytes.byteLength;
 
       debug.log(
-        `[VOT] VK strategy MPD downloaded ${i + 1}/${segmentUrls.length}`,
+        `[FORK] VK strategy MPD downloaded ${i + 1}/${segmentUrls.length}`,
       );
     }
 
     if (!totalLength) {
-      throw new Error("[VOT] VK: empty combined MPD audio");
+      throw new Error("[FORK] VK: empty combined MPD audio");
     }
 
     const combined = new Uint8Array(totalLength);
@@ -485,8 +485,8 @@ export async function getAudioFromVkVideo({
 
     const fileId = `vk_dash_audio_${totalLength}_${Date.now()}`;
 
-    debug.log("[VOT] VK strategy MPD combined bytes:", totalLength);
-    debug.log("[VOT] VK strategy MPD combined fileId:", fileId);
+    debug.log("[FORK] VK strategy MPD combined bytes:", totalLength);
+    debug.log("[FORK] VK strategy MPD combined fileId:", fileId);
 
     return {
       fileId,
@@ -502,12 +502,12 @@ export async function getAudioFromVkVideo({
     const segmentUrls = await resolveM3u8Segments(src, signal);
 
     if (!segmentUrls.length) {
-      throw new Error("[VOT] VK: empty m3u8 segment list");
+      throw new Error("[FORK] VK: empty m3u8 segment list");
     }
 
     const fileId = `vk_hls_${Date.now()}`;
 
-    debug.log("[VOT] VK strategy m3u8 segments:", segmentUrls.length);
+    debug.log("[FORK] VK strategy m3u8 segments:", segmentUrls.length);
 
     return {
       fileId,
@@ -517,7 +517,7 @@ export async function getAudioFromVkVideo({
           const bytes = await fetchBytes(segmentUrl, signal);
 
           if (!bytes.byteLength) {
-            throw new Error("[VOT] VK: empty m3u8 segment");
+            throw new Error("[FORK] VK: empty m3u8 segment");
           }
 
           yield bytes;
@@ -529,14 +529,14 @@ export async function getAudioFromVkVideo({
   const bytes = await fetchBytes(src, signal);
 
   if (!bytes.byteLength) {
-    throw new Error("[VOT] VK: empty media bytes");
+    throw new Error("[FORK] VK: empty media bytes");
   }
 
   const mediaPartsLength = Math.max(1, Math.ceil(bytes.byteLength / chunkSize));
   const fileId = makeSimpleFileId(bytes.byteLength, chunkSize);
 
-  debug.log("[VOT] VK strategy bytes:", bytes.byteLength);
-  debug.log("[VOT] VK strategy mediaPartsLength:", mediaPartsLength);
+  debug.log("[FORK] VK strategy bytes:", bytes.byteLength);
+  debug.log("[FORK] VK strategy mediaPartsLength:", mediaPartsLength);
 
   return {
     fileId,

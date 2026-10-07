@@ -352,10 +352,22 @@ export default class YoutubeHelper {
     const userLangSupported = translationLanguages.find(
       (language) => language.languageCode === userLang,
     );
-    const asrSubtitleItem = captionTracks.find(
-      (captionTrack) => captionTrack?.kind === "asr",
+    // YouTube can expose multiple ASR-looking caption tracks simultaneously.
+    // Their array order is not an original-language signal, so only treat ASR
+    // as source-language evidence when all ASR tracks agree on one language.
+    const asrLanguages = Array.from(
+      new Set(
+        captionTracks
+          .filter(
+            (captionTrack) =>
+              captionTrack?.kind === "asr" && captionTrack.languageCode,
+          )
+          .map((captionTrack) => normalizeLang(captionTrack.languageCode!))
+          .filter((language): language is string => Boolean(language)),
+      ),
     );
-    const asrLang = asrSubtitleItem?.languageCode ?? "en";
+    const unambiguousAsrLang =
+      asrLanguages.length === 1 ? asrLanguages[0] : undefined;
 
     return captionTracks.reduce<
       Array<{
@@ -388,8 +400,9 @@ export default class YoutubeHelper {
 
       if (
         userLangSupported &&
+        unambiguousAsrLang &&
         captionTrack.isTranslatable &&
-        captionTrack.languageCode === asrLang &&
+        normalizeLang(captionTrack.languageCode) === unambiguousAsrLang &&
         userLang !== language
       ) {
         result.push({
@@ -415,13 +428,20 @@ export default class YoutubeHelper {
     }
 
     const response = YoutubeHelper.getPlayerResponse();
-    const autoCaption =
-      response?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.find(
-        (caption) => caption.kind === "asr" && caption.languageCode,
-      );
+    const captionTracks =
+      response?.captions?.playerCaptionsTracklistRenderer?.captionTracks ?? [];
+    const asrLanguages = Array.from(
+      new Set(
+        captionTracks
+          .filter((caption) => caption.kind === "asr" && caption.languageCode)
+          .map((caption) => normalizeLang(caption.languageCode!))
+          .filter((language): language is string => Boolean(language)),
+      ),
+    );
 
-    return autoCaption?.languageCode
-      ? normalizeLang(autoCaption.languageCode)
-      : undefined;
+    // Never infer the spoken language from the first ASR entry when YouTube
+    // exposes several different ASR languages. Let the higher-level resolver
+    // use audio-track metadata or text detection instead.
+    return asrLanguages.length === 1 ? asrLanguages[0] : undefined;
   }
 }

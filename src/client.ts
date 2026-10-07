@@ -98,7 +98,7 @@ export default class VOTClient extends ExtVOTClient {
         throw makeAbortError();
       }
 
-      console.error("[VOT] request failed:", error);
+      console.error("[FORK] request failed:", error);
       return buildRequestErrorResult(error) as ClientResponse<T>;
     }
   }
@@ -111,7 +111,7 @@ export default class VOTClient extends ExtVOTClient {
     });
 
     if (!res.success) {
-      console.error("[VOT] createSession failed:", res);
+      console.error("[FORK] createSession failed:", res);
       throw new VOTJSError("Failed to request create session", res);
     }
 

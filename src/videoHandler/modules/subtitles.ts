@@ -523,7 +523,7 @@ export async function changeSubtitlesLang(
       ...subtitlesObj,
       url: proxiedSubtitlesUrl,
     };
-    console.log(`[VOT] Subs proxied via ${subtitlesObj.url}`);
+    console.log(`[FORK] Subs proxied via ${subtitlesObj.url}`);
   }
 
   const selectedTrack = {
@@ -542,7 +542,7 @@ export async function changeSubtitlesLang(
   try {
     fetchedSubtitles = await SubtitlesProcessor.fetchSubtitles(subtitlesObj);
   } catch (error) {
-    console.error("[VOT][subtitles][fetch failed]", subtitlesObj, error);
+    console.error("[FORK][subtitles][fetch failed]", subtitlesObj, error);
     return this;
   }
   if (!isCurrentSubtitlesSelectionRequest(this, requestVersion)) {
@@ -665,7 +665,7 @@ export async function enableSubtitlesForCurrentLangPair(this: VideoHandler) {
     await ensureSubtitlesForCurrentLangPair.call(this);
   } catch (err) {
     if (isVkProbeHost()) {
-      console.warn("[VOT][VK probe] auto subtitles failed", err);
+      console.warn("[FORK][VK probe] auto subtitles failed", err);
     }
     // If loading fails, we can't enable anything.
     return this;
@@ -684,7 +684,7 @@ export async function enableSubtitlesForCurrentLangPair(this: VideoHandler) {
   );
   if (bestIdx == null) {
     if (isVkProbeHost()) {
-      console.warn("[VOT][VK probe] no suitable subtitles after load", {
+      console.warn("[FORK][VK probe] no suitable subtitles after load", {
         count: this.subtitles?.length || 0,
         fromLang,
         toLang,
@@ -735,7 +735,7 @@ export async function toggleSubtitlesForCurrentLangPair(this: VideoHandler) {
 export async function loadSubtitles(this: VideoHandler) {
   if (!this.videoData?.videoId) {
     console.error(
-      `[VOT] ${localizationProvider.getDefault("VOTNoVideoIDFound")}`,
+      `[FORK] ${localizationProvider.getDefault("VOTNoVideoIDFound")}`,
     );
     this.subtitles = [];
     this.subtitlesCacheKey = null;
@@ -804,7 +804,7 @@ export async function loadSubtitles(this: VideoHandler) {
     );
     this.subtitlesCacheKey = cacheKey;
   } catch (error) {
-    console.error("[VOT] Failed to load subtitles:", error);
+    console.error("[FORK] Failed to load subtitles:", error);
     this.subtitles = mergeUniqueSubtitleDescriptors(siteSubtitles);
     this.subtitlesCacheKey = cacheKey;
   }

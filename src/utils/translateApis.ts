@@ -96,7 +96,7 @@ const FOSWLYTranslateAPI = new (class {
       return data;
     } catch (err) {
       console.error(
-        `[VOT] Failed to get data from FOSWLY Translate API, because ${
+        `[FORK] Failed to get data from FOSWLY Translate API, because ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -169,7 +169,7 @@ const RustServerAPI = {
       return await response.text();
     } catch (error) {
       console.error(
-        `[VOT] Error getting lang from text, because ${
+        `[FORK] Error getting lang from text, because ${
           (error as Error).message
         }`,
       );

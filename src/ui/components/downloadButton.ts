@@ -33,14 +33,14 @@ export default class DownloadButton {
     });
     const loaderMain = button.querySelector<SVGPathElement>(".vot-loader-main");
     if (!loaderMain) {
-      throw new Error("[VOT] DownloadButton loader main element not found");
+      throw new Error("[FORK] DownloadButton loader main element not found");
     }
 
     const loaderCircle = button.querySelector<SVGCircleElement>(
       ".vot-loader-progress",
     );
     if (!loaderCircle) {
-      throw new Error("[VOT] DownloadButton loader circle element not found");
+      throw new Error("[FORK] DownloadButton loader circle element not found");
     }
     button.addEventListener("click", () => {
       this.onClick.dispatch();

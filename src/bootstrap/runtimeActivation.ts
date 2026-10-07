@@ -52,7 +52,7 @@ export async function ensureRuntimeActivated(
       await localizationProvider.update();
       debug.log(`Selected menu language: ${localizationProvider.lang}`);
     } else {
-      debug.log("[VOT] iframe mode: skip localization init");
+      debug.log("[FORK] iframe mode: skip localization init");
     }
 
     if (!iframeInteractorBound) {

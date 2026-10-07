@@ -109,7 +109,7 @@ export function startLightweightVideoProbe(
     }
     if (shouldLogMobileOverlay) {
       console.log(
-        "[VOT][mobile-overlay][probe] cleanup lightweight video probe",
+        "[FORK][mobile-overlay][probe] cleanup lightweight video probe",
         {
           strategy,
         },
@@ -135,7 +135,7 @@ export function startLightweightVideoProbe(
     }
     if (shouldLogMobileOverlay) {
       console.log(
-        "[VOT][mobile-overlay][probe] activate lightweight video probe",
+        "[FORK][mobile-overlay][probe] activate lightweight video probe",
         {
           reason,
           hasVideo: Boolean(video),

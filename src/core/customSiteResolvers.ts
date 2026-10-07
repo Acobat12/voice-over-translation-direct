@@ -115,7 +115,7 @@ export async function resolveCustomSiteVideo(
       (!isBadDirectVideoUrl(currentSrc) ? currentSrc : "") ||
       tunnelPlayer.playerUrl;
 
-    console.log("[VOT][custom][tunnel] resolved tunnel player source", {
+    console.log("[FORK][custom][tunnel] resolved tunnel player source", {
       playerUrl: tunnelPlayer.playerUrl,
       sourceUrl: tunnelPlayer.sourceUrl,
       playlistUrl: tunnelPlayer.playlistUrl,
@@ -150,7 +150,7 @@ export async function resolveCustomSiteVideo(
     const unitedVideoId = String(direct.unitedVideoId || href).trim();
 
     if (bestDirect && !isBadDirectVideoUrl(bestDirect)) {
-      console.log("[VOT][custom][direct-sources] resolved direct source", {
+      console.log("[FORK][custom][direct-sources] resolved direct source", {
         bestDirect,
         unitedVideoId,
       });
@@ -172,7 +172,7 @@ export async function resolveCustomSiteVideo(
 
     if (structured?.contentUrl && /^https?:\/\//i.test(structured.contentUrl)) {
       console.log(
-        "[VOT][custom][odysee] resolved contentUrl",
+        "[FORK][custom][odysee] resolved contentUrl",
         structured.contentUrl,
       );
       return {
@@ -209,7 +209,7 @@ export async function resolveCustomSiteVideo(
       pick((url) => url.toLowerCase().includes("/streams/"));
 
     if (bestUrl) {
-      console.log("[VOT][custom][odysee] resolved media url", bestUrl);
+      console.log("[FORK][custom][odysee] resolved media url", bestUrl);
       return {
         url: bestUrl,
         videoId: href,
@@ -225,7 +225,7 @@ export async function resolveCustomSiteVideo(
       !currentSrc.startsWith("blob:") &&
       !isBadAsset(currentSrc)
     ) {
-      console.log("[VOT][custom][odysee] resolved direct src", currentSrc);
+      console.log("[FORK][custom][odysee] resolved direct src", currentSrc);
       return {
         url: currentSrc,
         videoId: href,
@@ -235,7 +235,7 @@ export async function resolveCustomSiteVideo(
 
     if (structured?.embedUrl) {
       console.log(
-        "[VOT][custom][odysee] fallback embedUrl",
+        "[FORK][custom][odysee] fallback embedUrl",
         structured.embedUrl,
       );
       return {
@@ -245,7 +245,7 @@ export async function resolveCustomSiteVideo(
       };
     }
 
-    console.log("[VOT][custom][odysee] fallback page url", href);
+    console.log("[FORK][custom][odysee] fallback page url", href);
     return {
       url: href,
       videoId: href,
@@ -264,7 +264,7 @@ export async function resolveCustomSiteVideo(
     const currentSrc = String(video?.currentSrc || video?.src || "").trim();
 
     if (!isBadDirectVideoUrl(currentSrc)) {
-      console.log("[VOT][custom][cdnvideohub] using direct src", currentSrc);
+      console.log("[FORK][custom][cdnvideohub] using direct src", currentSrc);
       return {
         url: currentSrc,
         videoId: toStableVideoId(currentSrc, referrer || href),
@@ -280,7 +280,7 @@ export async function resolveCustomSiteVideo(
     const best = pickBestResourceUrl(names);
     if (best) {
       console.log(
-        "[VOT][custom][cdnvideohub] using performance resource",
+        "[FORK][custom][cdnvideohub] using performance resource",
         best,
       );
       return {
@@ -296,7 +296,7 @@ export async function resolveCustomSiteVideo(
         referrer,
       )
     ) {
-      console.log("[VOT][custom][cdnvideohub] using kodik referrer", referrer);
+      console.log("[FORK][custom][cdnvideohub] using kodik referrer", referrer);
       return {
         url: referrer,
         videoId: referrer,
@@ -306,7 +306,7 @@ export async function resolveCustomSiteVideo(
 
     // Return null so sniffedManifestUrl from videoManager can be used instead
     console.log(
-      "[VOT][custom][cdnvideohub] no usable url found, returning null for sniffed fallback",
+      "[FORK][custom][cdnvideohub] no usable url found, returning null for sniffed fallback",
     );
     return null;
   }
@@ -317,7 +317,7 @@ export async function resolveCustomSiteVideo(
     const currentSrc = String(video?.currentSrc || video?.src || "").trim();
 
     if (!isBadDirectVideoUrl(currentSrc)) {
-      console.log("[VOT][custom][wikianimex] using direct src", currentSrc);
+      console.log("[FORK][custom][wikianimex] using direct src", currentSrc);
       return {
         url: currentSrc,
         videoId: toStableVideoId(currentSrc, href),
@@ -332,7 +332,10 @@ export async function resolveCustomSiteVideo(
 
     const best = pickBestResourceUrl(names);
     if (best) {
-      console.log("[VOT][custom][wikianimex] using performance resource", best);
+      console.log(
+        "[FORK][custom][wikianimex] using performance resource",
+        best,
+      );
       return {
         url: best,
         videoId: toStableVideoId(best, href),
@@ -353,14 +356,14 @@ export async function resolveCustomSiteVideo(
           src,
         )
       ) {
-        console.log("[VOT][custom][wikianimex] using kodik iframe src", src);
+        console.log("[FORK][custom][wikianimex] using kodik iframe src", src);
         return { url: src, videoId: src, title: document.title };
       }
     }
 
     // Return null — let sniffedManifestUrl from videoManager take over
     console.log(
-      "[VOT][custom][wikianimex] no usable url, deferring to sniffedManifestUrl",
+      "[FORK][custom][wikianimex] no usable url, deferring to sniffedManifestUrl",
     );
     return null;
   }
@@ -374,7 +377,7 @@ export async function resolveCustomSiteVideo(
 
     const best = pickBestResourceUrl(names);
     if (best) {
-      console.log("[VOT][custom][generic] resolved media url", best);
+      console.log("[FORK][custom][generic] resolved media url", best);
       return {
         url: best,
         videoId: toStableVideoId(best, href),
@@ -386,7 +389,7 @@ export async function resolveCustomSiteVideo(
     const currentSrc = String(video?.currentSrc || video?.src || "");
 
     if (!isBadDirectVideoUrl(currentSrc)) {
-      console.log("[VOT][custom][generic] resolved direct src", currentSrc);
+      console.log("[FORK][custom][generic] resolved direct src", currentSrc);
       return {
         url: currentSrc,
         videoId: toStableVideoId(currentSrc, href),

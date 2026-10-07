@@ -109,7 +109,7 @@ function logMobileOverlay(message: string, details?: unknown): void {
     return;
   }
 
-  console.log(`[VOT][mobile-overlay][events] ${message}`, details ?? {});
+  console.log(`[FORK][mobile-overlay][events] ${message}`, details ?? {});
 }
 
 function getMobileYouTubePageKey(): string {
@@ -365,7 +365,7 @@ function bindOverlayLayoutEvents(ctx: ExtraEventsContext): void {
       }
 
       if (containerStale) {
-        debug.log("[VOT][observer] overlay/container stale, resyncing", {
+        debug.log("[FORK][observer] overlay/container stale, resyncing", {
           reason,
           containerConnected: self.container.isConnected,
           videoConnected: self.video.isConnected,
@@ -534,19 +534,19 @@ function bindAudioTrackLanguageSync(ctx: ExtraEventsContext): void {
         currentLanguage !== self.videoData.responseLanguage
       ) {
         debug.log(
-          `[VOT] Audio track language changed to ${currentLanguage}, triggering auto-translation`,
+          `[FORK] Audio track language changed to ${currentLanguage}, triggering auto-translation`,
         );
         try {
           await self.uiManager.handleTranslationBtnClick();
         } catch (error) {
           debug.log(
-            "[VOT] Failed to trigger auto-translation on audio track change:",
+            "[FORK] Failed to trigger auto-translation on audio track change:",
             error,
           );
         }
       }
     } catch (error) {
-      debug.log("[VOT] Failed to sync audio track language", error);
+      debug.log("[FORK] Failed to sync audio track language", error);
     }
   };
   const player = YoutubeHelper.getPlayer();
@@ -556,7 +556,7 @@ function bindAudioTrackLanguageSync(ctx: ExtraEventsContext): void {
       try {
         player.addEventListener(eventName, syncAudioTrackLanguage);
       } catch (error) {
-        debug.log(`[VOT] Failed to bind ${eventName}`, error);
+        debug.log(`[FORK] Failed to bind ${eventName}`, error);
       }
     }
   }
@@ -569,7 +569,7 @@ function bindAudioTrackLanguageSync(ctx: ExtraEventsContext): void {
         try {
           player.removeEventListener(eventName, syncAudioTrackLanguage);
         } catch (error) {
-          debug.log(`[VOT] Failed to unbind ${eventName}`, error);
+          debug.log(`[FORK] Failed to unbind ${eventName}`, error);
         }
       }
     },
@@ -614,7 +614,7 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
     actionName: string,
   ) => {
     void action().catch((error) => {
-      debug.log(`[VOT] ${actionName} hotkey action failed`, error);
+      debug.log(`[FORK] ${actionName} hotkey action failed`, error);
     });
   };
   add(document, "keydown", (event) => {
@@ -721,7 +721,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
     try {
       await self.setCanPlay();
     } catch (err) {
-      debug.log("[VOT] setCanPlay() failed", err);
+      debug.log("[FORK] setCanPlay() failed", err);
     }
   };
   let setCanPlayQueued = false;
@@ -748,7 +748,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
     // the button can move from the temporary disabled state back to normal.
     add(self.video, eventName, () => {
       if (eventName === "play" || eventName === "playing") {
-        console.log("[VOT][source-audio] play event received", {
+        console.log("[FORK][source-audio] play event received", {
           eventName,
           host: self.site.host,
           paused: self.video.paused,
@@ -766,7 +766,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
           !self.hasActiveSource()
         ) {
           console.log(
-            "[VOT][source-audio] retry auto-translate after playback",
+            "[FORK][source-audio] retry auto-translate after playback",
             {
               eventName,
               kind: sourceAudioState.kind,
@@ -778,7 +778,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
             .runAutoTranslationIfEligible()
             .catch((error) => {
               debug.log(
-                "[VOT] Failed to retry auto-translate after playback start",
+                "[FORK] Failed to retry auto-translate after playback start",
                 error,
               );
             });
@@ -799,7 +799,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
               video: self.video,
             });
     } catch (error) {
-      debug.log("[VOT] Failed to resolve video id on emptied", error);
+      debug.log("[FORK] Failed to resolve video id on emptied", error);
     }
     if (self.videoData && videoId && videoId === self.videoData.videoId) {
       // Quality changes can trigger media reload (`emptied`) for the same
@@ -807,7 +807,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
       return;
     }
     if (self.site.host === "custom" && getTunnelPlayerContext()) {
-      debug.log("[VOT][custom][tunnel] ignore video emptied");
+      debug.log("[FORK][custom][tunnel] ignore video emptied");
       return;
     }
     debug.log("lipsync mode is emptied");
@@ -841,7 +841,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
   };
   add(self.video, "emptied", () => {
     void handleVideoEmptied().catch((error) => {
-      debug.log("[VOT] Failed to handle emptied lifecycle event", error);
+      debug.log("[FORK] Failed to handle emptied lifecycle event", error);
     });
   });
   if (!isMuteSyncDisabledHost(self.site.host)) {

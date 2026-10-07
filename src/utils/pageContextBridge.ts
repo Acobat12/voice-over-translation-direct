@@ -67,7 +67,7 @@ function parseSnapshot(raw: string): PageContextSnapshot | null {
       ? (parsed as PageContextSnapshot)
       : null;
   } catch (error) {
-    console.warn("[VOT][page-context] failed to parse snapshot", error);
+    console.warn("[FORK][page-context] failed to parse snapshot", error);
     return null;
   }
 }
@@ -363,7 +363,7 @@ function installPageContextBridge(): void {
   parent.appendChild(script);
   script.remove();
 
-  console.log("[VOT][page-context] bridge install requested", {
+  console.log("[FORK][page-context] bridge install requested", {
     href: globalThis.location.href,
   });
 }

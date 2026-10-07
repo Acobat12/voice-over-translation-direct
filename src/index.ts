@@ -838,7 +838,7 @@ export class VideoHandler {
       forceVisible: true,
     });
     if (!sourceAudioState.ready) {
-      console.log("[VOT][source-audio] auto-translate blocked before start", {
+      console.log("[FORK][source-audio] auto-translate blocked before start", {
         kind: sourceAudioState.kind,
         ready: sourceAudioState.ready,
         audioDetected: sourceAudioState.audioDetected,
@@ -859,7 +859,7 @@ export class VideoHandler {
     });
     if (!sourceAudioState.ready) {
       console.log(
-        "[VOT][source-audio] auto-translate blocked after validation",
+        "[FORK][source-audio] auto-translate blocked after validation",
         {
           kind: sourceAudioState.kind,
           ready: sourceAudioState.ready,
@@ -886,7 +886,7 @@ export class VideoHandler {
       return this.audioContext;
     } catch (err) {
       // Some environments expose AudioContext but still fail to initialize.
-      console.warn("[VOT] Failed to init AudioContext, falling back:", err);
+      console.warn("[FORK] Failed to init AudioContext, falling back:", err);
       return undefined;
     }
   }
@@ -1167,7 +1167,7 @@ export class VideoHandler {
     const verificationGeneration = ++this.overlayVerificationGeneration;
     const retryDelaysMs = [0, 500, 1000, 1500];
 
-    debug.log("[VOT][observer] overlay mount requested", {
+    debug.log("[FORK][observer] overlay mount requested", {
       reason,
       siteHost: this.site.host,
       videoId: this.videoData?.videoId,
@@ -1200,7 +1200,7 @@ export class VideoHandler {
         requireVisible: true,
       });
       if (before.verified) {
-        debug.log("[VOT][observer] overlay verified", {
+        debug.log("[FORK][observer] overlay verified", {
           reason,
           attempt,
           ...before,
@@ -1215,7 +1215,7 @@ export class VideoHandler {
         this.rebindOverlayVisibilityTargets();
       } catch (error) {
         debug.warn(
-          "[VOT][observer] failed to rebind overlay visibility",
+          "[FORK][observer] failed to rebind overlay visibility",
           error,
         );
       }
@@ -1223,7 +1223,7 @@ export class VideoHandler {
       this.syncSourceAudioAvailabilityUi({ forceVisible: true });
 
       if (after.verified) {
-        debug.log("[VOT][observer] overlay verified", {
+        debug.log("[FORK][observer] overlay verified", {
           reason,
           attempt,
           ...after,
@@ -1232,7 +1232,7 @@ export class VideoHandler {
       }
 
       if (attempt < retryDelaysMs.length - 1) {
-        debug.log("[VOT][observer] overlay missing after attach, retrying", {
+        debug.log("[FORK][observer] overlay missing after attach, retrying", {
           reason,
           attempt,
           nextDelayMs: retryDelaysMs[attempt + 1],
@@ -1330,7 +1330,7 @@ export class VideoHandler {
       responseLang,
     );
 
-    if (requestLangForApi === "auto" || responseLang !== "ru") {
+    if (responseLang !== "ru") {
       return false;
     }
 
@@ -1789,10 +1789,13 @@ export class VideoHandler {
             await this.enableSubtitlesForCurrentLangPair();
           }
         } catch (error) {
-          debug.log("[VOT][VK subtitles] failed to refresh after translation", {
-            error,
-            videoId: this.videoData?.videoId,
-          });
+          debug.log(
+            "[FORK][VK subtitles] failed to refresh after translation",
+            {
+              error,
+              videoId: this.videoData?.videoId,
+            },
+          );
         }
       })();
     }
@@ -1897,7 +1900,7 @@ export class VideoHandler {
     const rawUrl = String(
       this.videoData?.url || this.video?.currentSrc || this.video?.src || "",
     );
-    debug.log("[VOT] canUploadAudioForCurrentSite host:", host);
+    debug.log("[FORK] canUploadAudioForCurrentSite host:", host);
 
     const canForceLocalFileUpload = (() => {
       if (!rawUrl) {
@@ -1983,7 +1986,7 @@ export class VideoHandler {
         String(globalThis.location.hostname || ""),
       )
     ) {
-      console.log("[VOT][mobile-overlay][handler] VideoHandler.release()", {
+      console.log("[FORK][mobile-overlay][handler] VideoHandler.release()", {
         videoId: this.videoData?.videoId,
         page: `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`,
       });
@@ -2132,7 +2135,7 @@ async function persistGoogleDriveTopFrameTitleIfNeeded(): Promise<void> {
   try {
     await votStorage.set(`googledrive:title:${fileId}`, title);
   } catch (error) {
-    console.warn("[VOT] failed to persist Google Drive title", error);
+    console.warn("[FORK] failed to persist Google Drive title", error);
   }
 }
 function getFrameContext() {
@@ -2156,7 +2159,7 @@ function logBootstrap(
     Object.assign(payload, details);
   }
 
-  console.log(`[VOT][bootstrap][${ctx.frame}] ${message}`, payload);
+  console.log(`[FORK][bootstrap][${ctx.frame}] ${message}`, payload);
 }
 
 function matchSite(entry: ServiceConf, url: URL): boolean {
@@ -2330,7 +2333,7 @@ async function main(): Promise<void> {
   logBootstrap("Loading extension");
   if (bootstrapMode === "auth-eager") {
     void ensureRuntimeActivated("auth-page", logBootstrap).catch((err) => {
-      console.error("[VOT] Failed to activate runtime", err);
+      console.error("[FORK] Failed to activate runtime", err);
     });
   } else {
     logBootstrap("Lazy bootstrap enabled; waiting for video detection");
@@ -2408,7 +2411,7 @@ if (document.documentElement.hasAttribute(DOM_BOOTSTRAP_ATTR)) {
       } catch (e) {
         bootState.status = "failed";
         bootState.error = e;
-        console.error("[VOT]", e);
+        console.error("[FORK]", e);
       }
     };
 

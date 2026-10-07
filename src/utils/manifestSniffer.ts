@@ -57,11 +57,11 @@ function rememberManifest(url: string): void {
     return;
   }
 
-  console.log("[VOT][manifestSniffer] candidate", normalized);
+  console.log("[FORK][manifestSniffer] candidate", normalized);
 
   if (!bestManifest) {
     bestManifest = { url: normalized, seenAt: Date.now() };
-    console.log("[VOT][manifestSniffer] selected", bestManifest.url);
+    console.log("[FORK][manifestSniffer] selected", bestManifest.url);
     return;
   }
 
@@ -70,7 +70,7 @@ function rememberManifest(url: string): void {
 
   if (nextScore >= currentScore) {
     bestManifest = { url: normalized, seenAt: Date.now() };
-    console.log("[VOT][manifestSniffer] selected", bestManifest.url);
+    console.log("[FORK][manifestSniffer] selected", bestManifest.url);
   }
 }
 
@@ -115,7 +115,10 @@ function tryInjectDirectSources(text: string): void {
     const existing = (globalThis as any)[DIRECT_SOURCES_KEY];
     if (existing && typeof existing === "object") return;
     (globalThis as any)[DIRECT_SOURCES_KEY] = data;
-    console.log("[VOT][manifestSniffer] injected __VOT_DIRECT_SOURCES__", data);
+    console.log(
+      "[FORK][manifestSniffer] injected __VOT_DIRECT_SOURCES__",
+      data,
+    );
   } catch {
     // Not JSON or not relevant
   }

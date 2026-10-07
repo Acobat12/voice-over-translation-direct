@@ -64,7 +64,7 @@ export function rememberYouTubeTranslationMethod(
   } catch {
     /* optional */
   }
-  console.log("[VOT][youtube-method] translation succeeded", next);
+  console.log("[FORK][youtube-method] translation succeeded", next);
 }
 
 export function getYouTubeMethodLabel(method: YouTubeAudioMethod): string {

@@ -653,10 +653,26 @@ function sendResponse(
   postToPage({ type: TYPE_RES, id, ok, result, error });
 }
 
+function isCloudflareChallengeFrame(): boolean {
+  if (globalThis.top === globalThis.self) {
+    return false;
+  }
+
+  const host = globalThis.location.hostname.toLowerCase();
+  const path = globalThis.location.pathname;
+
+  return (
+    host === "challenges.cloudflare.com" ||
+    path.includes("/cdn-cgi/challenge-platform/")
+  );
+}
+
 // Guard: if the bridge cannot access extension APIs, there is nothing useful
 // we can do.
 const bridgeGlobal = globalThis as Record<string, unknown>;
-if (bridgeGlobal[BRIDGE_BOOT_KEY]) {
+if (isCloudflareChallengeFrame()) {
+  debug.log("[VOT EXT][bridge] skipping Cloudflare challenge iframe");
+} else if (bridgeGlobal[BRIDGE_BOOT_KEY]) {
   debug.log("[VOT EXT][bridge] already initialized");
 } else {
   bridgeGlobal[BRIDGE_BOOT_KEY] = true;

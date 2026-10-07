@@ -7,6 +7,19 @@ export type BootstrapPolicyInput = {
   authOrigin: string;
 };
 
+function isCloudflareChallengeFrame(href: string): boolean {
+  try {
+    const url = new URL(href);
+
+    return (
+      url.hostname === "challenges.cloudflare.com" ||
+      url.pathname.includes("/cdn-cgi/challenge-platform/")
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function shouldSkipIframeBootstrap(
   input: BootstrapPolicyInput,
 ): boolean {
@@ -16,7 +29,11 @@ export function shouldSkipIframeBootstrap(
   // `about:srcdoc` wrapper iframes. Skipping bootstrap there prevents the
   // generic observer from ever seeing the real <video>. Only skip truly
   // opaque/null-origin frames where we have no stable runtime context.
-  return input.origin === "null";
+  if (input.origin === "null") {
+    return true;
+  }
+
+  return isCloudflareChallengeFrame(input.href);
 }
 
 export function resolveBootstrapMode(

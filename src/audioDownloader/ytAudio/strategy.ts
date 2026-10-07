@@ -132,7 +132,7 @@ function getActiveYouTubeStreamingState(videoId: string): {
     directProgressiveFormats,
   );
 
-  console.warn("[VOT] ytAudio: active YouTube streaming state", {
+  console.warn("[FORK] ytAudio: active YouTube streaming state", {
     videoId,
     responseSources: responses.map((item) => item.source),
     directAudioFormats: dedupedAudioFormats.length,
@@ -575,7 +575,7 @@ async function recordCurrentYoutubeAudio({
   assertCanCaptureCurrentYoutubeAudio(video);
 
   if (video.paused) {
-    console.warn("[VOT] ytAudio: captureStream waiting for active playback", {
+    console.warn("[FORK] ytAudio: captureStream waiting for active playback", {
       currentTime: video.currentTime,
       duration: video.duration,
     });
@@ -587,7 +587,7 @@ async function recordCurrentYoutubeAudio({
   const chunks: Blob[] = [];
   let completionCheckId: ReturnType<typeof setInterval> | undefined;
 
-  console.warn("[VOT] ytAudio: captureStream fallback start", {
+  console.warn("[FORK] ytAudio: captureStream fallback start", {
     currentTime: video.currentTime,
     duration: video.duration,
     mimeType: mimeType ?? "browser-default",
@@ -744,7 +744,7 @@ async function recordCurrentYoutubeAudio({
       chunkSize,
     );
 
-    console.warn("[VOT] ytAudio: captureStream fallback done", {
+    console.warn("[FORK] ytAudio: captureStream fallback done", {
       size: bytes.byteLength,
       mediaPartsLength,
       fileId,
@@ -807,7 +807,7 @@ export async function getAudioFromYtAudio(
       });
     } catch (error) {
       console.warn(
-        "[VOT] ytAudio: active YouTube audio URL failed; trying page progressive MP4 fallback",
+        "[FORK] ytAudio: active YouTube audio URL failed; trying page progressive MP4 fallback",
         error,
       );
     }
@@ -818,7 +818,7 @@ export async function getAudioFromYtAudio(
       pageStreamingState.directProgressiveFormats,
     );
     try {
-      console.warn("[VOT] ytAudio: using page progressive MP4 fallback", {
+      console.warn("[FORK] ytAudio: using page progressive MP4 fallback", {
         itag: progressiveFormat.itag,
         mimeType: progressiveFormat.mimeType,
         qualityLabel: progressiveFormat.qualityLabel,
@@ -834,7 +834,7 @@ export async function getAudioFromYtAudio(
       });
     } catch (error) {
       console.warn(
-        "[VOT] ytAudio: page progressive MP4 fallback failed; trying captureStream fallback if available",
+        "[FORK] ytAudio: page progressive MP4 fallback failed; trying captureStream fallback if available",
         error,
       );
     }
@@ -842,7 +842,7 @@ export async function getAudioFromYtAudio(
 
   if (pageStreamingState?.hasSabrUrl && !pageStreamingState.hasDirectAudioUrl) {
     console.warn(
-      "[VOT] ytAudio: active YouTube player is SABR-only; trying captureStream fallback before legacy direct audio",
+      "[FORK] ytAudio: active YouTube player is SABR-only; trying captureStream fallback before legacy direct audio",
     );
     if (preferredVideo instanceof HTMLVideoElement) {
       try {
@@ -853,14 +853,14 @@ export async function getAudioFromYtAudio(
         });
       } catch (error) {
         console.warn(
-          "[VOT] ytAudio: captureStream fallback failed for SABR-only player",
+          "[FORK] ytAudio: captureStream fallback failed for SABR-only player",
           error,
         );
         throw error instanceof Error ? error : new Error(String(error));
       }
     } else {
       console.warn(
-        "[VOT] ytAudio: captureStream fallback skipped; preferred video is unavailable",
+        "[FORK] ytAudio: captureStream fallback skipped; preferred video is unavailable",
       );
       throw new Error(
         "Audio downloader. ytAudio. SABR-only player requires current video capture",
@@ -897,7 +897,7 @@ export async function getAudioFromYtAudio(
     }
 
     console.warn(
-      "[VOT] ytAudio streaming mode failed, falling back to buffered mode",
+      "[FORK] ytAudio streaming mode failed, falling back to buffered mode",
       error,
     );
   }

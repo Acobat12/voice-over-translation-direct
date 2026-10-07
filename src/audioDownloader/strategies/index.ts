@@ -8,7 +8,6 @@ import {
   WEB_ABR_STRATEGY,
   WEB_MSE_PROXY_STRATEGY,
 } from "./webMseProxy";
-import { getAudioFromYandexDisk } from "./yandexDisk";
 
 export const YT_AUDIO_STRATEGY = "ytAudio";
 export const VK_AUDIO_STRATEGY = "vkAudio";
@@ -22,7 +21,6 @@ export const strategies = {
   [WEB_MSE_PROXY_STRATEGY]: getAudioFromWebMseProxy,
   [VK_AUDIO_STRATEGY]: getAudioFromVkVideo,
   [DOUYIN_AUDIO_STRATEGY]: getAudioFromDouyin,
-  yandexDisk: getAudioFromYandexDisk,
   localFile: getAudioFromLocalFile,
 } as const;
 

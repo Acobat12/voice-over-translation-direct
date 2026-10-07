@@ -36,7 +36,7 @@ async function ensureCountryCode(): Promise<void> {
       const loc = trace.split("\n").find((line) => line.startsWith("loc="));
       setCountryCode(loc?.slice(4, 6).toUpperCase());
     } catch (err) {
-      console.error("[VOT] Error getting country:", err);
+      console.error("[FORK] Error getting country:", err);
     }
   })().finally(() => {
     countryCodeRequestInFlight = null;
@@ -123,7 +123,7 @@ export async function init(this: VideoHandler) {
 
   this.uiManager.data = this.data;
   // Translation volume starts from the user's saved default volume.
-  console.log("[VOT] data from db:", this.data);
+  console.log("[FORK] data from db:", this.data);
 
   // Enable translate proxy if extension isn't compatible with GM_xmlhttpRequest
   if (!this.data.translateProxyEnabled && isProxyOnlyExtension) {

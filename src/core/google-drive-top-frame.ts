@@ -142,7 +142,7 @@ function debugDriveTopFrame(
   const debugMessage = details
     ? `${message} ${JSON.stringify(details)}`
     : message;
-  console.info(`[VOT][DriveTopFrame] ${debugMessage}`);
+  console.info(`[FORK][DriveTopFrame] ${debugMessage}`);
   document.documentElement.setAttribute(
     "data-vot-drive-top-frame-debug-last",
     debugMessage,

@@ -205,8 +205,8 @@ export function installVkOverlayPatch(): void {
     const initialCount = refreshVkOverlayProbe();
     console.log(
       initialCount > 0
-        ? "[VOT][VK probe] overlay nodes detected"
-        : "[VOT][VK probe] no VOT overlay nodes yet",
+        ? "[FORK][VK probe] overlay nodes detected"
+        : "[FORK][VK probe] no VOT overlay nodes yet",
       (globalThis as Record<string, unknown>).__VOT_VK_PROBE__,
     );
 
@@ -218,7 +218,7 @@ export function installVkOverlayPatch(): void {
       const signature = JSON.stringify(currentProbe);
       if (count > 0 && signature !== lastProbeSignature) {
         lastProbeSignature = signature;
-        logProbeState("[VOT][VK probe] standard overlay refresh");
+        logProbeState("[FORK][VK probe] standard overlay refresh");
       }
     };
 
@@ -241,6 +241,6 @@ export function installVkOverlayPatch(): void {
       { passive: true },
     );
   } catch (error) {
-    console.warn("[VOT][VK probe] failed", error);
+    console.warn("[FORK][VK probe] failed", error);
   }
 }

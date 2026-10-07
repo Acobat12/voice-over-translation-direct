@@ -168,7 +168,7 @@ export class UIManager {
 
   initUI() {
     if (this.isInitialized()) {
-      throw new Error("[VOT] UIManager is already initialized");
+      throw new Error("[FORK] UIManager is already initialized");
     }
 
     this.initialized = true;
@@ -235,7 +235,7 @@ export class UIManager {
 
   initUIEvents() {
     if (!this.isInitialized()) {
-      throw new Error("[VOT] UIManager isn't initialized");
+      throw new Error("[FORK] UIManager isn't initialized");
     }
 
     this.votOverlayView.initUIEvents();
@@ -276,7 +276,7 @@ export class UIManager {
             ? document.exitPictureInPicture()
             : this.videoHandler.video.requestPictureInPicture());
         } catch (err) {
-          debug.warn("[VOT] Failed to toggle Picture-in-Picture", err);
+          debug.warn("[FORK] Failed to toggle Picture-in-Picture", err);
         }
       })
       .addEventListener("click:subtitles", async () => {
@@ -287,7 +287,7 @@ export class UIManager {
         try {
           await this.videoHandler.toggleSubtitlesForCurrentLangPair();
         } catch (err) {
-          debug.warn("[VOT] Failed to toggle subtitles", err);
+          debug.warn("[FORK] Failed to toggle subtitles", err);
         }
       })
       .addEventListener("click:settings", async () => {
@@ -355,7 +355,7 @@ export class UIManager {
           });
         } catch (err) {
           debug.warn("[voice-menu] translation failed", err);
-          debug.warn("[VOT] Failed to apply voice mode selection", err);
+          debug.warn("[FORK] Failed to apply voice mode selection", err);
         } finally {
           this.runDetached(
             votStorage.set("useLivelyVoice", livelyEnabled),
@@ -694,7 +694,7 @@ export class UIManager {
       await videoHandler.primePlaybackByGesture("voice-mode-selection");
     } catch (err) {
       debug.warn(
-        "[VOT] Failed to prime playback before voice mode switch",
+        "[FORK] Failed to prime playback before voice mode switch",
         err,
       );
     }
@@ -706,7 +706,7 @@ export class UIManager {
         await this.waitForTranslationActionSettled();
       } catch (err) {
         debug.warn(
-          "[VOT] Failed to stop translation before voice mode restart",
+          "[FORK] Failed to stop translation before voice mode restart",
           err,
         );
       }
@@ -766,7 +766,10 @@ export class UIManager {
       await this.waitForTranslationActionSettled();
       await this.handleTranslationBtnClick();
     } catch (err) {
-      debug.warn("[VOT] Failed to restart translation after Drive change", err);
+      debug.warn(
+        "[FORK] Failed to restart translation after Drive change",
+        err,
+      );
     }
   }
 
@@ -1238,7 +1241,7 @@ export class UIManager {
         saveOptions,
       );
     } catch (err) {
-      console.error("[VOT] Download translation failed:", err);
+      console.error("[FORK] Download translation failed:", err);
       if (!this.triggerUrlDownload(downloadUrl, `${filename}.mp3`)) {
         globalThis.open(downloadUrl, "_blank")?.focus();
       }
@@ -1302,7 +1305,7 @@ export class UIManager {
 
   async reloadMenu() {
     if (!this.votOverlayView?.isInitialized()) {
-      throw new Error("[VOT] OverlayView isn't initialized");
+      throw new Error("[FORK] OverlayView isn't initialized");
     }
 
     // Preserve overlay state across UI rebuild.
@@ -1332,7 +1335,7 @@ export class UIManager {
       this.votOverlayView.syncVoiceModeUi();
     } catch (err) {
       debug.warn(
-        "[VOT] Failed to restore overlay state after menu reload",
+        "[FORK] Failed to restore overlay state after menu reload",
         err,
       );
     }
@@ -1341,7 +1344,7 @@ export class UIManager {
     try {
       this.videoHandler.rebindOverlayVisibilityTargets();
     } catch (err) {
-      debug.warn("[VOT] Failed to rebind overlay visibility targets", err);
+      debug.warn("[FORK] Failed to rebind overlay visibility targets", err);
     }
 
     // Keep settings open when language changes (better UX).
@@ -1349,7 +1352,7 @@ export class UIManager {
       try {
         this.votSettingsView?.open();
       } catch (err) {
-        debug.warn("[VOT] Failed to reopen settings after menu reload", err);
+        debug.warn("[FORK] Failed to reopen settings after menu reload", err);
       }
     }
 
@@ -1385,7 +1388,7 @@ export class UIManager {
       videoData.videoId,
     );
 
-    debug.log("[VOT][restore-translation] starting one-shot reprocessing", {
+    debug.log("[FORK][restore-translation] starting one-shot reprocessing", {
       videoId: videoData.videoId,
       duration: videoData.duration,
       requestDuration: videoData.duration + 300,
@@ -1412,7 +1415,7 @@ export class UIManager {
         return this;
       }
 
-      console.error("[VOT]", err);
+      console.error("[FORK]", err);
 
       if (!(err instanceof Error)) {
         this.transformBtn("error", String(err));
@@ -1435,7 +1438,7 @@ export class UIManager {
 
   async handleTranslationBtnClick(preserveYouTubeReprocess = false) {
     if (!this.votOverlayView?.isInitialized()) {
-      throw new Error("[VOT] OverlayView isn't initialized");
+      throw new Error("[FORK] OverlayView isn't initialized");
     }
 
     const videoHandler = this.videoHandler;
@@ -1489,7 +1492,7 @@ export class UIManager {
         return this;
       }
 
-      console.error("[VOT]", err);
+      console.error("[FORK]", err);
 
       if (!(err instanceof Error)) {
         this.transformBtn("error", String(err));
@@ -1550,7 +1553,7 @@ export class UIManager {
 
   transformBtn(status: Status, text: string) {
     if (!this.votOverlayView?.isInitialized()) {
-      throw new Error("[VOT] OverlayView isn't initialized");
+      throw new Error("[FORK] OverlayView isn't initialized");
     }
 
     this.votOverlayView.votButton.status = status;
@@ -1573,7 +1576,7 @@ export class UIManager {
         String(globalThis.location.hostname || ""),
       )
     ) {
-      console.log("[VOT][mobile-overlay][ui] UIManager release");
+      console.log("[FORK][mobile-overlay][ui] UIManager release");
     }
 
     // Release child views before removing the shared portal.
@@ -1622,7 +1625,7 @@ export class UIManager {
 
   private runDetached(task: Promise<unknown>, errorMessage: string) {
     void task.catch((err) => {
-      debug.warn(`[VOT] ${errorMessage}`, err);
+      debug.warn(`[FORK] ${errorMessage}`, err);
     });
   }
 
@@ -1673,7 +1676,7 @@ export class UIManager {
       await videoHandler.stopTranslate();
       videoHandler.createPlayer();
     } catch (err) {
-      debug.warn("[VOT] Failed to restart audio player", err);
+      debug.warn("[FORK] Failed to restart audio player", err);
     }
   }
 }

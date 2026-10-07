@@ -19,7 +19,7 @@ async function fetchDouyinMedia(src: string, signal: AbortSignal) {
   });
 
   if (!gmRes.ok) {
-    throw new Error(`[VOT] Douyin: failed to fetch media: ${gmRes.status}`);
+    throw new Error(`[FORK] Douyin: failed to fetch media: ${gmRes.status}`);
   }
 
   return gmRes;
@@ -36,16 +36,16 @@ export async function getAudioFromDouyin({
       : document.querySelector("video");
 
   if (!(video instanceof HTMLVideoElement)) {
-    throw new Error("[VOT] Douyin: video element not found");
+    throw new Error("[FORK] Douyin: video element not found");
   }
 
   const src = video.currentSrc || video.src;
 
-  debug.log("[VOT] Douyin strategy src:", src);
-  debug.log("[VOT] Douyin strategy videoId:", videoId);
+  debug.log("[FORK] Douyin strategy src:", src);
+  debug.log("[FORK] Douyin strategy videoId:", videoId);
 
   if (!src) {
-    throw new Error("[VOT] Douyin: empty video src");
+    throw new Error("[FORK] Douyin: empty video src");
   }
 
   const response = await fetchDouyinMedia(src, signal);
@@ -53,7 +53,7 @@ export async function getAudioFromDouyin({
   const bytes = new Uint8Array(buffer);
 
   if (!bytes.byteLength) {
-    throw new Error("[VOT] Douyin: empty media bytes");
+    throw new Error("[FORK] Douyin: empty media bytes");
   }
 
   const chunkSize = 256 * 1024;
