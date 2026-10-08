@@ -169,3 +169,12 @@
     stroke: inherit;
   }
 }
+
+// Keep update action attached to the translation toolbar.
+.vot-segmented-button.vot-has-update-notice {
+  width: max-content !important;
+  max-width: calc(100vw - 24px) !important;
+}
+.vot-segmented-button.vot-has-update-notice > button:last-child {
+  margin: 4px !important;
+}

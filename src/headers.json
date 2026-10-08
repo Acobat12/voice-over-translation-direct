@@ -1,10 +1,10 @@
 {
   "name": "[FORK] - Voice Over Translation",
   "description": "A small extension that adds a Yandex Browser video translation to other browsers",
-  "version": "1.11.6.27",
+  "version": "1.11.6.28",
   "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12",
   "namespace": "vot-direct",
-  "icon": "https://translate.yandex.ru/icons/favicon.ico",
+  "icon": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/master/src/extension/icons/icon-128.png",
   "match": [
     "*://*.*",
     "*://cloud.mail.ru/*",

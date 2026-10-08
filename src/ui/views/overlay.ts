@@ -14,8 +14,10 @@ import type {
 } from "../../types/views/overlay";
 import ui from "../../ui";
 import debug from "../../utils/debug";
+import { getEnvironmentInfo } from "../../utils/environment";
 import type { IntervalIdleChecker } from "../../utils/intervalIdleChecker";
 import { votStorage } from "../../utils/storage";
+import { checkForUpdate, getUpdatePlatform } from "../../utils/updateChecker";
 import { isPiPAvailable } from "../../utils/utils";
 import DownloadButton from "../components/downloadButton";
 import Label from "../components/label";
@@ -59,6 +61,10 @@ export class OverlayView {
   private dragIsBigContainer: boolean | null = null;
   private checkerUnsubscribe: (() => void) | null = null;
 
+  private updateNotice?: HTMLButtonElement;
+  private updateNoticeTimer?: ReturnType<typeof setTimeout>;
+  private updateNoticeActive = false;
+  private updateNoticeGeneration = 0;
   private initialized = false;
   private readonly data: Partial<StorageData>;
   private readonly videoHandler?: VideoHandler;
@@ -376,6 +382,95 @@ export class OverlayView {
     void votStorage.set("defaultVolume", this.data.defaultVolume);
   }
 
+  /** Display an update notice for two minutes at most, once per day. */
+  private async showUpdateNoticeIfDue(): Promise<void> {
+    const generation = ++this.updateNoticeGeneration;
+    const platform = getUpdatePlatform();
+    if (platform === "userscript" || this.updateNoticeActive) return;
+    const version = getEnvironmentInfo().scriptVersion;
+    if (!/^\d+(?:\.\d+)*$/.test(version)) return;
+
+    const storageKey = `vot-update-notice:${platform}:${version}`;
+    const interval = 0 * 60 * 60 * 1000;
+    try {
+      const lastShown = await votStorage.getRaw<number>(storageKey, 0);
+      if (generation !== this.updateNoticeGeneration || !this.initialized)
+        return;
+      if (
+        Number.isFinite(lastShown) &&
+        Date.now() - lastShown >= 0 &&
+        Date.now() - lastShown < interval
+      )
+        return;
+
+      const update = await checkForUpdate(version, platform);
+      if (
+        !update ||
+        generation !== this.updateNoticeGeneration ||
+        !this.initialized ||
+        this.updateNoticeActive
+      )
+        return;
+
+      const notice = document.createElement("button");
+      notice.type = "button";
+      notice.textContent = `Доступно обновление ${update.version} — Скачать`;
+      notice.setAttribute("aria-label", notice.textContent);
+      notice.style.cssText = [
+        "display:flex",
+        "align-items:center",
+        "justify-content:center",
+        "box-sizing:border-box",
+        "flex:0 0 auto",
+        "min-height:38px",
+        "padding:8px 12px",
+        "border-radius:9px",
+        "border:1px solid #79a8fa",
+        "background:#26466d",
+        "color:#fff",
+        "font:600 12px sans-serif",
+        "cursor:pointer",
+        "white-space:nowrap",
+        "max-width:none",
+      ].join(";");
+      const dismiss = () => {
+        notice.remove();
+        this.votButton.container.classList.remove("vot-has-update-notice");
+        if (this.updateNotice === notice) {
+          this.updateNotice = undefined;
+          this.updateNoticeActive = false;
+        }
+        if (this.updateNoticeTimer !== undefined)
+          clearTimeout(this.updateNoticeTimer);
+        this.updateNoticeTimer = undefined;
+      };
+      notice.addEventListener("click", () => {
+        const url = !update.complete
+          ? update.releaseUrl
+          : (update.assets[0]?.url ?? update.releaseUrl);
+        window.location.assign(url);
+        dismiss();
+      });
+      // Render before recording the cooldown: a failed or cancelled render
+      // must not suppress the notification for the next 24 hours.
+      if (!this.votButton.container.isConnected) return;
+      // Place the action in the actual translation controls, so the menu grows.
+      const controls = this.votButton.container;
+      controls.appendChild(notice);
+      controls.classList.add("vot-has-update-notice");
+      this.updateNotice = notice;
+      this.updateNoticeActive = true;
+      this.updateNoticeTimer = setTimeout(dismiss, 2 * 60 * 1000);
+      try {
+        await votStorage.setRaw(storageKey, Date.now());
+      } catch (error) {
+        console.warn("[VOT updates] Could not save notice cooldown", error);
+      }
+    } catch (error) {
+      console.warn("[VOT updates] Update notification check failed", error);
+    }
+  }
+
   initUI(buttonPosition: Position = "default") {
     if (this.isInitialized()) {
       throw new Error("[FORK] OverlayView is already initialized");
@@ -415,6 +510,7 @@ export class OverlayView {
     }
     this.root.appendChild(this.votButton.container);
     this.syncSharedRailPlacement();
+    void this.showUpdateNoticeIfDue();
     this.votButtonTooltip = new Tooltip({
       target: this.votButton.translateButton,
       content: this.useRailLayout
@@ -1710,6 +1806,14 @@ export class OverlayView {
       console.log("[FORK][mobile-overlay][ui] overlay view release");
     }
     // Release events first to prevent late handlers from touching removed DOM.
+    ++this.updateNoticeGeneration;
+    if (this.updateNoticeTimer !== undefined)
+      clearTimeout(this.updateNoticeTimer);
+    this.updateNoticeTimer = undefined;
+    this.updateNotice?.remove();
+    this.votButton.container.classList.remove("vot-has-update-notice");
+    this.updateNotice = undefined;
+    this.updateNoticeActive = false;
     this.doReleaseUIEvents();
     this.doReleaseUI();
 

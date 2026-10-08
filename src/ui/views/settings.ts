@@ -105,6 +105,11 @@ import { getEnvironmentInfo } from "../../utils/environment";
 import { isProxyOnlyExtension, isSupportGMXhr } from "../../utils/gm";
 import { votStorage } from "../../utils/storage";
 import { detectServices, translateServices } from "../../utils/translateApis";
+import {
+  checkForUpdate,
+  getUpdatePlatform,
+  RELEASES_PAGE,
+} from "../../utils/updateChecker";
 import { isPiPAvailable } from "../../utils/utils";
 import AccountButton from "../components/accountButton";
 import Checkbox from "../components/checkbox";
@@ -1202,8 +1207,73 @@ export class SettingsView {
       globalThis.location.reload();
     });
 
+    // Updates are offered for manual installation; never replace a running extension.
+    const updateBox = document.createElement("div");
+    const updateStatus = document.createElement("div");
+    updateStatus.textContent = "Проверка обновлений…";
+    const updateButton = ui.createOutlinedButton("Проверить обновления");
+    updateBox.append(updateStatus, updateButton);
+    const platform = getUpdatePlatform();
+    const installedVersion = envInfo.scriptVersion;
+    const checkUpdates = async () => {
+      updateButton.setAttribute("disabled", "true");
+      updateStatus.textContent = "Проверка обновлений…";
+      // Remove links from any previous check.
+      updateBox.querySelectorAll("a").forEach((node) => {
+        node.remove();
+      });
+      try {
+        const result = await checkForUpdate(installedVersion, platform);
+        if (!result) {
+          updateStatus.textContent = "Установлена последняя версия";
+          return;
+        }
+        updateStatus.textContent = `Доступно обновление ${result.version}`;
+        const downloads = result.complete ? result.assets : [];
+        if (downloads.length) {
+          for (const asset of downloads) {
+            const link = document.createElement("a");
+            link.href = asset.url;
+            link.textContent = "Скачать обновление";
+            link.style.display = "block";
+            updateBox.append(link);
+          }
+        } else {
+          const link = document.createElement("a");
+          link.href = result.releaseUrl || RELEASES_PAGE;
+          link.textContent = "Открыть релиз для скачивания";
+          updateBox.append(link);
+          if (platform === "safari")
+            updateStatus.textContent +=
+              " — ZIP для Safari отсутствует в релизе";
+        }
+        const instruction = document.createElement("small");
+        instruction.textContent =
+          platform === "chrome"
+            ? "Распакуйте архив в папку расширения и обновите его в chrome://extensions."
+            : platform === "firefox"
+              ? "Установите подписанный XPI или перезагрузите временное расширение через about:debugging."
+              : platform === "safari"
+                ? "Распакуйте ZIP и обновите оба Safari-скрипта через менеджер userscript."
+                : "Установите скрипт через ваш менеджер userscript.";
+        instruction.style.display = "block";
+        updateBox.append(instruction);
+      } catch {
+        updateStatus.textContent =
+          "Не удалось проверить обновления. Проверьте соединение с GitHub.";
+      } finally {
+        updateButton.removeAttribute("disabled");
+      }
+    };
+    updateButton.addEventListener("click", () => {
+      void checkUpdates();
+    });
+    // Automatic check on opening settings; no automatic download or install.
+    void checkUpdates();
+
     aboutSection.content.append(
       versionInfo.container,
+      updateBox,
       authorsInfo.container,
       loaderInfo.container,
       userBrowserInfo.container,

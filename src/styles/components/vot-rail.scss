@@ -391,3 +391,13 @@
     stroke: inherit;
   }
 }
+
+// Update action belongs to the VOT rail, not the page viewport.
+.vot-rail.vot-has-update-notice {
+  width: max-content !important;
+  max-width: calc(100vw - 24px) !important;
+}
+.vot-rail.vot-has-update-notice > button:last-child {
+  margin: 4px !important;
+  align-self: stretch !important;
+}
