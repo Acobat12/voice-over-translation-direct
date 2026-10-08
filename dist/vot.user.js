@@ -7,7 +7,7 @@
 // @name:ru         [FORK] - Закадровый перевод видео
 // @name:zh         [FORK] - 画外音视频翻译
 // @namespace       vot-direct
-// @version         1.11.6.28
+// @version         1.11.6.29
 // @author          Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12
 // @description     A small extension that adds a Yandex Browser video translation to other browsers
 // @description:de  Eine kleine Erweiterung, die eine Voice-over-Übersetzung von Videos aus dem Yandex-Browser zu anderen Browsern hinzufügt
@@ -25066,7 +25066,7 @@
 		return buildVersion || scriptVersion || "unknown";
 	}
 	function getRuntimeLocaleVersion() {
-		return resolveRuntimeLocaleVersion(String("1.11.6.28"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
+		return resolveRuntimeLocaleVersion(String("1.11.6.29"), typeof GM_info !== "undefined" ? String(GM_info?.script?.version || "") : "");
 	}
 	var LocalizationProvider = class {
 		lang;
@@ -26735,56 +26735,6 @@
 			url: globalThis?.location?.href ?? UNKNOWN_VALUE
 		};
 	}
-	var RELEASES_API = "https://api.github.com/repos/Acobat12/voice-over-translation-direct/releases/latest";
-	var RELEASES_PAGE = "https://github.com/Acobat12/voice-over-translation-direct/releases/latest";
-	function getUpdatePlatform() {
-		if ((typeof GM_info === "undefined" ? "" : GM_info?.scriptHandler) !== "VOT Extension") return browserInfo.browser?.name === "Safari" ? "safari" : "userscript";
-		return browserInfo.browser?.name === "Firefox" ? "firefox" : "chrome";
-	}
-	function isNewerVersion(remote, installed) {
-		const parse = (value) => {
-			const match = /^v?(\d+(?:\.\d+)*)$/.exec(value.trim());
-			return match ? match[1].split(".").map(Number) : void 0;
-		};
-		const a = parse(remote);
-		const b = parse(installed);
-		if (!a || !b) return false;
-		for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
-		return false;
-	}
-	async function checkForUpdate(installed, platform) {
-		const response = await fetch(RELEASES_API, {
-			headers: { Accept: "application/vnd.github+json" },
-			cache: "no-store"
-		});
-		if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`);
-		const release = await response.json();
-		if (!release || typeof release !== "object") throw new Error("Invalid GitHub release response");
-		const data = release;
-		const version = typeof data.tag_name === "string" ? data.tag_name : "";
-		if (!isNewerVersion(version, installed)) return;
-		const filtered = (Array.isArray(data.assets) ? data.assets : []).flatMap((item) => {
-			if (!item || typeof item !== "object") return [];
-			const asset = item;
-			if (typeof asset.name !== "string" || typeof asset.browser_download_url !== "string") return [];
-			if (!asset.browser_download_url.startsWith("https://github.com/Acobat12/voice-over-translation-direct/releases/download/")) return [];
-			return [{
-				name: asset.name,
-				url: asset.browser_download_url
-			}];
-		}).filter(({ name }) => {
-			if (platform === "chrome") return /chrome|chromium/i.test(name) && /\.zip$/i.test(name);
-			if (platform === "firefox") return /firefox/i.test(name) && /\.(?:xpi|zip)$/i.test(name);
-			if (platform === "safari") return name === "vot-safari.user.zip";
-			return /\.user\.js$/i.test(name);
-		});
-		return {
-			version,
-			assets: filtered,
-			releaseUrl: typeof data.html_url === "string" && data.html_url.startsWith("https://github.com/Acobat12/voice-over-translation-direct/releases/") ? data.html_url : RELEASES_PAGE,
-			complete: filtered.length >= 1
-		};
-	}
 	var SETTINGS_CACHE_TTL_MS = 5e3;
 	var IMMUTABLE_API_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER;
 	var cachedTranslationService = null;
@@ -26899,6 +26849,56 @@
 		}
 	}
 	var detectServices = [...foswlyServices, "rust-server"];
+	var RELEASES_API = "https://api.github.com/repos/Acobat12/voice-over-translation-direct/releases/latest";
+	var RELEASES_PAGE = "https://github.com/Acobat12/voice-over-translation-direct/releases/latest";
+	function getUpdatePlatform() {
+		if ((typeof GM_info === "undefined" ? "" : GM_info?.scriptHandler) !== "VOT Extension") return browserInfo.browser?.name === "Safari" ? "safari" : "userscript";
+		return browserInfo.browser?.name === "Firefox" ? "firefox" : "chrome";
+	}
+	function isNewerVersion(remote, installed) {
+		const parse = (value) => {
+			const match = /^v?(\d+(?:\.\d+)*)$/.exec(value.trim());
+			return match ? match[1].split(".").map(Number) : void 0;
+		};
+		const a = parse(remote);
+		const b = parse(installed);
+		if (!a || !b) return false;
+		for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+		return false;
+	}
+	async function checkForUpdate(installed, platform) {
+		const response = await fetch(RELEASES_API, {
+			headers: { Accept: "application/vnd.github+json" },
+			cache: "no-store"
+		});
+		if (!response.ok) throw new Error(`GitHub HTTP ${response.status}`);
+		const release = await response.json();
+		if (!release || typeof release !== "object") throw new Error("Invalid GitHub release response");
+		const data = release;
+		const version = typeof data.tag_name === "string" ? data.tag_name : "";
+		if (!isNewerVersion(version, installed)) return;
+		const filtered = (Array.isArray(data.assets) ? data.assets : []).flatMap((item) => {
+			if (!item || typeof item !== "object") return [];
+			const asset = item;
+			if (typeof asset.name !== "string" || typeof asset.browser_download_url !== "string") return [];
+			if (!asset.browser_download_url.startsWith("https://github.com/Acobat12/voice-over-translation-direct/releases/download/")) return [];
+			return [{
+				name: asset.name,
+				url: asset.browser_download_url
+			}];
+		}).filter(({ name }) => {
+			if (platform === "chrome") return /chrome|chromium/i.test(name) && /\.zip$/i.test(name);
+			if (platform === "firefox") return /firefox/i.test(name) && /\.(?:xpi|zip)$/i.test(name);
+			if (platform === "safari") return name === "vot-safari.user.zip";
+			return /\.user\.js$/i.test(name);
+		});
+		return {
+			version,
+			assets: filtered,
+			releaseUrl: typeof data.html_url === "string" && data.html_url.startsWith("https://github.com/Acobat12/voice-over-translation-direct/releases/") ? data.html_url : RELEASES_PAGE,
+			complete: filtered.length >= 1
+		};
+	}
 	var AccountButton = class {
 		container;
 		accountWrapper;
@@ -28344,7 +28344,9 @@
 			const checkUpdates = async () => {
 				updateButton.setAttribute("disabled", "true");
 				updateStatus.textContent = "Проверка обновлений…";
-				updateBox.querySelectorAll("a").forEach((node) => node.remove());
+				updateBox.querySelectorAll("a").forEach((node) => {
+					node.remove();
+				});
 				try {
 					const result = await checkForUpdate(installedVersion, platform);
 					if (!result) {
