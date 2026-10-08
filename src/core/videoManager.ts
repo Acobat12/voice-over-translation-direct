@@ -1180,9 +1180,10 @@ export class VOTVideoManager {
         this.videoHandler.video?.duration ??
         votConfig.defaultDuration,
       translationHelp: null,
-      isStream: Boolean(
-        response?.videoDetails?.isLive || response?.videoDetails?.isLiveContent,
-      ),
+      isStream:
+        response?.videoDetails?.isLive === true ||
+        response?.microformat?.playerMicroformatRenderer?.liveBroadcastDetails
+          ?.isLiveNow === true,
     };
   }
 

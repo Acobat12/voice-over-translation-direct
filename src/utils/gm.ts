@@ -83,6 +83,11 @@ function serializeGmBody(
   if (body instanceof FormData) return body;
   if (body instanceof Blob) return body;
   if (body instanceof ArrayBuffer) return body;
+  if (ArrayBuffer.isView(body)) {
+    // GM implementations vary in their handling of Uint8Array views.
+    return new Uint8Array(body.buffer, body.byteOffset, body.byteLength).slice()
+      .buffer;
+  }
 
   return body as any;
 }
@@ -188,8 +193,12 @@ function buildResponse(resp: any, urlStr: string): Response {
           ? null
           : new Blob([resp.response]);
 
+  const status = Number(resp.status);
+  if (!Number.isInteger(status) || status < 200 || status > 599) {
+    throw new Error(`Invalid GM HTTP status: ${String(resp.status)}`);
+  }
   const response = new Response(body, {
-    status: Number(resp.status) || 200,
+    status: Number(resp.status),
     statusText: typeof resp.statusText === "string" ? resp.statusText : "",
     headers: responseHeaders,
   });
@@ -323,6 +332,8 @@ async function gmXhrFetch(
   const headers = getHeaders(fetchOptions.headers);
   const method = (fetchOptions.method || "GET").toUpperCase();
 
+  // A second transport attempt can duplicate a POST/PUT whose response was lost.
+  const mayFallback = method === "GET" || method === "HEAD";
   const callbackGmXhr = getCallbackGmXhr();
   if (callbackGmXhr) {
     try {
@@ -335,7 +346,7 @@ async function gmXhrFetch(
         headers,
       );
     } catch (error) {
-      if (isAbortError(error)) throw error;
+      if (isAbortError(error) || !mayFallback) throw error;
       debug.warn("[GM_fetch] callback GM_xmlhttpRequest failed", {
         url: urlStr,
         method,
@@ -356,7 +367,7 @@ async function gmXhrFetch(
         headers,
       );
     } catch (error) {
-      if (isAbortError(error)) throw error;
+      if (isAbortError(error) || !mayFallback) throw error;
       debug.warn("[GM_fetch] promise GM.xmlHttpRequest failed", {
         url: urlStr,
         method,

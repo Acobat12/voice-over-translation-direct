@@ -189,6 +189,18 @@ export class VOTTranslationHandler {
   downloading: boolean;
   private readonly downloadWaiters = new Set<DownloadWaiter>();
   private downloadFailureError?: Error;
+  // A downloader error must not overtake an in-flight Yandex chunk upload.
+  private activeAudioUploadRequests = 0;
+  private audioChunksStarted = false;
+  private audioUploadQueue: Promise<void> = Promise.resolve();
+  private audioUploadGeneration = 0;
+  // One bounded full-sequence replay per audio download session.
+  private fullSequenceRecoveryUsed = false;
+  private confirmedAudioUpload?: {
+    translationId: string;
+    fileId: string;
+    generation: number;
+  };
 
   private activeTranslationUrl?: string;
   private activeAudioUploadUrl?: string;
@@ -450,6 +462,10 @@ export class VOTTranslationHandler {
     this.youtubeServerPollLastTranslationId = undefined;
     this.youtubeServerPollRetryAttempt = 0;
     this.youtubeFailedAudioSignalUrl = undefined;
+    this.activeAudioUploadRequests = 0;
+    this.audioChunksStarted = false;
+    this.fullSequenceRecoveryUsed = false;
+    this.confirmedAudioUpload = undefined;
   }
 
   private async prepareSourceAudioUpload(signal: AbortSignal): Promise<void> {
@@ -1711,62 +1727,110 @@ export class VOTTranslationHandler {
     );
 
     if (cached.kind === "full") {
-      await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
-          cached.videoUrl,
-          cached.translationId,
-          {
-            audioFile: cached.audioData,
-            fileId: cached.fileId,
-          },
-        ),
+      await this.retryAudioUpload(
+        () =>
+          this.videoHandler.votClient.requestVtransAudio(
+            cached.videoUrl,
+            cached.translationId,
+            {
+              audioFile: cached.audioData,
+              fileId: cached.fileId,
+            },
+          ),
+        signal,
       );
       return true;
     }
 
     for (const chunk of cached.chunks) {
       signal.throwIfAborted();
-      await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
-          cached.videoUrl,
-          cached.translationId,
-          {
-            audioFile: chunk.audioData,
-            chunkId: chunk.index,
-          },
-          {
-            audioPartsLength: chunk.amount,
-            fileId: cached.fileId,
-            version: chunk.version,
-          },
-        ),
+      await this.retryAudioUpload(
+        () =>
+          this.videoHandler.votClient.requestVtransAudio(
+            cached.videoUrl,
+            cached.translationId,
+            {
+              audioFile: chunk.audioData,
+              chunkId: chunk.index,
+            },
+            {
+              audioPartsLength: chunk.amount,
+              fileId: cached.fileId,
+              version: chunk.version,
+            },
+          ),
+        signal,
       );
     }
 
     return true;
   }
 
-  private static readonly AUDIO_UPLOAD_MAX_RETRIES = 1;
+  // Retries belong to the upload layer, never to the GM transport.
+  private static readonly AUDIO_UPLOAD_MAX_RETRIES = 4;
   private static readonly AUDIO_UPLOAD_RETRY_DELAY_MS = 1500;
 
-  private async retryAudioUpload<T>(fn: () => Promise<T>): Promise<T> {
-    const maxRetries = VOTTranslationHandler.AUDIO_UPLOAD_MAX_RETRIES;
-    const delayMs = VOTTranslationHandler.AUDIO_UPLOAD_RETRY_DELAY_MS;
+  private isRetryableAudioUploadError(error: unknown): boolean {
+    if (isAbortError(error)) return false;
+    const candidate = error as {
+      status?: unknown;
+      data?: { status?: unknown; code?: unknown; httpStatus?: unknown };
+    } | null;
+    const rawStatus =
+      candidate?.status ??
+      candidate?.data?.httpStatus ??
+      candidate?.data?.status;
+    const status =
+      typeof rawStatus === "number" ? rawStatus : Number(rawStatus);
+    // Client errors are normally permanent; 408/429 are exceptions.
+    if (Number.isInteger(status) && status >= 400 && status < 500) {
+      return status === 408 || status === 429;
+    }
+    return true; // Includes lost responses, timeouts, and server 5xx.
+  }
 
+  private async retryAudioUpload<T>(
+    fn: () => Promise<T>,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    const maxRetries = VOTTranslationHandler.AUDIO_UPLOAD_MAX_RETRIES;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      signal?.throwIfAborted();
       try {
         return await fn();
       } catch (error) {
-        if (attempt === maxRetries) throw error;
-
-        debug.log(
-          `[AudioUpload] retry ${attempt + 1}/${maxRetries} after ${delayMs}ms`,
-        );
-
-        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        if (
+          attempt === maxRetries ||
+          !this.isRetryableAudioUploadError(error) ||
+          signal?.aborted
+        ) {
+          throw error;
+        }
+        const base = VOTTranslationHandler.AUDIO_UPLOAD_RETRY_DELAY_MS;
+        const delayMs = Math.min(15000, base * 2 ** attempt);
+        debug.warn("[AudioUpload] retrying unconfirmed upload", {
+          attempt: attempt + 1,
+          maxRetries,
+          delayMs,
+          message: getErrorMessage(error),
+          serverMessage: getServerErrorMessage(error),
+        });
+        await new Promise<void>((resolve, reject) => {
+          let timer: ReturnType<typeof setTimeout>;
+          const onAbort = () => {
+            clearTimeout(timer);
+            signal?.removeEventListener("abort", onAbort);
+            reject(makeAbortError());
+          };
+          timer = setTimeout(() => {
+            signal?.removeEventListener("abort", onAbort);
+            resolve();
+          }, delayMs);
+          signal?.addEventListener("abort", onAbort, { once: true });
+          if (signal?.aborted) onAbort();
+        });
       }
     }
-
     throw new Error("Audio upload retry loop exited unexpectedly");
   }
 
@@ -1837,7 +1901,77 @@ export class VOTTranslationHandler {
     this.finishDownloadSuccess();
   };
 
-  private readonly onDownloadedPartialAudio = async (
+  private readonly onDownloadedPartialAudio = (
+    translationId: string,
+    data: DownloadedPartialAudioData,
+  ): Promise<void> => {
+    // Serialize the entire upload (including retries). The downloader may
+    // dispatch the next chunk before the previous HTTP request has settled.
+    const generation = this.audioUploadGeneration;
+    const upload = this.audioUploadQueue.then(async () => {
+      if (generation !== this.audioUploadGeneration || !this.downloading)
+        return;
+      await this.uploadPartialAudioSequentially(translationId, data);
+    });
+    // A failed upload is already reported by uploadPartialAudioSequentially;
+    // don't poison the queue for subsequent sessions.
+    this.audioUploadQueue = upload.catch((error) => {
+      debug.error("[AudioUpload] sequential queue failed", error);
+      if (generation === this.audioUploadGeneration && this.downloading) {
+        this.finishDownloadFailure(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    });
+    return upload;
+  };
+
+  private isAudioUploadConfirmed(
+    translationId: string,
+    fileId: string,
+  ): boolean {
+    const confirmed = this.confirmedAudioUpload;
+    return Boolean(
+      confirmed &&
+        confirmed.translationId === translationId &&
+        confirmed.fileId === fileId &&
+        confirmed.generation === this.audioUploadGeneration,
+    );
+  }
+
+  private confirmAudioUploadResponse(
+    response:
+      | { status?: number; remainingChunks?: number[] }
+      | null
+      | undefined,
+    translationId: string,
+    fileId: string,
+    index: number,
+    amount: number,
+  ): boolean {
+    // /audio status 2 + no remaining chunks means Yandex has the complete file.
+    // /translate status 2 is a different state and is deliberately not used here.
+    if (
+      response?.status !== 2 ||
+      !Array.isArray(response.remainingChunks) ||
+      response.remainingChunks.length !== 0
+    )
+      return false;
+    this.confirmedAudioUpload = {
+      translationId,
+      fileId,
+      generation: this.audioUploadGeneration,
+    };
+    console.log("[FORK][AudioUpload] all chunks confirmed by Yandex", {
+      translationId,
+      fileId,
+      index,
+      amount,
+    });
+    return true;
+  }
+
+  private readonly uploadPartialAudioSequentially = async (
     translationId: string,
     data: DownloadedPartialAudioData,
   ) => {
@@ -1849,6 +1983,15 @@ export class VOTTranslationHandler {
 
     const { audioData, fileId, videoId, amount, version, index } = data;
     const videoUrl = this.activeAudioUploadUrl || this.getCanonicalUrl(videoId);
+    if (this.isAudioUploadConfirmed(translationId, fileId)) {
+      debug.log("[AudioUpload] skip chunk: upload already confirmed", {
+        index,
+        amount,
+      });
+      return;
+    }
+    this.audioChunksStarted = true;
+    this.activeAudioUploadRequests++;
 
     try {
       console.log("[FORK] Uploading audio chunk", {
@@ -1861,36 +2004,14 @@ export class VOTTranslationHandler {
         videoUrl,
       });
 
-      const uploadResponse = await this.retryAudioUpload(() =>
-        this.videoHandler.votClient.requestVtransAudio(
-          videoUrl,
-          translationId,
-          {
-            audioFile: audioData,
-            chunkId: index,
-          },
-          {
-            audioPartsLength: amount,
-            fileId,
-            version,
-          },
-        ),
-      );
-      console.log("[FORK] Upload audio chunk response", {
-        translationId,
-        videoId,
-        fileId,
-        index,
-        amount,
-        videoUrl,
-        status: uploadResponse?.status,
-        remainingChunks: uploadResponse?.remainingChunks,
-      });
+      // Cache the chunk BEFORE attempting PUT, including the chunk that fails.
+      // A full replay must include every received chunk, not just confirmed ones.
       if (this.currentAudioRequestKey) {
         if (
           !this.cachedAudioUpload ||
           this.cachedAudioUpload.key !== this.currentAudioRequestKey ||
-          this.cachedAudioUpload.kind !== "partial"
+          this.cachedAudioUpload.kind !== "partial" ||
+          this.cachedAudioUpload.fileId !== fileId
         ) {
           this.cachedAudioUpload = {
             key: this.currentAudioRequestKey,
@@ -1902,14 +2023,51 @@ export class VOTTranslationHandler {
             chunks: [],
           };
         }
-        this.cachedAudioUpload.chunks.push({
-          audioData: audioData.slice(),
-          index,
-          amount,
-          version,
-        });
+        const cached = this.cachedAudioUpload;
+        const existing = cached.chunks.findIndex(
+          (chunk) => chunk.index === index,
+        );
+        const entry = { audioData: audioData.slice(), index, amount, version };
+        if (existing >= 0) cached.chunks[existing] = entry;
+        else cached.chunks.push(entry);
       }
+
+      const uploadResponse = await this.retryAudioUpload(() => {
+        if (this.isAudioUploadConfirmed(translationId, fileId)) {
+          return Promise.resolve({ status: 2, remainingChunks: [] });
+        }
+        return this.videoHandler.votClient.requestVtransAudio(
+          videoUrl,
+          translationId,
+          { audioFile: audioData, chunkId: index },
+          { audioPartsLength: amount, fileId, version },
+        );
+      });
+      console.log("[FORK] Upload audio chunk response", {
+        translationId,
+        videoId,
+        fileId,
+        index,
+        amount,
+        videoUrl,
+        status: uploadResponse?.status,
+        remainingChunks: uploadResponse?.remainingChunks,
+      });
+      this.confirmAudioUploadResponse(
+        uploadResponse,
+        translationId,
+        fileId,
+        index,
+        amount,
+      );
     } catch (error) {
+      if (this.isAudioUploadConfirmed(translationId, fileId)) {
+        debug.warn(
+          "[AudioUpload] ignoring error after Yandex confirmed all chunks",
+        );
+        this.finishDownloadSuccess();
+        return;
+      }
       debug.error("Failed to upload downloaded audio chunk", error);
       console.log("[FORK] Upload audio chunk failed", {
         message: getErrorMessage(error),
@@ -1919,14 +2077,112 @@ export class VOTTranslationHandler {
         amount,
         size: audioData.byteLength,
       });
+      // Only replay after the regular five attempts have failed. Replay uses
+      // the same translationId/fileId and sends NO empty completion chunk.
+      const cached = this.cachedAudioUpload;
+      const expected = amount > 0 ? amount : undefined;
+      const replayChunks =
+        cached?.kind === "partial"
+          ? [...cached.chunks].sort((a, b) => a.index - b.index)
+          : [];
+      const complete =
+        expected !== undefined &&
+        replayChunks.length === expected &&
+        replayChunks.every(
+          (chunk, i) => chunk.index === i && chunk.audioData.byteLength > 0,
+        );
+      if (
+        !this.fullSequenceRecoveryUsed &&
+        !this.isAudioUploadConfirmed(translationId, fileId) &&
+        this.downloading &&
+        this.currentAudioRequestKey &&
+        cached?.kind === "partial" &&
+        cached.translationId === translationId &&
+        cached.fileId === fileId &&
+        complete &&
+        this.isRetryableAudioUploadError(error)
+      ) {
+        this.fullSequenceRecoveryUsed = true;
+        console.warn("[FORK][AudioUpload] full-sequence recovery starting", {
+          translationId,
+          fileId,
+          chunks: replayChunks.length,
+          failedIndex: index,
+        });
+        try {
+          for (const chunk of replayChunks) {
+            if (this.isAudioUploadConfirmed(translationId, fileId)) break;
+            const result = await this.retryAudioUpload(() => {
+              if (this.isAudioUploadConfirmed(translationId, fileId)) {
+                return Promise.resolve({ status: 2, remainingChunks: [] });
+              }
+              return this.videoHandler.votClient.requestVtransAudio(
+                videoUrl,
+                translationId,
+                { audioFile: chunk.audioData, chunkId: chunk.index },
+                {
+                  audioPartsLength: chunk.amount,
+                  fileId,
+                  version: chunk.version,
+                },
+              );
+            });
+            this.confirmAudioUploadResponse(
+              result,
+              translationId,
+              fileId,
+              chunk.index,
+              chunk.amount,
+            );
+            console.log("[FORK][AudioUpload] recovery chunk response", {
+              index: chunk.index,
+              status: result?.status,
+              remainingChunks: result?.remainingChunks,
+            });
+          }
+          if (!this.isAudioUploadConfirmed(translationId, fileId)) {
+            throw new Error(
+              "Full replay ended without Yandex confirming all chunks",
+            );
+          }
+          console.warn("[FORK][AudioUpload] full-sequence recovery confirmed");
+          this.finishDownloadSuccess();
+          return;
+        } catch (recoveryError) {
+          console.error(
+            "[FORK][AudioUpload] full-sequence recovery failed",
+            recoveryError,
+          );
+          error = recoveryError;
+        }
+      } else {
+        console.warn("[FORK][AudioUpload] full replay unavailable", {
+          expected,
+          cachedChunks: replayChunks.length,
+          alreadyUsed: this.fullSequenceRecoveryUsed,
+        });
+      }
       this.finishDownloadFailure(
-        new Error("Audio downloader failed while uploading chunk"),
+        new Error(
+          `Audio chunk ${index}/${amount} upload failed: ${getErrorMessage(error)}`,
+        ),
       );
       return;
+    } finally {
+      this.activeAudioUploadRequests = Math.max(
+        0,
+        this.activeAudioUploadRequests - 1,
+      );
     }
 
-    if (index === amount - 1) {
+    if (this.isAudioUploadConfirmed(translationId, fileId)) {
       this.finishDownloadSuccess();
+    } else if (index === amount - 1) {
+      this.finishDownloadFailure(
+        new Error(
+          "Last audio chunk sent but Yandex did not confirm complete upload",
+        ),
+      );
     }
   };
 
@@ -1937,6 +2193,30 @@ export class VOTTranslationHandler {
   ) => {
     if (!this.downloading) {
       debug.log("skip downloadAudioError");
+      return;
+    }
+
+    // Some downloader strategies emit a late error while the final chunk is
+    // already being PUT to Yandex. That is not an upload failure. The upload
+    // handler owns success/failure and its own retry budget.
+    if (this.activeAudioUploadRequests > 0) {
+      debug.warn(
+        "[AudioUpload] ignoring downloader error during active upload",
+        {
+          videoId,
+          activeUploads: this.activeAudioUploadRequests,
+        },
+      );
+      return;
+    }
+    // Once real chunks have started, never poison the translation task with
+    // fail-audio-js or a zero-byte replacement. Surface a real failure instead.
+    if (this.audioChunksStarted) {
+      debug.warn("[AudioUpload] downloader error after chunk upload started", {
+        videoId,
+      });
+      // Wait for the last chunk confirmation or the outer stream timeout.
+      // The downloader cannot know whether the pending Yandex upload succeeded.
       return;
     }
 
@@ -1956,6 +2236,7 @@ export class VOTTranslationHandler {
 
     const canUseYouTubeFallback =
       this.videoHandler.site.host === "youtube" &&
+      this.audioDownloader.strategy !== WEB_ABR_STRATEGY &&
       Boolean(this.videoHandler.data?.useAudioDownload);
 
     if (!canUseYouTubeFallback) {
@@ -1998,6 +2279,12 @@ export class VOTTranslationHandler {
   }
 
   private finishDownloadFailure(error: Error) {
+    if (!this.downloading) {
+      debug.warn("[AudioUpload] ignoring late download failure", {
+        message: error.message,
+      });
+      return;
+    }
     this.downloading = false;
     this.downloadFailureError = error;
     this.rejectDownloadWaiters(error);
@@ -2282,6 +2569,12 @@ export class VOTTranslationHandler {
       ) {
         this.videoHandler.hadAsyncWait = true;
         this.downloadFailureError = undefined;
+        this.activeAudioUploadRequests = 0;
+        this.audioChunksStarted = false;
+        this.audioUploadGeneration++;
+        this.audioUploadQueue = Promise.resolve();
+        this.fullSequenceRecoveryUsed = false;
+        this.confirmedAudioUpload = undefined;
         this.downloading = true;
 
         await this.audioDownloader.runAudioDownload(
@@ -2937,6 +3230,12 @@ export class VOTTranslationHandler {
 
         debug.log("Start audio download");
         this.downloadFailureError = undefined;
+        this.activeAudioUploadRequests = 0;
+        this.audioChunksStarted = false;
+        this.audioUploadGeneration++;
+        this.audioUploadQueue = Promise.resolve();
+        this.fullSequenceRecoveryUsed = false;
+        this.confirmedAudioUpload = undefined;
         this.downloading = true;
 
         await this.prepareSourceAudioUpload(signal);
@@ -2947,20 +3246,63 @@ export class VOTTranslationHandler {
           timeoutMs: YOUTUBE_AUDIO_STREAM_TIMEOUT_MS,
         });
 
-        await Promise.all([
-          this.waitForAudioDownloadCompletion(
-            signal,
-            YOUTUBE_AUDIO_STREAM_TIMEOUT_MS,
-          ),
-          this.audioDownloader.runAudioDownload(
+        // Keep the upload completion promise authoritative. A late SABR/bridge
+        // rejection must not cancel a Yandex PUT already in flight.
+        const uploadCompletion = this.waitForAudioDownloadCompletion(
+          signal,
+          YOUTUBE_AUDIO_STREAM_TIMEOUT_MS,
+        );
+        void uploadCompletion.catch(() => {});
+        const downloaderResult = this.audioDownloader
+          .runAudioDownload(
             videoData.videoId,
             res.translationId,
             signal,
             this.videoHandler.video,
             this.webAbrTransportStartIndex,
             requestLang,
-          ),
-        ]);
+          )
+          .then(
+            () => ({ ok: true as const }),
+            (error: unknown) => ({ ok: false as const, error }),
+          );
+        const downloaderOutcome = await downloaderResult;
+        if (!downloaderOutcome.ok) {
+          if (!this.audioChunksStarted) {
+            // Consume the already-created waiter rejection as well.
+            void uploadCompletion.catch(() => {});
+            throw downloaderOutcome.error;
+          }
+          debug.warn(
+            "[AudioUpload] downloader rejected after chunks started; waiting for Yandex",
+            {
+              videoId: videoData.videoId,
+              activeUploads: this.activeAudioUploadRequests,
+              error: getErrorMessage(downloaderOutcome.error),
+            },
+          );
+          // Do not wait 30 minutes for a missing final chunk. This grace period
+          // allows the active PUT/retries to finish, but never fabricates success.
+          await Promise.race([
+            uploadCompletion,
+            new Promise<never>((_resolve, reject) => {
+              const timer = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      "SABR failed after partial audio; final chunk was not confirmed within 150 seconds",
+                    ),
+                  ),
+                150000,
+              );
+              void uploadCompletion
+                .finally(() => clearTimeout(timer))
+                .catch(() => {});
+            }),
+          ]);
+        } else {
+          await uploadCompletion;
+        }
 
         this.handledAudioRequestKey = audioRequestKey;
         this.postAudioTranslateRetryCount = 0;
