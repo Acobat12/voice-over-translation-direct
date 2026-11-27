@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // Build-time globals injected by Vite define config.
 const DEBUG_MODE: boolean;
 /**
@@ -23,7 +24,9 @@ const VOT_VERSION: string;
 // These are injected at runtime by the userscript manager or by our extension
 // prelude. Keep them loosely typed.
 declare const GM_info: any;
+declare const unsafeWindow: (Window & typeof globalThis) | undefined;
 declare const GM: {
+	info?: typeof GM_info;
 	// Promise-based GM API (supported by most userscript managers).
 	getValue?<T>(key: string, defaultValue?: T): Promise<T>;
 	getValues?<T extends Record<string, unknown>>(data: T): Promise<T>;

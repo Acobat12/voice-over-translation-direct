@@ -1,5 +1,3 @@
-import { config } from "@vot.js/shared";
-import type { SabrFormat } from "googlevideo/shared-types";
 import { createAbortableDelay } from "../../utils/abort";
 import debug from "../../utils/debug";
 import {
@@ -10,7 +8,6 @@ import { requestSafariPagePoToken } from "./safariPageBridge";
 
 export { getAudioFormatLanguage, normalizeAudioLanguage };
 
-import type { AudioChunk } from "./audioChunks";
 import { prepareYouTubePlayer as preprocessYouTubePlayer } from "./ytPlayerSolver";
 
 const MEDIA_RANGE_SIZES = [60_000, 80_000, 150_000, 330_000, 460_000];
@@ -20,11 +17,12 @@ type YouTubeConfig = {
   get?: (key: string) => unknown;
 };
 
-export type WebAbrWindow = Window & {
-  ytcfg?: YouTubeConfig;
-  _yt_player?: Record<string, unknown>;
-  ytInitialPlayerResponse?: WebEmbeddedPlayerResponse;
-};
+export type WebAbrWindow = Window &
+  typeof globalThis & {
+    ytcfg?: YouTubeConfig;
+    _yt_player?: Record<string, unknown>;
+    ytInitialPlayerResponse?: WebEmbeddedPlayerResponse;
+  };
 
 type PageUrlInstance = {
   set?: (key: string, value: string) => void;
@@ -272,6 +270,17 @@ export function selectGvsPoTokenBinding(
 
 export function getConfigValue(config: YouTubeConfig, key: string): unknown {
   return config.get?.(key) ?? config.data_?.[key];
+}
+
+export function getPageExperimentFlags(config: YouTubeConfig): string[] {
+  const contexts = getConfigValue(config, "WEB_PLAYER_CONTEXT_CONFIGS");
+  return Object.values(
+    contexts && typeof contexts === "object" ? contexts : {},
+  ).flatMap((entry: { serializedExperimentFlags?: unknown } | null) =>
+    typeof entry?.serializedExperimentFlags === "string"
+      ? [entry.serializedExperimentFlags]
+      : [],
+  );
 }
 
 function buildContentPlaybackContext(
@@ -551,7 +560,6 @@ export async function resolveYtcfg(
   // A sandboxed userscript realm (Tampermonkey with any @grant) sees its own
   // globals, so recover the config from the page markup instead.
   let data = readYtcfgFromDocument(targetWindow);
-  let source = "document";
   if (typeof data.INNERTUBE_API_KEY !== "string") {
     try {
       const response = await targetWindow.fetch(targetWindow.location.href, {
@@ -560,9 +568,8 @@ export async function resolveYtcfg(
       });
       if (response.ok) {
         data = parseYtcfgData(await response.text());
-        source = "page";
       }
-    } catch (error) {
+    } catch {
       signal.throwIfAborted();
     }
   }
@@ -616,37 +623,11 @@ export function selectEconomyAudioFormat(
       format.mimeType?.includes("audio/") &&
       !format.mimeType?.includes("video/"),
   );
-  const nonDrc = audioOnly.filter((format) => !isDrcAudioFormat(format));
-  const candidates = nonDrc.length > 0 ? nonDrc : audioOnly;
-
-  const numericContentLength = (format: WebEmbeddedFormat): number => {
-    const value = Number(format.contentLength);
-    return Number.isFinite(value) && value > 0
-      ? value
-      : Number.POSITIVE_INFINITY;
-  };
-  const numericBitrate = (format: WebEmbeddedFormat): number => {
-    const value = Number(format.averageBitrate ?? format.bitrate);
-    return Number.isFinite(value) && value > 0
-      ? value
-      : Number.POSITIVE_INFINITY;
-  };
-
-  return [...candidates].sort((a, b) => {
-    // contentLength is the most direct traffic estimate when YouTube supplies it.
-    const sizeDiff = numericContentLength(a) - numericContentLength(b);
-    if (Number.isFinite(sizeDiff) && sizeDiff !== 0) return sizeDiff;
-
-    // Otherwise prefer the lowest audio bitrate.
-    const bitrateDiff = numericBitrate(a) - numericBitrate(b);
-    if (Number.isFinite(bitrateDiff) && bitrateDiff !== 0) return bitrateDiff;
-
-    // Stable deterministic fallback; for the usual Opus/AAC set this tends to
-    // keep the low-bitrate WebM formats ahead of the larger AAC alternative.
-    return (
-      (a.itag ?? Number.MAX_SAFE_INTEGER) - (b.itag ?? Number.MAX_SAFE_INTEGER)
-    );
-  })[0];
+  return audioOnly.reduce<WebEmbeddedFormat | undefined>(
+    (min, f) =>
+      !min || (f.bitrate ?? Infinity) < (min.bitrate ?? Infinity) ? f : min,
+    undefined,
+  );
 }
 
 export function selectAudioFormat(
@@ -1352,7 +1333,7 @@ export function buildWebCreatorPlayerRequest(
         clientVersion:
           typeof options.clientVersion === "string" && options.clientVersion
             ? options.clientVersion
-            : "1.20260708.06.00",
+            : "1.20261110.00.00",
         hl: "en",
         gl: "US",
         timeZone: "UTC",

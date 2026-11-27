@@ -1,5 +1,4 @@
-import { VideoService } from "@vot.js/core/types/service";
-import type { ServiceConf } from "@vot.js/ext/types/service";
+import { type ServiceConf, VideoService } from "@vot.js/ext/types/service";
 import { isTunnelPlayerUrl } from "../core/tunnelPlayer";
 import { GENERIC_PLAYER_SELECTOR } from "./playerSelectors";
 
@@ -9,6 +8,70 @@ const VK_CLIP_SELECTOR =
   'div[data-testid="clipcontainer-video"], [data-testid="clipcontainer-video"]';
 
 export const extraSites: ServiceConf[] = [
+  {
+    // Udemy: preserve dedicated helper routing
+    host: VideoService.udemy,
+    url: "https://www.udemy.com/",
+    match: /^(?:www\.)?udemy\.com$/i,
+    selector:
+      ".shaka-video-container, " +
+      '[id^="shaka-video-container-"], ' +
+      '[data-purpose="media-player-container"], ' +
+      "video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+
+  {
+    host: VideoService.anthropicskilljar,
+    url: "https://anthropic-partners.skilljar.com/",
+    match: /^anthropic-partners\.skilljar\.com$/i,
+    selector: "video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+  // TikTok: keep its dedicated helper route, including Short Drama pages.
+  {
+    host: VideoService.tiktok,
+    url: "https://www.tiktok.com/",
+    match: /(^|\.)tiktok\.com$/i,
+    selector: "video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+  // Cloud Mail.ru (not my.mail.ru)
+  {
+    host: VideoService.cloudmailru,
+    url: "https://cloud.mail.ru/",
+    match: /^(www\.)?cloud\.mail\.ru$/i,
+    selector: "video.vjs-tech, video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+  // NHK World Japan — dedicated NHKHelper route
+  {
+    host: VideoService.NHK,
+    url: "https://www3.nhk.or.jp/",
+    match: /^www3\.nhk\.or\.jp$/i,
+    selector: "video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+  {
+    host: VideoService.NHKJapan,
+    url: "https://www.web.nhk/",
+    match: /^(?:[a-z0-9-]+\.)*web\.nhk$/i,
+    selector: "video",
+    eventSelector: "video",
+    needExtraData: true,
+  },
+  {
+    host: VideoService.deeplearningai,
+    url: "https://learn.deeplearning.ai/courses/",
+    match: /^learn(-dev|-staging)?\.deeplearning\.ai/,
+    selector: ".lesson-video-player",
+    needExtraData: true,
+  },
   {
     host: VideoService.vk,
     url: "https://vk.com/video?z=",
@@ -34,7 +97,7 @@ export const extraSites: ServiceConf[] = [
     needExtraData: true,
   },
   {
-    host: "douyin",
+    host: VideoService.douyin,
     url: "https://www.douyin.com/",
     match: /(^|\.)douyin\.com$/i,
     selector: "video",
@@ -43,7 +106,7 @@ export const extraSites: ServiceConf[] = [
     needBypassCSP: true,
   },
   {
-    host: "bilibili",
+    host: VideoService.bilibili,
     url: "https://www.bilibili.com/video/",
     match: /(^|\.)bilibili\.com$/i,
     selector: "video",

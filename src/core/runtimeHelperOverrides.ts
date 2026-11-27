@@ -1,7 +1,5 @@
 import { availableHelpers } from "@vot.js/ext/helpers";
 import type { ServiceConf } from "@vot.js/ext/types/service";
-import { availableLangs } from "@vot.js/shared/consts";
-import type { RequestLang } from "@vot.js/shared/types/data";
 import { requestPageContextSnapshot } from "../utils/pageContextBridge";
 
 type HelperInstance = {
@@ -67,40 +65,6 @@ function normalizeHttpUrl(url: string): string {
   }
 }
 
-function pickActiveVideoElement(): HTMLVideoElement | null {
-  const candidates = Array.from(document.querySelectorAll("video")).filter(
-    (node): node is HTMLVideoElement => node instanceof HTMLVideoElement,
-  );
-
-  const scored = candidates
-    .map((video) => {
-      const rect = video.getBoundingClientRect();
-      return {
-        video,
-        area: Math.max(0, rect.width) * Math.max(0, rect.height),
-        visible:
-          rect.width > 80 &&
-          rect.height > 80 &&
-          rect.bottom > 0 &&
-          rect.top < globalThis.innerHeight,
-        paused: video.paused,
-        readyState: video.readyState,
-      };
-    })
-    .filter((entry) => entry.visible)
-    .sort((left, right) => {
-      if (left.paused !== right.paused) {
-        return left.paused ? 1 : -1;
-      }
-      if (left.readyState !== right.readyState) {
-        return right.readyState - left.readyState;
-      }
-      return right.area - left.area;
-    });
-
-  return scored[0]?.video ?? candidates[0] ?? null;
-}
-
 function extractGoogleDriveFileId(value: string): string | undefined {
   try {
     const parsed = new URL(value, globalThis.location.href);
@@ -115,77 +79,6 @@ function extractGoogleDriveFileId(value: string): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function extractDouyinModalId(
-  snapshot: Awaited<ReturnType<typeof requestPageContextSnapshot>> | null,
-): string | undefined {
-  const href = String(globalThis.location.href || "");
-  return (
-    /[?&]modal_id=(\d{16,22})/.exec(href)?.[1] ||
-    /\/video\/(\d{16,22})(?:[/?#]|$)/.exec(href)?.[1] ||
-    /\/note\/(\d{16,22})(?:[/?#]|$)/.exec(href)?.[1] ||
-    String(
-      (snapshot?.awemeInfo as Record<string, unknown> | undefined)?.awemeId ||
-        (snapshot?.awemeInfo as Record<string, unknown> | undefined)
-          ?.aweme_id ||
-        (snapshot?.awemeInfo as Record<string, unknown> | undefined)?.groupId ||
-        (snapshot?.awemeInfo as Record<string, unknown> | undefined)
-          ?.group_id ||
-        "",
-    ).trim() ||
-    undefined
-  );
-}
-
-function normalizeDouyinTranslationUrl(rawUrl: string): string {
-  const normalized = normalizeHttpUrl(rawUrl);
-  const marker = "media-audio-und-mp4a/";
-  const markerIndex = normalized.indexOf(marker);
-  if (markerIndex === -1) {
-    return normalized;
-  }
-  return `${normalized.slice(0, markerIndex + marker.length)}?`;
-}
-
-function pickDouyinAudioMediaUrl(): string {
-  const entries = performance.getEntriesByType("resource");
-
-  for (const entry of entries) {
-    const url = String(entry.name || "").trim();
-    if (!url) {
-      continue;
-    }
-    if (
-      /zjcdn\.com/i.test(url) &&
-      /\/video\/tos\//i.test(url) &&
-      /media-audio-und-mp4a\//i.test(url)
-    ) {
-      const selectedUrl = normalizeDouyinTranslationUrl(url);
-      console.log("[FORK][douyin] FINAL TRANSLATION URL", {
-        selectedUrl,
-        source: "performance-resource",
-        originalUrl: url,
-      });
-      return selectedUrl;
-    }
-  }
-
-  console.warn("[FORK][douyin] no media-audio-und-mp4a candidate found", {
-    href: globalThis.location.href,
-    entries: entries.length,
-  });
-  return "";
-}
-
-function normalizeRequestLang(value: unknown): RequestLang | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const normalized = value.toLowerCase().split(/[-_]/u)[0] as RequestLang;
-  return (availableLangs as readonly string[]).includes(normalized)
-    ? normalized
-    : undefined;
 }
 
 const runtimeHelperResolvers: Record<string, RuntimeHelperResolver> = {
@@ -203,69 +96,6 @@ const runtimeHelperResolvers: Record<string, RuntimeHelperResolver> = {
         extractGoogleDriveFileId(document.referrer) ||
         undefined
       );
-    },
-  },
-  douyin: {
-    getVideoId({ snapshot }) {
-      const modalId = extractDouyinModalId(snapshot);
-      return modalId ? `douyin/${modalId}` : undefined;
-    },
-    getVideoData(videoId, { helper, snapshot }) {
-      const modalId =
-        String(videoId || "")
-          .split("/")
-          .pop()
-          ?.trim() ||
-        extractDouyinModalId(snapshot) ||
-        "";
-      if (!modalId) {
-        return undefined;
-      }
-
-      const url = pickDouyinAudioMediaUrl();
-      if (!url?.includes("media-audio-und-mp4a/")) {
-        throw new Error("Douyin translation requires media-audio-und-mp4a URL");
-      }
-
-      const activeVideo = helper.video || pickActiveVideoElement();
-      const playerConfig = (
-        snapshot?.player as Record<string, unknown> | undefined
-      )?.config as Record<string, unknown> | undefined;
-      const title =
-        String(playerConfig?.title || "").trim() ||
-        String(document.title || "").trim();
-      const description = String(
-        (
-          (snapshot?.player as Record<string, unknown> | undefined)?.config as
-            | Record<string, unknown>
-            | undefined
-        )?.desc || "",
-      ).trim();
-      const detectedLanguage = normalizeRequestLang(
-        (
-          (snapshot?.player as Record<string, unknown> | undefined)?.config as
-            | Record<string, unknown>
-            | undefined
-        )?.lang,
-      );
-
-      return {
-        url,
-        title,
-        localizedTitle: title,
-        description: description || undefined,
-        duration:
-          Number(activeVideo?.duration || 0) ||
-          Number(
-            (
-              (snapshot?.player as Record<string, unknown> | undefined)
-                ?.config as Record<string, unknown> | undefined
-            )?.duration || 0,
-          ) ||
-          undefined,
-        isStream: false,
-        ...(detectedLanguage ? { detectedLanguage } : {}),
-      };
     },
   },
 };
@@ -337,11 +167,7 @@ function createRuntimeHelperClass(
         return originalResult;
       }
 
-      const snapshot = await requestPageContextSnapshot({
-        timeoutMs: 500,
-        allowLegacyFallback: true,
-        reason: `runtime-helper-override:getVideoId:${host}`,
-      });
+      const snapshot = await requestPageContextSnapshot(500);
       const resolved = await resolver.getVideoId?.(
         buildResolverContext(this, snapshot),
       );
@@ -373,11 +199,7 @@ function createRuntimeHelperClass(
         return originalResult;
       }
 
-      const snapshot = await requestPageContextSnapshot({
-        timeoutMs: 500,
-        allowLegacyFallback: true,
-        reason: `runtime-helper-override:getVideoData:${host}`,
-      });
+      const snapshot = await requestPageContextSnapshot(500);
       const resolved =
         (await resolver.getVideoData?.(
           videoId,
@@ -385,7 +207,7 @@ function createRuntimeHelperClass(
         )) ||
         buildBaseRuntimeVideoData(
           (this.service as ServiceConf | undefined) || {
-            host,
+            host: host as ServiceConf["host"],
             url: globalThis.location.href,
           },
           videoId,
@@ -449,9 +271,8 @@ async function buildRuntimeSiteVideoData(
     return undefined;
   }
 
-  const data =
-    (await resolver.getVideoData?.(videoId, helperContext)) ||
-    buildBaseRuntimeVideoData(site, videoId);
+  const resolved = await resolver.getVideoData?.(videoId, helperContext);
+  const data = resolved || buildBaseRuntimeVideoData(site, videoId);
 
   return {
     ...data,
@@ -478,11 +299,7 @@ export function withRuntimeHelperSiteBridge(site: ServiceConf): ServiceConf {
 
   const bridgedSite = { ...site } as RuntimeSiteBridge;
   bridgedSite.getVideoId = async () => {
-    const snapshot = await requestPageContextSnapshot({
-      timeoutMs: 500,
-      allowLegacyFallback: true,
-      reason: `runtime-helper-override:siteBridgeGetVideoId:${host}`,
-    });
+    const snapshot = await requestPageContextSnapshot(500);
     return await runtimeHelperResolvers[host].getVideoId?.(
       buildResolverContext({}, snapshot),
     );

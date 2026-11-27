@@ -1,4 +1,3 @@
-import { render } from "lit-html";
 import {
   actualCompatVersion,
   defaultAutoHideDelay,
@@ -12,7 +11,7 @@ import {
 import { createPkceAuthUrl } from "../core/auth";
 import { localizationProvider } from "../localization/localizationProvider";
 import type { SelectItem } from "../types/components/select";
-import type { Position, Status } from "../types/components/votButton";
+import type { Position, Status } from "../types/components/votRail";
 import type { StorageData } from "../types/storage";
 import UI from "../ui";
 import type Dialog from "../ui/components/dialog";
@@ -22,14 +21,14 @@ import LanguagePairSelect from "../ui/components/languagePairSelect";
 import Select from "../ui/components/select";
 import Slider from "../ui/components/slider";
 import SliderLabel from "../ui/components/sliderLabel";
+import {
+  createVoiceModeMenuItem,
+  getVoiceModeLabel,
+} from "../ui/components/voiceModeMenuItem";
 import VOTMenu from "../ui/components/votMenu";
 import VOTRail from "../ui/components/votRail";
-import {
-  CHECK_ICON,
-  SETTINGS_ICON,
-  SUBTITLES_ICON,
-  VOICE_WAVE_ICON,
-} from "../ui/icons";
+import { SETTINGS_ICON, SUBTITLES_ICON } from "../ui/icons";
+import { clampMenuPosition } from "../ui/menuPosition";
 import { SettingsView } from "../ui/views/settings";
 import { updateConfig, votStorage } from "../utils/storage";
 import { calculatedResLang } from "../utils/utils";
@@ -39,8 +38,6 @@ const GOOGLE_DRIVE_TOP_FRAME_POPUP_ROOT_ATTR =
   "data-vot-google-drive-top-frame-popup-root";
 const GOOGLE_DRIVE_TOP_FRAME_DIALOG_ROOT_ATTR =
   "data-vot-google-drive-top-frame-dialog-root";
-const GOOGLE_DRIVE_TOP_FRAME_IFRAME_SELECTOR =
-  'iframe[src*="youtube.googleapis.com/embed/"]';
 const GOOGLE_DRIVE_BRIDGE_FLAG = "__votGoogleDriveBridge";
 
 type BridgeStatus = "none" | "error" | "success" | "loading" | "disabled";
@@ -88,6 +85,7 @@ type BridgeMessage =
       [GOOGLE_DRIVE_BRIDGE_FLAG]: true;
       kind: "command";
       command:
+        | "pip"
         | "translate"
         | "request-state"
         | "download-translation"
@@ -142,7 +140,7 @@ function debugDriveTopFrame(
   const debugMessage = details
     ? `${message} ${JSON.stringify(details)}`
     : message;
-  console.info(`[FORK][DriveTopFrame] ${debugMessage}`);
+  // Keep the last diagnostic available to DevTools without flooding the console.
   document.documentElement.setAttribute(
     "data-vot-drive-top-frame-debug-last",
     debugMessage,
@@ -152,7 +150,7 @@ function debugDriveTopFrame(
 function isGoogleDriveTopFrameContext(): boolean {
   const host = String(globalThis.location.hostname || "").toLowerCase();
   return (
-    globalThis.top === globalThis &&
+    globalThis.top === globalThis.window &&
     (host === "drive.google.com" || host === "docs.google.com")
   );
 }
@@ -160,7 +158,11 @@ function isGoogleDriveTopFrameContext(): boolean {
 function isVisibleIframe(
   iframe: HTMLIFrameElement | null | undefined,
 ): iframe is HTMLIFrameElement {
-  if (!(iframe instanceof HTMLIFrameElement) || !iframe.isConnected) {
+  if (
+    !iframe ||
+    iframe.tagName.toLowerCase() !== "iframe" ||
+    !iframe.isConnected
+  ) {
     return false;
   }
 
@@ -168,28 +170,74 @@ function isVisibleIframe(
   return rect.width > 120 && rect.height > 80;
 }
 
-function getDrivePlayerIframe(): HTMLIFrameElement | null {
-  const selectors = [
-    `#drive-viewer-video-player-object-0 ${GOOGLE_DRIVE_TOP_FRAME_IFRAME_SELECTOR}`,
-    `.rSvt3b ${GOOGLE_DRIVE_TOP_FRAME_IFRAME_SELECTOR}`,
-    `.xpiQs ${GOOGLE_DRIVE_TOP_FRAME_IFRAME_SELECTOR}`,
-    GOOGLE_DRIVE_TOP_FRAME_IFRAME_SELECTOR,
-  ];
+type DrivePlayerFrame = {
+  iframe: HTMLIFrameElement;
+  rect: DOMRect;
+};
 
-  for (const selector of selectors) {
-    const matched = Array.from(
-      document.querySelectorAll<HTMLIFrameElement>(selector),
-    ).find((iframe) => isVisibleIframe(iframe));
-    if (matched) {
-      return matched;
+/** Walk same-origin Drive wrapper frames; never access cross-origin documents. */
+function getDrivePlayerFrame(): DrivePlayerFrame | null {
+  const visited = new Set<Document>();
+  const search = (
+    doc: Document,
+    offsetX: number,
+    offsetY: number,
+    scaleX: number,
+    scaleY: number,
+    depth: number,
+  ): DrivePlayerFrame | null => {
+    if (depth > 5 || visited.has(doc)) return null;
+    visited.add(doc);
+
+    const frames = Array.from(
+      doc.querySelectorAll<HTMLIFrameElement>("iframe"),
+    );
+    for (const iframe of frames) {
+      if (!isVisibleIframe(iframe)) continue;
+      const bounds = iframe.getBoundingClientRect();
+      const src = iframe.getAttribute("src") ?? "";
+      if (src.includes("youtube.googleapis.com/embed")) {
+        return {
+          iframe,
+          rect: new DOMRect(
+            offsetX + bounds.left * scaleX,
+            offsetY + bounds.top * scaleY,
+            bounds.width * scaleX,
+            bounds.height * scaleY,
+          ),
+        };
+      }
+      // Only descend into accessible Drive documents. The player itself is
+      // cross-origin and is addressed through its iframe.contentWindow.
+      try {
+        const child = iframe.contentDocument;
+        if (!child) continue;
+        const found = search(
+          child,
+          offsetX + (bounds.left + iframe.clientLeft) * scaleX,
+          offsetY + (bounds.top + iframe.clientTop) * scaleY,
+          scaleX *
+            (iframe.offsetWidth > 0 ? bounds.width / iframe.offsetWidth : 1),
+          scaleY *
+            (iframe.offsetHeight > 0 ? bounds.height / iframe.offsetHeight : 1),
+          depth + 1,
+        );
+        if (found) return found;
+      } catch {
+        // Cross-origin wrapper: not traversable from this context.
+      }
     }
-  }
+    return null;
+  };
+  return search(document, 0, 0, 1, 1, 0);
+}
 
-  return null;
+function getDrivePlayerIframe(): HTMLIFrameElement | null {
+  return getDrivePlayerFrame()?.iframe ?? null;
 }
 
 function getPlayerRect(): DOMRect | null {
-  return getDrivePlayerIframe()?.getBoundingClientRect() ?? null;
+  return getDrivePlayerFrame()?.rect ?? null;
 }
 
 function getBridgeTargetOrigin(iframe: HTMLIFrameElement): string {
@@ -538,48 +586,8 @@ function getDisplayedVoiceMode(
   return "standard";
 }
 
-function getVoiceModeLabel(mode: "standard" | "lively"): string {
-  return mode === "lively"
-    ? localizationProvider.get("VOTLivelyVoices")
-    : localizationProvider.get("VOTStandardVoices");
-}
-
-function getVoiceModeDescription(mode: "standard" | "lively"): string {
-  return mode === "lively"
-    ? localizationProvider.get("VOTLivelyVoicesDescription")
-    : localizationProvider.get("VOTStandardVoicesDescription");
-}
-
 function getVoiceModeMenuTitle(): string {
   return localizationProvider.get("VOTVoiceModeMenuTitle");
-}
-
-function createVoiceModeMenuItem(mode: "standard" | "lively"): HTMLElement {
-  const item = UI.createEl("vot-block", ["vot-voice-mode-menu-item"]);
-  UI.makeButtonLike(item, {
-    ariaLabel: getVoiceModeLabel(mode),
-  });
-  item.dataset.mode = mode;
-
-  const icon = UI.createEl("vot-block", ["vot-voice-mode-menu-item-icon"]);
-  render(VOICE_WAVE_ICON, icon);
-
-  const content = UI.createEl("vot-block", [
-    "vot-voice-mode-menu-item-content",
-  ]);
-  const title = UI.createEl("vot-block", ["vot-voice-mode-menu-item-title"]);
-  title.textContent = getVoiceModeLabel(mode);
-  const description = UI.createEl("vot-block", [
-    "vot-voice-mode-menu-item-description",
-  ]);
-  description.textContent = getVoiceModeDescription(mode);
-  content.append(title, description);
-
-  const check = UI.createEl("vot-block", ["vot-voice-mode-menu-item-check"]);
-  render(CHECK_ICON, check);
-
-  item.append(icon, content, check);
-  return item;
 }
 
 function cleanupLegacyTopFrameUi(): void {
@@ -733,7 +741,7 @@ async function ensureSettingsData(): Promise<Partial<StorageData>> {
   }
 
   settingsInitPromise = (async () => {
-    let data = await votStorage.getValues({
+    let data = await votStorage.getValues<Partial<StorageData>>({
       autoTranslate: false,
       autoSubtitles: false,
       dontTranslateLanguages: [calculatedResLang],
@@ -852,9 +860,7 @@ function bindSettingsViewEvents(view: SettingsView): void {
       globalThis.location.reload();
     })
     .addEventListener("click:resetSettings", async () => {
-      const valuesForClear = await votStorage.list();
-      await Promise.all(valuesForClear.map((key) => votStorage.delete(key)));
-      await votStorage.set("compatVersion", actualCompatVersion);
+      await votStorage.reset();
       globalThis.location.reload();
     })
     .addEventListener("click:bugReport", () => {
@@ -1416,38 +1422,21 @@ function positionQuickMenu(): void {
   const menuWidth = quickMenu.container.offsetWidth || 420;
   const menuHeight = quickMenu.container.offsetHeight || 520;
   const isVertical = button.position === "left" || button.position === "right";
-  const boundsLeft = Math.max(12, (playerRect?.left ?? 0) + 12);
-  const boundsTop = Math.max(12, (playerRect?.top ?? 0) + 12);
-  const boundsRight = Math.min(
-    globalThis.innerWidth - 12,
-    (playerRect?.right ?? globalThis.innerWidth) - 12,
-  );
-  const boundsBottom = Math.min(
-    globalThis.innerHeight - 12,
-    (playerRect?.bottom ?? globalThis.innerHeight) - 12,
-  );
   const desiredLeft = isVertical
     ? button.position === "right"
       ? anchorRect.left - menuWidth - 12
       : anchorRect.right + 12
     : anchorRect.right - menuWidth;
-  const left = Math.max(
-    boundsLeft,
-    Math.min(Math.max(boundsLeft, boundsRight - menuWidth), desiredLeft),
-  );
   const desiredTop = isVertical ? anchorRect.top : groupRect.bottom + 12;
-  const fallbackTop = isVertical
-    ? Math.max(boundsTop, boundsBottom - menuHeight)
-    : groupRect.top - menuHeight - 12;
-  const top = Math.max(
-    boundsTop,
-    Math.min(
-      Math.max(boundsTop, boundsBottom - menuHeight),
-      desiredTop + menuHeight <= boundsBottom
-        ? desiredTop
-        : Math.max(boundsTop, fallbackTop),
-    ),
-  );
+  const fallbackTop = isVertical ? undefined : groupRect.top - menuHeight - 12;
+  const { left, top } = clampMenuPosition({
+    desiredLeft,
+    desiredTop,
+    fallbackTop,
+    menuWidth,
+    menuHeight,
+    boundsRect: playerRect,
+  });
 
   quickMenu.container.style.left = `${left}px`;
   quickMenu.container.style.top = `${top}px`;
@@ -1463,36 +1452,21 @@ function positionVoiceModeMenu(): void {
   const menuWidth = voiceModeMenu.container.offsetWidth || 360;
   const menuHeight = voiceModeMenu.container.offsetHeight || 240;
   const isVertical = button.position === "left" || button.position === "right";
-  const boundsLeft = Math.max(12, (playerRect?.left ?? 0) + 12);
-  const boundsTop = Math.max(12, (playerRect?.top ?? 0) + 12);
-  const boundsRight = Math.min(
-    globalThis.innerWidth - 12,
-    (playerRect?.right ?? globalThis.innerWidth) - 12,
-  );
-  const boundsBottom = Math.min(
-    globalThis.innerHeight - 12,
-    (playerRect?.bottom ?? globalThis.innerHeight) - 12,
-  );
   const desiredLeft = isVertical
     ? button.position === "right"
       ? anchorRect.left - menuWidth - 12
       : anchorRect.right + 12
     : anchorRect.left;
-  const left = Math.max(
-    boundsLeft,
-    Math.min(Math.max(boundsLeft, boundsRight - menuWidth), desiredLeft),
-  );
   const desiredTop = isVertical ? anchorRect.top : anchorRect.bottom + 12;
   const fallbackTop = anchorRect.top - menuHeight - 12;
-  const top = Math.max(
-    boundsTop,
-    Math.min(
-      Math.max(boundsTop, boundsBottom - menuHeight),
-      desiredTop + menuHeight <= boundsBottom
-        ? desiredTop
-        : Math.max(boundsTop, fallbackTop),
-    ),
-  );
+  const { left, top } = clampMenuPosition({
+    desiredLeft,
+    desiredTop,
+    fallbackTop,
+    menuWidth,
+    menuHeight,
+    boundsRect: playerRect,
+  });
 
   voiceModeMenu.container.style.left = `${left}px`;
   voiceModeMenu.container.style.top = `${top}px`;
@@ -1794,6 +1768,14 @@ function handleBridgeMessage(event: MessageEvent<unknown>): void {
   }
 
   const message = data as BridgeMessage;
+  const playerWindow = getDrivePlayerIframe()?.contentWindow;
+  if (
+    !playerWindow ||
+    event.source !== playerWindow ||
+    event.origin !== "https://youtube.googleapis.com"
+  ) {
+    return;
+  }
   if (message.kind !== "state") {
     return;
   }

@@ -7,60 +7,15 @@ import {
   type SafariGmRequest,
   type SafariGmResponse,
 } from "./protocol";
+import {
+  arrayBufferToBase64,
+  deserializeBody,
+  parseBridgeDetail,
+  parseRawResponseHeaders,
+} from "./serialization";
 
 const HOST_FLAG = "__votSafariGmBridgeHostInstalled__";
 const activeXhr = new Map<string, { abort?: () => void }>();
-
-function parseRequestDetail<T>(detail: unknown): T | undefined {
-  if (typeof detail === "string") {
-    try {
-      return JSON.parse(detail) as T;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (detail && typeof detail === "object") {
-    return detail as T;
-  }
-
-  return undefined;
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-
-  return btoa(binary);
-}
-
-function base64ToArrayBuffer(value: string): ArrayBuffer {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes.buffer;
-}
-
-function deserializeRequestBody(body?: SafariGmBody): BodyInit | undefined {
-  if (!body) return undefined;
-  if (body.type === "text") return body.value;
-
-  const buffer = base64ToArrayBuffer(body.value);
-  if (body.mimeType) {
-    return new Blob([buffer], { type: body.mimeType });
-  }
-
-  return buffer;
-}
 
 async function serializeResponseBody(
   response: Response,
@@ -78,18 +33,6 @@ async function serializeResponseBody(
   };
 }
 
-function parseRawResponseHeaders(rawHeaders: string): Record<string, string> {
-  if (!rawHeaders) return {};
-
-  return rawHeaders
-    .split(/\r?\n/)
-    .reduce<Record<string, string>>((acc, line) => {
-      const match = /^([\w-]+):\s*(.+)$/.exec(line);
-      if (match) acc[match[1]] = match[2];
-      return acc;
-    }, {});
-}
-
 function dispatchResponse(response: SafariGmResponse): void {
   document.dispatchEvent(
     new CustomEvent(SAFARI_GM_RESPONSE, {
@@ -103,7 +46,7 @@ async function handleFetchRequest(request: SafariGmRequest): Promise<void> {
     const response = await GM_fetch(request.url, {
       method: request.method,
       headers: request.headers,
-      body: deserializeRequestBody(request.body),
+      body: deserializeBody(request.body),
       timeout: request.timeout,
       forceGmXhr: request.forceGmXhr,
     });
@@ -150,7 +93,7 @@ function handleXhrRequest(request: SafariGmRequest): void {
       method: request.method || "GET",
       url: request.url,
       headers: request.headers,
-      data: deserializeRequestBody(request.body),
+      data: deserializeBody(request.body),
       timeout: request.timeout,
       anonymous: request.anonymous,
       responseType:
@@ -237,7 +180,7 @@ export function installSafariGmBridgeHost(): void {
   state[HOST_FLAG] = true;
 
   document.addEventListener(SAFARI_GM_REQUEST, (event) => {
-    const request = parseRequestDetail<SafariGmRequest>(
+    const request = parseBridgeDetail<SafariGmRequest>(
       (event as CustomEvent<SafariGmRequest | string>).detail,
     );
     if (!request?.id || !request.url) return;
@@ -251,7 +194,7 @@ export function installSafariGmBridgeHost(): void {
   });
 
   document.addEventListener(SAFARI_GM_ABORT, (event) => {
-    const abortRequest = parseRequestDetail<{ id?: string }>(
+    const abortRequest = parseBridgeDetail<{ id?: string }>(
       (event as CustomEvent<{ id?: string } | string>).detail,
     );
     const id = abortRequest?.id;

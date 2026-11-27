@@ -1,16 +1,3 @@
-// Minimal HTTP method type for GM_xmlhttpRequest compatibility.
-// (Avoid pulling external typings just for this union.)
-type HttpMethod =
-  | "GET"
-  | "POST"
-  | "PUT"
-  | "PATCH"
-  | "DELETE"
-  | "HEAD"
-  | "OPTIONS"
-  | "CONNECT"
-  | "TRACE";
-
 import { nonProxyExtensions } from "../config/config";
 import { executeWithResponseCache } from "../core/cacheManager";
 import type { FetchOpts } from "../types/utils/gm";

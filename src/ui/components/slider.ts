@@ -1,9 +1,9 @@
 import { render } from "lit-html";
-
 import { EventImpl } from "../../core/eventImpl";
 import type { LitHtml } from "../../types/components/shared";
 import type { SliderProps } from "../../types/components/slider";
 import UI from "../../ui";
+import { clampNumber } from "../../utils/volume";
 import { getHiddenState, setHiddenState } from "./componentShared";
 
 export default class Slider {
@@ -161,10 +161,4 @@ export default class Slider {
   get hidden() {
     return getHiddenState(this.container);
   }
-}
-
-function clampNumber(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  if (max < min) return min;
-  return Math.max(min, Math.min(max, value));
 }

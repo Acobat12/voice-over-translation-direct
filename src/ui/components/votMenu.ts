@@ -1,5 +1,5 @@
-import type { Position } from "../../types/components/votButton";
 import type { VOTMenuProps } from "../../types/components/votMenu";
+import type { Position } from "../../types/components/votRail";
 import UI from "../../ui";
 import { getHiddenState, setHiddenState } from "./componentShared";
 

@@ -56,8 +56,7 @@ export type SafariPageRuntimeService = Pick<
   | "rawResult"
   | "needBypassCSP"
   | "shadowRoot"
-  | "priority"
->;
+> & { priority?: number };
 
 export type SafariPageRuntimeRequest = {
   id: string;

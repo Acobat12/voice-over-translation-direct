@@ -1,11 +1,11 @@
 import { config } from "@vot.js/shared";
 import { createAbortableDelay } from "../../utils/abort";
-import debug from "../../utils/debug";
 import { type AudioChunk, concatBuffers } from "./audioChunks";
 import {
   buildMediaRanges,
   buildWebCreatorPlayerRequest,
   getConfigValue,
+  getPageExperimentFlags,
   getPlayerUrl,
   getYouTubeAuthorization,
   mintPagePoToken,
@@ -15,7 +15,6 @@ import {
   selectAudioFormat,
   selectGvsPoTokenBinding,
   type WebAbrWindow,
-  type WebEmbeddedFormat,
 } from "./youtubePlayer";
 
 async function probeContentLength(
@@ -48,22 +47,16 @@ async function probeContentLength(
 type MediaRange = { start: number; end: number };
 type MediaUrlState = {
   value: string;
-  refreshPromise: Promise<string> | null;
-  version: number;
 };
 type RequestNumberRef = { value: number };
-type PendingState = { buffers: Uint8Array[]; size: number };
-type WebAbrTransport =
-  | "parallel_4"
-  | "4mb"
-  | "parallel_8"
-  | "8mb"
-  | "parallel_2"
-  | "2mb"
-  | "stream"
-  | "original";
+const RANGE_SIZES = {
+  "2mb": 2 * 1024 * 1024,
+  "4mb": 4 * 1024 * 1024,
+  "8mb": 8 * 1024 * 1024,
+} as const;
+type WebAbrTransport = keyof typeof RANGE_SIZES | "stream" | "original";
 
-const WEB_ABR_TRANSPORTS: WebAbrTransport[] = [
+const WEB_ABR_TRANSPORTS: readonly WebAbrTransport[] = [
   "4mb",
   "2mb",
   "stream",
@@ -114,31 +107,6 @@ function isFatalMediaError(error: unknown): boolean {
   );
 }
 
-async function refreshMediaUrl(
-  urlState: MediaUrlState,
-  refreshUrl: () => Promise<string>,
-  reason: unknown = null,
-): Promise<string> {
-  if (!urlState.refreshPromise) {
-    const previousUrl = urlState.value;
-    const previousVersion = urlState.version ?? 0;
-    urlState.refreshPromise = Promise.resolve()
-      .then(() => refreshUrl())
-      .then((nextUrl) => {
-        if (typeof nextUrl !== "string" || !nextUrl) {
-          throw new Error("Audio downloader. Failed to refresh media URL");
-        }
-        urlState.value = nextUrl;
-        urlState.version = previousVersion + 1;
-        return nextUrl;
-      })
-      .finally(() => {
-        urlState.refreshPromise = null;
-      });
-  }
-  return await urlState.refreshPromise;
-}
-
 async function fetchMediaRange(
   targetWindow: Window,
   urlState: MediaUrlState,
@@ -153,14 +121,7 @@ async function fetchMediaRange(
   let refreshedFatal = false;
   for (let attempt = 0; attempt < WEB_ABR_RANGE_MAX_ATTEMPTS; attempt++) {
     signal.throwIfAborted();
-    // If another failed range is already refreshing the signed media URL,
-    // wait for that refresh before starting this retry. This keeps every retry
-    // on the newest URL without restarting ranges that already succeeded.
-    if (attempt > 0 && urlState.refreshPromise) {
-      await urlState.refreshPromise;
-    }
     try {
-      const urlVersion = urlState.version ?? 0;
       const url = new URL(urlState.value);
       url.searchParams.set("range", `${start}-${end}`);
       url.searchParams.set("rn", String(++requestNumberRef.value));
@@ -179,8 +140,6 @@ async function fetchMediaRange(
       const bytes = new Uint8Array(await response.arrayBuffer());
       signal.throwIfAborted();
       if (bytes.byteLength === end - start + 1) {
-        if (attempt > 0) {
-        }
         return bytes;
       }
       const redirect = new TextDecoder("ascii")
@@ -222,10 +181,11 @@ async function fetchMediaRange(
 
       if (shouldRefreshUrl) {
         try {
-          await refreshMediaUrl(urlState, refreshUrl, {
-            range: `${start}-${end}`,
-            failedAttempt,
-          });
+          const nextUrl = await refreshUrl();
+          if (typeof nextUrl !== "string" || !nextUrl) {
+            throw new Error("Audio downloader. Failed to refresh media URL");
+          }
+          urlState.value = nextUrl;
           if (fatal) refreshedFatal = true;
         } catch (refreshError) {
           signal.throwIfAborted();
@@ -242,44 +202,9 @@ async function fetchMediaRange(
     : new Error("Audio downloader. Media range failed");
 }
 
-async function* emitOrderedBuffers(
-  buffers: Uint8Array[],
-  isLastBatch: boolean,
-  pendingState: PendingState,
-): AsyncGenerator<AudioChunk> {
-  for (let bufferIndex = 0; bufferIndex < buffers.length; bufferIndex++) {
-    const buffer = buffers[bufferIndex];
-    pendingState.buffers.push(buffer);
-    pendingState.size += buffer.byteLength;
-
-    const isFinalBuffer = isLastBatch && bufferIndex === buffers.length - 1;
-    if (pendingState.size >= config.minChunkSize && !isFinalBuffer) {
-      yield {
-        buffer: concatBuffers(pendingState.buffers),
-        isLastChunk: false,
-      };
-      pendingState.buffers = [];
-      pendingState.size = 0;
-    }
-  }
-
-  if (isLastBatch) {
-    if (pendingState.size < 1) {
-      throw new Error("Audio downloader. Final web ABR chunk is empty");
-    }
-    yield {
-      buffer: concatBuffers(pendingState.buffers),
-      isLastChunk: true,
-    };
-    pendingState.buffers = [];
-    pendingState.size = 0;
-  }
-}
-
-async function* downloadRangesSequential(
+async function* downloadRanges(
   targetWindow: Window,
   streamUrl: string,
-  _contentLength: number,
   signal: AbortSignal,
   refreshUrl: () => Promise<string>,
   ranges: MediaRange[],
@@ -287,11 +212,10 @@ async function* downloadRangesSequential(
 ): AsyncGenerator<AudioChunk> {
   const urlState: MediaUrlState = {
     value: streamUrl,
-    refreshPromise: null,
-    version: 0,
   };
   const requestNumberRef: RequestNumberRef = { value: 0 };
-  const pendingState: PendingState = { buffers: [], size: 0 };
+  const pending: Uint8Array[] = [];
+  let pendingSize = 0;
   for (let index = 0; index < ranges.length; index++) {
     const { start, end } = ranges[index];
     const buffer = await fetchMediaRange(
@@ -304,56 +228,16 @@ async function* downloadRangesSequential(
       requestNumberRef,
       authenticated,
     );
-    for await (const chunk of emitOrderedBuffers(
-      [buffer],
-      index === ranges.length - 1,
-      pendingState,
-    ))
-      yield chunk;
-  }
-}
-
-async function* downloadRangesParallel(
-  targetWindow: Window,
-  streamUrl: string,
-  contentLength: number,
-  signal: AbortSignal,
-  refreshUrl: () => Promise<string>,
-  concurrency: number,
-  authenticated: boolean,
-): AsyncGenerator<AudioChunk> {
-  const ranges = makeFixedRanges(contentLength, 4 * 1024 * 1024);
-  const urlState: MediaUrlState = {
-    value: streamUrl,
-    refreshPromise: null,
-    version: 0,
-  };
-  const requestNumberRef: RequestNumberRef = { value: 0 };
-  const pendingState: PendingState = { buffers: [], size: 0 };
-
-  for (let index = 0; index < ranges.length; index += concurrency) {
-    signal.throwIfAborted();
-    const batch = ranges.slice(index, index + concurrency);
-    const buffers = await Promise.all(
-      batch.map(({ start, end }) =>
-        fetchMediaRange(
-          targetWindow,
-          urlState,
-          start,
-          end,
-          signal,
-          refreshUrl,
-          requestNumberRef,
-          authenticated,
-        ),
-      ),
-    );
-    for await (const chunk of emitOrderedBuffers(
-      buffers,
-      index + batch.length >= ranges.length,
-      pendingState,
-    ))
-      yield chunk;
+    pending.push(buffer);
+    pendingSize += buffer.byteLength;
+    const isLastChunk = index === ranges.length - 1;
+    if (pendingSize < config.minChunkSize && !isLastChunk) continue;
+    if (pendingSize < 1) {
+      throw new Error("Audio downloader. Final web ABR chunk is empty");
+    }
+    yield { buffer: concatBuffers(pending), isLastChunk };
+    pending.length = 0;
+    pendingSize = 0;
   }
 }
 
@@ -443,92 +327,22 @@ async function* downloadWithTransport(
   refreshUrl: () => Promise<string>,
   authenticated: boolean,
 ): AsyncGenerator<AudioChunk> {
-  switch (transport) {
-    case "parallel_4":
-      yield* downloadRangesParallel(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        4,
-        authenticated,
-      );
-      return;
-    case "parallel_2":
-      yield* downloadRangesParallel(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        2,
-        authenticated,
-      );
-      return;
-    case "parallel_8":
-      yield* downloadRangesParallel(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        8,
-        authenticated,
-      );
-      return;
-    case "stream":
-      yield* downloadStream(targetWindow, streamUrl, signal, authenticated);
-      return;
-    case "8mb":
-      yield* downloadRangesSequential(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        makeFixedRanges(contentLength, 8 * 1024 * 1024),
-        authenticated,
-      );
-      return;
-    case "4mb":
-      yield* downloadRangesSequential(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        makeFixedRanges(contentLength, 4 * 1024 * 1024),
-        authenticated,
-      );
-      return;
-    case "2mb":
-      yield* downloadRangesSequential(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        makeFixedRanges(contentLength, 2 * 1024 * 1024),
-        authenticated,
-      );
-      return;
-    case "original":
-      yield* downloadRangesSequential(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        buildMediaRanges(contentLength),
-        authenticated,
-      );
-      return;
-    default:
-      throw new Error(
-        `Audio downloader. Unknown web ABR transport: ${transport}`,
-      );
+  if (transport === "stream") {
+    yield* downloadStream(targetWindow, streamUrl, signal, authenticated);
+    return;
   }
+  const ranges =
+    transport === "original"
+      ? buildMediaRanges(contentLength)
+      : makeFixedRanges(contentLength, RANGE_SIZES[transport]);
+  yield* downloadRanges(
+    targetWindow,
+    streamUrl,
+    signal,
+    refreshUrl,
+    ranges,
+    authenticated,
+  );
 }
 
 export async function* downloadMediaRanges(
@@ -542,13 +356,9 @@ export async function* downloadMediaRanges(
   if (!Number.isSafeInteger(contentLength) || contentLength < 1)
     throw new Error("Audio downloader. Invalid media content length");
 
-  // Start with parallel_4 and move forward through the fallback list.
-  const transports = [...WEB_ABR_TRANSPORTS];
-
   let lastError: unknown;
-  for (const transport of transports) {
+  for (const transport of WEB_ABR_TRANSPORTS) {
     signal.throwIfAborted();
-    const startedAt = performance.now();
     try {
       // Do not expose any audio to the outer uploader until the selected
       // transport has downloaded the complete source audio successfully.
@@ -666,15 +476,16 @@ export async function* getWebCreatorAudioChunks(
     ) || undefined,
   );
   const sessionIndex = getConfigValue(config, "SESSION_INDEX");
-  const authenticatedAuth = { authorization, sessionIndex, delegatedSessionId };
-  const playerContexts = getConfigValue(config, "WEB_PLAYER_CONTEXT_CONFIGS");
-  const pageExperimentFlags = Object.values(
-    playerContexts && typeof playerContexts === "object" ? playerContexts : {},
-  ).flatMap((entry: { serializedExperimentFlags?: unknown } | null) =>
-    typeof entry?.serializedExperimentFlags === "string"
-      ? [entry.serializedExperimentFlags]
-      : [],
-  );
+  // The regular SAPISIDHASH request is known to work with WEB_CREATOR.
+  // An account-scoped hash is retained as a fallback for delegated sessions.
+  const standardAuthorization = await getYouTubeAuthorization(targetWindow);
+  const authenticatedAuth = {
+    authorization: standardAuthorization || authorization,
+    sessionIndex,
+    delegatedSessionId,
+  };
+  const delegatedAuth = { authorization, sessionIndex, delegatedSessionId };
+  const pageExperimentFlags = getPageExperimentFlags(config);
 
   const candidateBody = buildWebCreatorPlayerRequest(videoId, {
     visitorData,
@@ -684,7 +495,7 @@ export async function* getWebCreatorAudioChunks(
     client: Record<string, unknown>;
   };
   const clientVersion = String(candidateContext.client.clientVersion ?? "");
-  const postPlayer = (authenticated: boolean) =>
+  const postPlayer = (auth: typeof authenticatedAuth | undefined) =>
     postInnertubePlayer(
       targetWindow,
       signal,
@@ -692,22 +503,41 @@ export async function* getWebCreatorAudioChunks(
       candidateBody,
       "62",
       clientVersion,
-      authenticated ? authenticatedAuth : {},
+      auth ?? {},
+    );
+  const requiresLogin = (response: Awaited<ReturnType<typeof postPlayer>>) =>
+    /LOGIN_REQUIRED|AGE_CHECK_REQUIRED|CONTENT_CHECK_REQUIRED/.test(
+      response.playabilityStatus?.status ?? "",
     );
   const requestPlayer = async (authenticated = false) => {
-    const response = await postPlayer(authenticated);
-    const status = response.playabilityStatus?.status ?? "";
+    const primaryAuth =
+      authenticated && authenticatedAuth.authorization
+        ? authenticatedAuth
+        : undefined;
+    let response = await postPlayer(primaryAuth);
     if (
-      !authenticated &&
-      authorization &&
-      /LOGIN_REQUIRED|AGE_CHECK_REQUIRED|CONTENT_CHECK_REQUIRED/.test(status)
+      requiresLogin(response) &&
+      !primaryAuth &&
+      authenticatedAuth.authorization
     ) {
-      return { response: await postPlayer(true), authenticated: true };
+      response = await postPlayer(authenticatedAuth);
     }
-    return { response, authenticated };
+    // Some delegated accounts require the session-scoped hash, whereas
+    // ordinary signed-in playback works with the standard SAPISIDHASH.
+    if (
+      requiresLogin(response) &&
+      delegatedAuth.authorization &&
+      delegatedAuth.authorization !== authenticatedAuth.authorization
+    ) {
+      response = await postPlayer(delegatedAuth);
+    }
+    return {
+      response,
+      authenticated: Boolean(authenticatedAuth.authorization),
+    };
   };
 
-  const sessionAuthenticated = Boolean(authorization);
+  const sessionAuthenticated = Boolean(authenticatedAuth.authorization);
   const initialPlayer = await requestPlayer(sessionAuthenticated);
   const playerResponse = initialPlayer.response;
   const requestAuthenticated = initialPlayer.authenticated;
@@ -801,14 +631,26 @@ export async function* getWebCreatorAudioChunks(
         }
         throw new Error("Audio downloader. Refreshed audio URL unavailable");
       };
-      yield* downloadMediaRanges(
-        targetWindow,
-        streamUrl,
-        contentLength,
-        signal,
-        refreshUrl,
-        sessionAuthenticated,
-      );
+      try {
+        yield* downloadMediaRanges(
+          targetWindow,
+          streamUrl,
+          contentLength,
+          signal,
+          refreshUrl,
+          sessionAuthenticated,
+        );
+      } catch (error) {
+        if (error instanceof MediaHttpError && error.status === 403) {
+          const url = new URL(streamUrl);
+          throw new Error(
+            `Audio downloader. GVS rejected media (403; pot=${url.searchParams.has("pot")}; n=${url.searchParams.has("n")}; track=${format.audioTrackId ?? format.audioTrack?.id ?? "unknown"}). ` +
+              `Check PO token binding and player n-transform.`,
+            { cause: error },
+          );
+        }
+        throw error;
+      }
       return;
     } catch (error) {
       signal.throwIfAborted();

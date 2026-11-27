@@ -1,7 +1,8 @@
-import type {
-  SubtitleFormat,
-  SubtitleInlineStyle,
-  SubtitleStyledSpan,
+import {
+  type SubtitleFormat,
+  type SubtitleInlineStyle,
+  type SubtitleStyledSpan,
+  subtitleStylesEqual,
 } from "./types";
 
 type StyledFragment = {
@@ -30,14 +31,6 @@ const cloneStyle = (style: SubtitleInlineStyle): SubtitleInlineStyle => ({
 const hasStyle = (style: SubtitleInlineStyle | undefined): boolean =>
   Boolean(style?.italic || style?.bold || style?.underline);
 
-const sameStyle = (
-  left: SubtitleInlineStyle | undefined,
-  right: SubtitleInlineStyle | undefined,
-): boolean =>
-  Boolean(left?.italic) === Boolean(right?.italic) &&
-  Boolean(left?.bold) === Boolean(right?.bold) &&
-  Boolean(left?.underline) === Boolean(right?.underline);
-
 const pushStyledFragment = (
   fragments: StyledFragment[],
   text: string,
@@ -49,7 +42,7 @@ const pushStyledFragment = (
     ? cloneStyle(style as SubtitleInlineStyle)
     : undefined;
   const previous = fragments.at(-1);
-  if (previous && sameStyle(previous.style, normalizedStyle)) {
+  if (previous && subtitleStylesEqual(previous.style, normalizedStyle)) {
     previous.text += text;
     return;
   }

@@ -8,6 +8,14 @@ export type TranslationAudioResult = {
   usedLivelyVoice: boolean;
 };
 
+/** Subtitle formats belong to the local renderer, not the translation request. */
+export function getTranslationRequestVideoData({
+  subtitles: _subtitles,
+  ...videoData
+}: VideoData) {
+  return videoData;
+}
+
 type TranslationRequester = {
   translateVideoImpl(
     videoData: VideoData,

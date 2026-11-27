@@ -5,11 +5,9 @@ import { isTranslationDownloadHost } from "../../core/hostPolicies";
 import { isCustomPlaybackTarget } from "../../core/playbackPolicy";
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
-import type { CacheTranslationSuccess } from "../../types/core/cacheManager";
 import debug from "../../utils/debug";
 import { toErrorMessage } from "../../utils/errors";
 import { GM_fetch } from "../../utils/gm";
-import { votStorage } from "../../utils/storage";
 import { clamp } from "../../utils/utils";
 import VOTLocalizedError from "../../utils/VOTLocalizedError";
 import type { VideoData } from "../shared";
@@ -29,59 +27,8 @@ import {
   normalizeTranslationHelp,
   notifyTranslationFailureIfNeeded,
   requestAndApplyTranslation,
-  setTranslationCacheValue,
   type TranslationAudioResult,
-  updateTranslationAndSchedule,
 } from "./translationShared";
-
-const DOUYIN_TRANSLATION_CACHE_KEY = "VOTDouyinTranslationCache";
-
-type StoredDouyinTranslation = {
-  value: CacheTranslationSuccess;
-  expiresAt: number;
-};
-
-type StoredDouyinTranslations = Record<string, StoredDouyinTranslation>;
-
-async function getStoredDouyinTranslation(
-  cacheKey: string,
-): Promise<CacheTranslationSuccess | undefined> {
-  const cache = await votStorage.getRaw<StoredDouyinTranslations>(
-    DOUYIN_TRANSLATION_CACHE_KEY,
-    {},
-  );
-
-  const item = cache[cacheKey];
-
-  if (!item) {
-    return undefined;
-  }
-
-  if (item.expiresAt <= Date.now()) {
-    delete cache[cacheKey];
-    await votStorage.setRaw(DOUYIN_TRANSLATION_CACHE_KEY, cache);
-    return undefined;
-  }
-
-  return item.value;
-}
-
-async function setStoredDouyinTranslation(
-  cacheKey: string,
-  value: CacheTranslationSuccess,
-): Promise<void> {
-  const cache = await votStorage.getRaw<StoredDouyinTranslations>(
-    DOUYIN_TRANSLATION_CACHE_KEY,
-    {},
-  );
-
-  cache[cacheKey] = {
-    value,
-    expiresAt: Date.now() + YANDEX_TTL_MS,
-  };
-
-  await votStorage.setRaw(DOUYIN_TRANSLATION_CACHE_KEY, cache);
-}
 
 type StopSmartVolumeDuckingOptions = {
   /**
@@ -276,9 +223,7 @@ function getPlayerMediaElement(
 }
 
 function getAutoplayRecoveryButtonText(): string {
-  return localizationProvider.lang === "ru"
-    ? "Запустить звук перевода"
-    : "Start translated audio";
+  return localizationProvider.get("VOTStartTranslatedAudio");
 }
 
 function setPendingAutoplayDebugValue(
@@ -1259,7 +1204,7 @@ export function scheduleTranslationRefresh(this: VideoHandler): void {
   }, refreshDelayMs);
 }
 
-async function requestApplyAndCacheTranslation(
+async function requestAndApplyTranslationWithoutCache(
   self: VideoHandler,
   options: {
     videoData: VideoData;
@@ -1267,11 +1212,6 @@ async function requestApplyAndCacheTranslation(
     responseLang: ResponseLang;
     translationHelp: VideoData["translationHelp"] | undefined;
     actionContext: ActionContext;
-    cacheKey: string;
-    cacheVideoId: string;
-    cacheRequestLang: string;
-    cacheResponseLang: string;
-    onBeforeCache?: (result: TranslationAudioResult) => Promise<void> | void;
   },
 ): Promise<TranslationAudioResult | null> {
   const translateRes = await requestAndApplyTranslation({
@@ -1291,34 +1231,33 @@ async function requestApplyAndCacheTranslation(
   });
   if (!translateRes) return null;
 
-  if (options.onBeforeCache) {
-    await options.onBeforeCache(translateRes);
+  const subsCacheKey = self.videoData
+    ? self.getSubtitlesCacheKey(
+        options.actionContext.videoId,
+        self.videoData.detectedLanguage,
+        self.videoData.responseLanguage,
+      )
+    : null;
+  const cachedSubs = subsCacheKey
+    ? self.cacheManager.getSubtitles(subsCacheKey)
+    : null;
+
+  // A new translation must not keep subtitles from another language pair.
+  if (
+    !cachedSubs?.some(
+      (item) =>
+        item.source === "yandex" &&
+        item.translatedFromLanguage === options.videoData.detectedLanguage &&
+        item.language === options.videoData.responseLanguage,
+    )
+  ) {
+    if (subsCacheKey) self.cacheManager.deleteSubtitles(subsCacheKey);
+    self.subtitles = [];
+    self.subtitlesCacheKey = null;
   }
 
-  setTranslationCacheValue({
-    cacheKey: options.cacheKey,
-    setTranslation: (key, value) =>
-      self.cacheManager.setTranslation(key, value),
-    videoId: options.cacheVideoId,
-    requestLang: options.cacheRequestLang,
-    responseLang: options.cacheResponseLang,
-    fallbackUrl: translateRes.url,
-    downloadTranslationUrl: self.downloadTranslationUrl,
-    usedLivelyVoice: translateRes.usedLivelyVoice,
-  });
-
-  if (options.videoData.host === "douyin") {
-    const cachedValue = self.cacheManager.getTranslation(options.cacheKey);
-
-    if (cachedValue) {
-      await setStoredDouyinTranslation(options.cacheKey, cachedValue);
-
-      debug.log("[FORK][douyin] persistent translation cache saved", {
-        cacheKey: options.cacheKey,
-        videoId: options.cacheVideoId,
-      });
-    }
-  }
+  // Translation audio cache disabled for every site.
+  // Subtitle caching and in-flight request deduplication remain enabled.
 
   return translateRes;
 }
@@ -1333,50 +1272,27 @@ export async function refreshTranslationAudio(
   if (this.isRefreshingTranslation) return;
   const videoId = this.videoData.videoId;
   if (!videoId) return;
+  const videoData = this.videoData;
+  const requestLang =
+    this.translateFromLang === "auto"
+      ? videoData.detectedLanguage
+      : this.translateFromLang;
+  const responseLang = videoData.responseLanguage;
   if (this.actionsAbortController?.signal?.aborted) {
     this.resetActionsAbortController("refreshTranslationAudio");
   }
   this.isRefreshingTranslation = true;
   const actionContext: ActionContext = { gen: this.actionsGeneration, videoId };
   const normalizedTranslationHelp = normalizeTranslationHelp(
-    this.videoData.translationHelp,
+    videoData.translationHelp,
   );
   try {
-    const translateRes = await requestApplyAndCacheTranslation(this, {
+    const translateRes = await requestAndApplyTranslationWithoutCache(this, {
       videoData,
-      requestLang: resolvedReqLang,
-      responseLang: resLang,
+      requestLang,
+      responseLang,
       translationHelp: normalizedTranslationHelp,
       actionContext,
-      cacheKey,
-      cacheVideoId: VIDEO_ID,
-      cacheRequestLang: resolvedReqLang,
-      cacheResponseLang: responseLang,
-      onBeforeCache: async () => {
-        const subsCacheKey = this.videoData
-          ? this.getSubtitlesCacheKey(
-              VIDEO_ID,
-              this.videoData.detectedLanguage,
-              this.videoData.responseLanguage,
-            )
-          : null;
-        const cachedSubs = subsCacheKey
-          ? this.cacheManager.getSubtitles(subsCacheKey)
-          : null;
-
-        if (
-          !cachedSubs?.some(
-            (item) =>
-              item.source === "yandex" &&
-              item.translatedFromLanguage === videoData.detectedLanguage &&
-              item.language === videoData.responseLanguage,
-          )
-        ) {
-          if (subsCacheKey) this.cacheManager.deleteSubtitles(subsCacheKey);
-          this.subtitles = [];
-          this.subtitlesCacheKey = null;
-        }
-      },
     });
     if (!translateRes) return;
   } finally {
@@ -1388,6 +1304,7 @@ export function proxifyAudio(this: VideoHandler, audioUrl: string): string {
   const proxiedAudioUrl = proxifyYandexAudioUrl(audioUrl, {
     translateProxyEnabled: this.data?.translateProxyEnabled,
     proxyWorkerHost: this.data?.proxyWorkerHost,
+    proxyServerPreset: this.data?.proxyServerPreset,
   });
   if (proxiedAudioUrl !== audioUrl) {
     debug.log(`[FORK] Audio proxied via ${proxiedAudioUrl}`);
@@ -1427,6 +1344,7 @@ export async function handleProxySettingsChanged(
 export function isMultiMethodS3(this: VideoHandler, url: string): boolean {
   return isYandexAudioUrlOrProxy(url, {
     proxyWorkerHost: this.data?.proxyWorkerHost,
+    proxyServerPreset: this.data?.proxyServerPreset,
   });
 }
 
@@ -1700,6 +1618,25 @@ async function recoverAfterMediaAbort(
   return true;
 }
 
+// TikTok CSP blocks direct media loads from vtrans.s3-private.mds.yandex.net.
+// Fetch through the userscript manager, then play from a local object URL.
+async function fetchTikTokTranslationBlobUrl(
+  remoteUrl: string,
+): Promise<string> {
+  const response = await GM_fetch(remoteUrl, {
+    forceGmXhr: true,
+    timeout: 30000,
+  });
+  if (!response.ok) throw new Error(`Translation MP3 HTTP ${response.status}`);
+  const blob = await response.blob();
+  if (!blob.size) throw new Error("Empty translation MP3 blob");
+  return URL.createObjectURL(
+    blob.type.startsWith("audio/")
+      ? blob
+      : new Blob([blob], { type: "audio/mpeg" }),
+  );
+}
+
 export async function updateTranslation(
   this: VideoHandler,
   audioUrl: string,
@@ -1729,6 +1666,38 @@ export async function updateTranslation(
     );
   }
   if (this.isActionStale(actionContext)) return;
+
+  if (
+    (location.hostname === "www.tiktok.com" ||
+      location.hostname === "m.tiktok.com") &&
+    /^https:\/\/vtrans\.s3-private\.mds\.yandex\.net\//i.test(
+      this.unproxifyAudio(nextAudioUrl),
+    )
+  ) {
+    try {
+      const remoteUrl = this.unproxifyAudio(nextAudioUrl);
+      const cached = this.tiktokTranslationBlob;
+      if (cached?.remoteUrl === remoteUrl) nextAudioUrl = cached.blobUrl;
+      else {
+        const blobUrl = await fetchTikTokTranslationBlobUrl(remoteUrl);
+        if (this.isActionStale(actionContext)) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+        this.tiktokTranslationBlob = { remoteUrl, blobUrl };
+        nextAudioUrl = blobUrl;
+        console.info("[FORK][TikTok audio] MP3 loaded via GM_xmlhttpRequest", {
+          blobUrl,
+        });
+        // Revoke the previous URL after the player switches sources.
+        if (cached?.blobUrl)
+          setTimeout(() => URL.revokeObjectURL(cached.blobUrl), 5000);
+      }
+    } catch (error) {
+      console.error("[FORK][TikTok audio] MP3 blob loading failed", error);
+    }
+  }
+
   this.externalTranslationSourceUrl = null;
 
   let applyResult = await applyTranslationSource(
@@ -1743,6 +1712,7 @@ export async function updateTranslation(
   if (
     applyResult.status === "error" &&
     applyResult.didSetSource &&
+    this.data?.translateProxyEnabled !== 2 &&
     !this.isActionStale(actionContext)
   ) {
     const directUrl = this.unproxifyAudio(nextAudioUrl);
@@ -1934,8 +1904,8 @@ export async function translateFunc(
   this: VideoHandler,
   VIDEO_ID: string,
   _isStream: boolean,
-  requestLang: string,
-  responseLang: string,
+  requestLang: RequestLang,
+  responseLang: ResponseLang,
   translationHelp?: VideoData["translationHelp"],
 ): Promise<void> {
   await this.waitForPendingStopTranslate();
@@ -2058,99 +2028,17 @@ export async function translateFunc(
     }
     const reqLang = resolvedRequestLang;
     const resLang = responseLang;
-    const applyTranslationUrl = async (url: string) =>
-      await updateTranslationAndSchedule({
-        url,
-        actionContext,
-        isActionStale: (ctx) => this.isActionStale(ctx),
-        updateTranslation: (nextUrl, ctx) =>
-          this.updateTranslation(nextUrl, ctx),
-        scheduleTranslationRefresh: () => this.scheduleTranslationRefresh(),
-      });
-    const reprocessCurrentYouTube =
-      this.translationHandler.isYouTubeReprocessActive(VIDEO_ID);
-    let cachedEntry = reprocessCurrentYouTube
-      ? undefined
-      : this.cacheManager.getTranslation(cacheKey);
-
-    if (!cachedEntry && videoData.host === "douyin") {
-      cachedEntry = await getStoredDouyinTranslation(cacheKey);
-
-      if (cachedEntry) {
-        this.cacheManager.setTranslation(cacheKey, cachedEntry);
-        debug.log("[FORK][douyin] persistent cached translation was found", {
-          cacheKey,
-          videoId: VIDEO_ID,
-        });
-      }
-    }
-    if (cachedEntry?.url) {
-      try {
-        const updated = await applyTranslationUrl(cachedEntry.url);
-        if (updated && this.hasActiveSource()) {
-          this.activeVoiceMode = cachedEntry.useLivelyVoice
-            ? "lively"
-            : "standard";
-          this.uiManager.votOverlayView?.syncVoiceModeUi();
-          debug.log("[translateFunc] Cached translation was received");
-          return;
-        }
-
-        debug.log(
-          "[translateFunc] Cached translation did not activate source, dropping cache and requesting fresh URL",
-        );
-      } catch (err) {
-        debug.log(
-          "[translateFunc] Cached translation failed, dropping cache and requesting fresh URL",
-          err,
-        );
-      }
-
-      if (typeof this.cacheManager.deleteTranslation === "function") {
-        this.cacheManager.deleteTranslation(cacheKey);
-      } else {
-        this.cacheManager.clear();
-      }
-    }
+    // Always request translation from the server; never read local audio cache.
     // Do not short-circuit on cached failures.
     // Users must be able to retry immediately (especially after changing
     // proxy settings or recovering from transient backend issues).
 
-    const translateRes = await requestApplyAndCacheTranslation(this, {
+    const translateRes = await requestAndApplyTranslationWithoutCache(this, {
       videoData,
       requestLang: reqLang,
       responseLang: resLang,
       translationHelp: normalizedTranslationHelp,
       actionContext,
-      cacheKey,
-      cacheVideoId: VIDEO_ID,
-      cacheRequestLang: resolvedRequestLang,
-      cacheResponseLang: responseLang,
-      onBeforeCache: async () => {
-        // Invalidate subtitles cache if there is no matching subtitle.
-        const subsCacheKey = this.videoData
-          ? this.getSubtitlesCacheKey(
-              VIDEO_ID,
-              this.videoData.detectedLanguage,
-              this.videoData.responseLanguage,
-            )
-          : null;
-        const cachedSubs = subsCacheKey
-          ? this.cacheManager.getSubtitles(subsCacheKey)
-          : null;
-        if (
-          !cachedSubs?.some(
-            (item) =>
-              item.source === "yandex" &&
-              item.translatedFromLanguage === videoData.detectedLanguage &&
-              item.language === videoData.responseLanguage,
-          )
-        ) {
-          if (subsCacheKey) this.cacheManager.deleteSubtitles(subsCacheKey);
-          this.subtitles = [];
-          this.subtitlesCacheKey = null;
-        }
-      },
     });
 
     debug.log("[translateRes]", translateRes);

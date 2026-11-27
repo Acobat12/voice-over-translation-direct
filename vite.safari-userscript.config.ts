@@ -1,54 +1,33 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  sitesCoursehunterLike,
-  sitesInvidious,
-  sitesPeertube,
-  sitesPiped,
-  sitesProxiTok,
-} from "@vot.js/shared/alternativeUrls";
 import type { Plugin, UserConfig } from "vite";
 import { defineConfig, build as viteBuild } from "vite";
 import type { MonkeyUserScript } from "vite-plugin-monkey";
 import monkey from "vite-plugin-monkey";
-import { contentUrl, repositoryUrl } from "./src/config/config";
+import { repositoryUrl } from "./src/config/config";
 import {
   getSafariMainUserscriptAliases,
   getSafariUserscriptAliases,
 } from "./vite.browser.alias";
+import {
+  buildUserscriptMeta,
+  getAvailableLocales,
+  getHeaders,
+  LOCAL_USERSCRIPT_MATCHES,
+  type UserscriptBranch,
+} from "./vite.userscript.shared";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const srcDir = path.resolve(__dirname, "src");
 const distDir = path.resolve(__dirname, "dist");
-const localesDir = path.resolve(srcDir, "localization", "locales");
-const localeHeadersDir = path.resolve(localesDir, "headers");
-const hashesPath = path.resolve(srcDir, "localization", "hashes.json");
-const metaHeadersPath = path.resolve(srcDir, "headers.json");
-const priorityLocales = ["auto", "en", "ru"] as const;
-
-type PriorityLocale = (typeof priorityLocales)[number];
-type HashesJSON = Record<string, unknown>;
-type UserscriptBranch = "dev" | "master";
-
-interface LocaleHeadersFile {
-  name: string;
-  description: string;
-}
-
 type UserscriptMetaObject = Record<string, unknown>;
 
-const USERSCRIPT_ALWAYS_EXCLUDED_MATCHES = new Set<string>();
-const USERSCRIPT_PROD_EXCLUDED_MATCHES = new Set([
-  "file://*/*",
-  "*://localhost/*",
-  "*://127.0.0.1/*",
-]);
-
-function readJsonFile<T>(filePath: string): T {
-  return JSON.parse(fs.readFileSync(filePath, "utf8")) as T;
-}
+const safariMetaOptions = {
+  excludedProductionMatches: LOCAL_USERSCRIPT_MATCHES,
+  connectToRepository: true,
+};
 
 function readFileUtf8(filePath: string): string {
   return fs.readFileSync(filePath, "utf8");
@@ -56,13 +35,6 @@ function readFileUtf8(filePath: string): string {
 
 function writeFileUtf8(filePath: string, content: string): void {
   fs.writeFileSync(filePath, content, "utf8");
-}
-
-function getHeaders<T = MonkeyUserScript>(lang?: string): T {
-  const headersPath = lang
-    ? path.resolve(localeHeadersDir, `${lang}.json`)
-    : metaHeadersPath;
-  return readJsonFile<T>(headersPath);
 }
 
 function formatMetaLine(key: string, value: string): string {
@@ -96,24 +68,6 @@ function getMetaLocalizedValue(value: unknown): {
         : undefined;
 
   return { root, locales };
-}
-
-function _appendSuffixLocalized(
-  value: unknown,
-  suffix: string,
-): Record<string, string> {
-  const localized = getMetaLocalizedValue(value);
-  const baseEntries = {
-    ...(localized.root ? { "": localized.root } : {}),
-    ...localized.locales,
-  };
-
-  return Object.fromEntries(
-    Object.entries(baseEntries).map(([locale, localeValue]) => [
-      locale,
-      localeValue.endsWith(suffix) ? localeValue : `${localeValue}${suffix}`,
-    ]),
-  );
 }
 
 function renderUserscriptHeader(meta: UserscriptMetaObject): string {
@@ -196,173 +150,6 @@ function patchSafariMainHeader(filePath: string): void {
       ),
   );
   writeFileUtf8(filePath, nextContent);
-}
-
-async function getAvailableLocales(): Promise<string[]> {
-  const hashesRaw = await fs.promises.readFile(hashesPath, "utf8");
-  const hashes = JSON.parse(hashesRaw) as HashesJSON;
-  const locales = Object.keys(hashes).filter(
-    (locale) => !priorityLocales.includes(locale as PriorityLocale),
-  );
-  return [...priorityLocales, ...locales];
-}
-
-function altUrlsToMatch(): string[] {
-  return [
-    sitesInvidious,
-    sitesPiped,
-    sitesProxiTok,
-    sitesPeertube,
-    sitesCoursehunterLike,
-  ].flatMap((sites) =>
-    sites.map((site) => {
-      const dotCount = site.match(/\./g)?.length ?? 0;
-      const isSubdomain = dotCount > 1;
-      return `*://${isSubdomain ? "" : "*."}${site}/*`;
-    }),
-  );
-}
-
-function filterUserscriptBaseMatches(
-  matches: string[],
-  repoBranch: UserscriptBranch,
-): string[] {
-  return matches.filter((pattern) => {
-    if (USERSCRIPT_ALWAYS_EXCLUDED_MATCHES.has(pattern)) return false;
-    if (repoBranch !== "dev" && USERSCRIPT_PROD_EXCLUDED_MATCHES.has(pattern)) {
-      return false;
-    }
-    return true;
-  });
-}
-
-function buildLocalizedMetaBase(repoBranch: UserscriptBranch): Pick<
-  MonkeyUserScript,
-  "name" | "description" | "match"
-> & {
-  localeProps: Record<string, string>;
-} {
-  const baseMeta = getHeaders<MonkeyUserScript>();
-  const files = fs.readdirSync(localeHeadersDir);
-  const baseName =
-    typeof baseMeta.name === "string"
-      ? baseMeta.name
-      : (baseMeta.name?.default ?? "");
-  const baseDescription =
-    typeof baseMeta.description === "string"
-      ? baseMeta.description
-      : (baseMeta.description?.default ?? "");
-  const nameLocales: Record<string, string> = { "": baseName };
-  const descriptionLocales: Record<string, string> = { "": baseDescription };
-
-  for (const file of files) {
-    const localeHeaders = readJsonFile<LocaleHeadersFile>(
-      path.resolve(localeHeadersDir, file),
-    );
-    const locale = file.substring(0, 2);
-    nameLocales[locale] = localeHeaders.name;
-    descriptionLocales[locale] = localeHeaders.description;
-  }
-
-  const baseMatch = filterUserscriptBaseMatches(
-    Array.isArray(baseMeta.match) ? (baseMeta.match as string[]) : [],
-    repoBranch,
-  );
-  const match = Array.from(new Set([...baseMatch, ...altUrlsToMatch()]));
-
-  const localeProps: Record<string, string> = {};
-  for (const [locale, value] of Object.entries(nameLocales)) {
-    if (!locale) continue;
-    localeProps[`name:${locale}`] = value;
-  }
-  for (const [locale, value] of Object.entries(descriptionLocales)) {
-    if (!locale) continue;
-    localeProps[`description:${locale}`] = value;
-  }
-
-  return {
-    name: nameLocales,
-    description: descriptionLocales,
-    match,
-    localeProps,
-  };
-}
-
-function buildMainUserscriptMeta(
-  filename: string,
-  repoBranch: UserscriptBranch,
-  repoUpdateBranch: UserscriptBranch,
-): MonkeyUserScript {
-  const baseMeta = getHeaders<MonkeyUserScript>();
-  const localized = buildLocalizedMetaBase(repoBranch);
-  const finalUrl = `${contentUrl}/${repoUpdateBranch}/dist/${filename}.user.js`;
-  const baseConnect = Array.isArray(baseMeta.connect) ? baseMeta.connect : [];
-  const safariNameLocales = Object.fromEntries(
-    Object.entries(localized.name).map(([locale, value]) => [
-      locale,
-      value ? `${value} Safari` : value,
-    ]),
-  );
-
-  const userscript: MonkeyUserScript = {
-    ...baseMeta,
-    name: safariNameLocales,
-    description: localized.description,
-    match: localized.match,
-    homepageURL: repositoryUrl,
-    updateURL: finalUrl,
-    downloadURL: finalUrl,
-    supportURL: `${repositoryUrl}/issues`,
-    connect: Array.from(new Set([...baseConnect, "raw.githubusercontent.com"])),
-  };
-
-  Object.assign(userscript as Record<string, unknown>, localized.localeProps);
-  for (const [locale, value] of Object.entries(safariNameLocales)) {
-    if (!locale) continue;
-    (userscript as Record<string, unknown>)[`name:${locale}`] = value;
-  }
-  return userscript;
-}
-
-function buildPageUserscriptMeta(
-  repoBranch: UserscriptBranch,
-  repoUpdateBranch: UserscriptBranch,
-): MonkeyUserScript {
-  const baseMeta = getHeaders<MonkeyUserScript>();
-  const localized = buildLocalizedMetaBase(repoBranch);
-  const finalUrl = `${contentUrl}/${repoUpdateBranch}/dist/vot-safari-page.user.js`;
-  const pageNameLocales = Object.fromEntries(
-    Object.entries(localized.name).map(([locale, value]) => [
-      locale,
-      value ? `${value} Safari Page Runtime` : value,
-    ]),
-  );
-  const baseConnect = Array.isArray(baseMeta.connect) ? baseMeta.connect : [];
-
-  const userscript: MonkeyUserScript = {
-    ...baseMeta,
-    name: pageNameLocales,
-    description: localized.description,
-    license: "MIT",
-    match: localized.match,
-    homepageURL: repositoryUrl,
-    source: `${repositoryUrl}.git`,
-    updateURL: finalUrl,
-    downloadURL: finalUrl,
-    supportURL: `${repositoryUrl}/issues`,
-    connect: Array.from(new Set([...baseConnect, "raw.githubusercontent.com"])),
-    grant: "none",
-    runAt: "document-start",
-    "inject-into": "page",
-  } as MonkeyUserScript;
-
-  Object.assign(userscript as Record<string, unknown>, localized.localeProps);
-  for (const [locale, value] of Object.entries(pageNameLocales)) {
-    if (!locale) continue;
-    (userscript as Record<string, unknown>)[`name:${locale}`] = value;
-  }
-
-  return userscript;
 }
 
 function createDefineMeta({
@@ -483,7 +270,22 @@ function safariUserscriptPipelinePlugin({
       await buildSafariBundle({
         entry: path.resolve(srcDir, "runtime", "safari", "pageRuntime.ts"),
         fileName: "vot-safari-page.user.js",
-        userscript: buildPageUserscriptMeta(repoBranch, repoUpdateBranch),
+        userscript: {
+          ...buildUserscriptMeta(
+            "vot-safari-page",
+            repoBranch,
+            repoUpdateBranch,
+            {
+              ...safariMetaOptions,
+              nameSuffix: " Safari Page Runtime",
+            },
+          ),
+          license: "MIT",
+          source: `${repositoryUrl}.git`,
+          grant: "none",
+          runAt: "document-start",
+          "inject-into": "page",
+        } as MonkeyUserScript,
         define: defineMeta,
         debugMode,
         productionOptimize,
@@ -504,10 +306,11 @@ function safariUserscriptPipelinePlugin({
       await buildSafariBundle({
         entry: path.resolve(srcDir, "index.ts"),
         fileName: "vot-safari.user.js",
-        userscript: buildMainUserscriptMeta(
+        userscript: buildUserscriptMeta(
           "vot-safari",
           repoBranch,
           repoUpdateBranch,
+          { ...safariMetaOptions, nameSuffix: " Safari" },
         ),
         define: defineMeta,
         debugMode,
@@ -542,7 +345,7 @@ export default defineConfig(async ({ command, mode }) => {
   const isDevCommand = command === "serve";
   const diagnosticMode = mode === "diagnostic" || mode === "safari-diag";
   const debugMode = isDevCommand || mode === "development" || diagnosticMode;
-  const productionOptimize = false;
+  const productionOptimize = !debugMode;
   const mainHeaders = getHeaders<Record<string, unknown>>();
   const isBetaVersion = String(mainHeaders.version).includes("beta");
   const repoBranch: UserscriptBranch =

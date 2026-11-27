@@ -1,24 +1,36 @@
 {
   "main": {
-    "id": "e6cda1d3b93d5054",
+    "id": "cb8d3ca51ca417ef",
     "type": "split",
     "children": [
       {
-        "id": "f0016d998bd99bb3",
+        "id": "84a9dd7cef58972f",
         "type": "tabs",
         "children": [
           {
-            "id": "dfa13082311797d8",
+            "id": "3c42070d9842d383",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "README.md",
+                "file": "scripts/wiki-gen/SITES-RU.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "README"
+              "title": "SITES-RU"
+            }
+          },
+          {
+            "id": "612650fdaff09860",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.15.1"
+              },
+              "icon": "lucide-book-up",
+              "title": "примечания к выпуску 1.15.1"
             }
           }
         ]
@@ -27,28 +39,30 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "2d16a3ae7d49e1d2",
+    "id": "c709203292ff7d43",
     "type": "split",
     "children": [
       {
-        "id": "8d09c9ca94c7cfaf",
+        "id": "315f075259c96745",
         "type": "tabs",
         "children": [
           {
-            "id": "42c3e717ec5da508",
+            "id": "578727f5ee3f9873",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
               "state": {
                 "sortOrder": "alphabetical",
-                "autoReveal": false
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
               },
               "icon": "lucide-folder-closed",
               "title": "Файловый менеджер"
             }
           },
           {
-            "id": "cff6468e95b38baf",
+            "id": "838a9a9c874dbcf1",
             "type": "leaf",
             "state": {
               "type": "search",
@@ -65,11 +79,14 @@
             }
           },
           {
-            "id": "4f0f7226fe92acfd",
+            "id": "27f77f34b18c3115",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
-              "state": {},
+              "state": {
+                "showSearch": false,
+                "searchQuery": ""
+              },
               "icon": "lucide-bookmark",
               "title": "Закладки"
             }
@@ -81,20 +98,20 @@
     "width": 300
   },
   "right": {
-    "id": "25f3802e0bf5efe5",
+    "id": "5039257c9d0f4809",
     "type": "split",
     "children": [
       {
-        "id": "21c6d11cbff69a8a",
+        "id": "cc4cbea98db035cc",
         "type": "tabs",
         "children": [
           {
-            "id": "214e6289393a9435",
+            "id": "c7a59f441b52d110",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "README.md",
+                "file": "scripts/wiki-gen/SITES-RU.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,25 +121,25 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Обратные ссылки для README"
+              "title": "Обратные ссылки"
             }
           },
           {
-            "id": "fae56056bddd3a59",
+            "id": "ad3133902af0272c",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "README.md",
+                "file": "scripts/wiki-gen/SITES-RU.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Исходящие ссылки из README"
+              "title": "Исходящие ссылки"
             }
           },
           {
-            "id": "c046c5a10ea71cfb",
+            "id": "0570dc64917af9ab",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -137,7 +154,7 @@
             }
           },
           {
-            "id": "546277e63ef17272",
+            "id": "401b596a4e4e48c0",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -151,18 +168,18 @@
             }
           },
           {
-            "id": "20817608e7da8de1",
+            "id": "399f2904973db963",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
-                "file": "README.md",
+                "file": "scripts/wiki-gen/SITES-RU.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Структура README"
+              "title": "Структура"
             }
           }
         ]
@@ -183,17 +200,6 @@
       "bases:Создать новую базу": false
     }
   },
-  "active": "42c3e717ec5da508",
-  "lastOpenFiles": [
-    "README-EN.md",
-    "images/popup.png",
-    "images",
-    "Новая папка",
-    "popup.png",
-    "README.md",
-    "image 20260322022316.png",
-    "Pasted image 20260322022316.png",
-    "Pasted image 20260322022241.png",
-    "Pasted image 20260322022035.png"
-  ]
+  "active": "3c42070d9842d383",
+  "lastOpenFiles": []
 }

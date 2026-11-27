@@ -1,10 +1,15 @@
 import type { VideoDataSubtitle } from "@vot.js/core/types/client";
 import type { ServiceConf, VideoService } from "@vot.js/ext/types/service";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
-
 import type { StorageData } from "../types/storage";
 import debug from "../utils/debug";
 import { containsCrossShadow } from "../utils/dom";
+import { hasResolvableMediaSource } from "../utils/media";
+import {
+  getPageKey,
+  isMobileYouTubePage,
+  isVkPage,
+} from "../utils/pageContext";
 import type { VideoData } from "../videoHandler/shared";
 import { findConnectedContainerBySelector } from "./containerResolution";
 import {
@@ -14,13 +19,8 @@ import {
 } from "./lifecycleShared";
 import type { SourceAudioAvailabilityState } from "./sourceAudioAvailability";
 
-function isVkProbeHost(): boolean {
-  return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
-    String(globalThis.location.hostname || ""),
-  );
-}
-
 interface LifecycleOverlayView {
+  showUpdateNoticeForVideo?(videoKey: string): Promise<void>;
   votButton: { container: HTMLElement; opacity: number };
   votMenu: { container: HTMLElement; hidden: boolean };
 }
@@ -80,14 +80,8 @@ export class VideoLifecycleController {
     this.host = host;
   }
 
-  private isMobileYouTubeDebugHost(): boolean {
-    return /^(m|music)\.youtube\.com$/i.test(
-      String(globalThis.location.hostname || ""),
-    );
-  }
-
   private logMobileOverlay(message: string, details?: unknown): void {
-    if (!this.isMobileYouTubeDebugHost()) {
+    if (!isMobileYouTubePage()) {
       return;
     }
 
@@ -105,18 +99,12 @@ export class VideoLifecycleController {
     );
   }
 
-  private getCurrentPageKey(): string {
-    return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`;
-  }
-
   private shouldKeepOverlayAlive(expectedPageKey?: string): boolean {
     if (!this.isGracefulMobileYouTubeSite()) {
       return false;
     }
 
-    return (
-      this.getCurrentPageKey() === (expectedPageKey ?? this.getCurrentPageKey())
-    );
+    return getPageKey() === (expectedPageKey ?? getPageKey());
   }
 
   private isStale(generation: number) {
@@ -167,19 +155,9 @@ export class VideoLifecycleController {
     this.host.queueOverlayAutoHide?.();
   }
 
-  private hasResolvableMediaSource(): boolean {
-    const { video } = this.host;
-    if (video.currentSrc || video.src || video.srcObject) {
-      return true;
-    }
-
-    const source = video.querySelector("source");
-    return Boolean(source?.getAttribute("src") || source?.src);
-  }
-
   teardown() {
     this.logMobileOverlay("teardown controller", {
-      pageKey: this.getCurrentPageKey(),
+      pageKey: getPageKey(),
       videoId: this.host.videoData?.videoId,
     });
     this.clearDeferredAutoStartup();
@@ -351,7 +329,7 @@ export class VideoLifecycleController {
 
   private async runSetCanPlayOnce() {
     const sourceKey = this.getCurrentSourceKey();
-    const pageKey = this.getCurrentPageKey();
+    const pageKey = getPageKey();
     if (
       this.host.videoData?.videoId &&
       sourceKey === this.lastSetCanPlaySourceKey
@@ -387,6 +365,9 @@ export class VideoLifecycleController {
         err,
       );
       this.host.videoData = undefined;
+      void this.host.uiManager.votOverlayView.showUpdateNoticeForVideo?.(
+        sourceKey,
+      );
       debug.log(
         `[VideoLifecycle] keeping overlay visible despite getVideoData failure`,
         { sourceKey },
@@ -394,7 +375,7 @@ export class VideoLifecycleController {
       this.logMobileOverlay("keep overlay after getVideoData failure", {
         sourceKey,
         pageKey,
-        hasResolvableMediaSource: this.hasResolvableMediaSource(),
+        hasResolvableMediaSource: hasResolvableMediaSource(this.host.video),
       });
       this.showOverlayButton(this.host.uiManager.votOverlayView);
       this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });
@@ -410,7 +391,10 @@ export class VideoLifecycleController {
     }
 
     this.host.videoData = nextVideoData;
-    if (isVkProbeHost()) {
+    void this.host.uiManager.votOverlayView.showUpdateNoticeForVideo?.(
+      nextVideoData?.videoId || sourceKey,
+    );
+    if (isVkPage()) {
       console.log("[FORK][VK probe] videoData", {
         videoId: nextVideoData?.videoId,
         host: nextVideoData?.host,
@@ -479,7 +463,7 @@ export class VideoLifecycleController {
       typeof expectedSourceKey === "string" && expectedSourceKey.length > 0
         ? expectedSourceKey
         : this.getCurrentSourceKey();
-    const pageKey = this.getCurrentPageKey();
+    const pageKey = getPageKey();
 
     if (this.shouldAbortHandleSrcChanged(sessionId, "before start")) {
       return;
@@ -545,7 +529,7 @@ export class VideoLifecycleController {
       this.logMobileOverlay("keep overlay without resolved videoId", {
         sourceKey,
         pageKey,
-        hasResolvableMediaSource: this.hasResolvableMediaSource(),
+        hasResolvableMediaSource: hasResolvableMediaSource(this.host.video),
       });
       this.showOverlayButton(overlayView);
       this.host.syncSourceAudioAvailabilityUi({ forceVisible: true });

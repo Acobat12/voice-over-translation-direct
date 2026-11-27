@@ -1,4 +1,8 @@
-import type { SubtitleInlineStyle, SubtitleStyledSpan } from "./types";
+import {
+  type SubtitleInlineStyle,
+  type SubtitleStyledSpan,
+  subtitleStylesEqual,
+} from "./types";
 
 type StyledTextSegment = {
   text: string;
@@ -25,14 +29,6 @@ const toTokenStyle = (
   return Object.keys(tokenStyle).length > 0 ? tokenStyle : undefined;
 };
 
-const stylesEqual = (
-  left: SubtitleInlineStyle | undefined,
-  right: SubtitleInlineStyle | undefined,
-): boolean =>
-  Boolean(left?.italic) === Boolean(right?.italic) &&
-  Boolean(left?.bold) === Boolean(right?.bold) &&
-  Boolean(left?.underline) === Boolean(right?.underline);
-
 const pushSegment = (
   segments: StyledTextSegment[],
   text: string,
@@ -42,7 +38,7 @@ const pushSegment = (
 
   const tokenStyle = toTokenStyle(style);
   const previous = segments.at(-1);
-  if (previous && stylesEqual(previous.style, tokenStyle)) {
+  if (previous && subtitleStylesEqual(previous.style, tokenStyle)) {
     previous.text += text;
     return;
   }

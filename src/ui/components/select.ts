@@ -148,46 +148,28 @@ export default class Select<
     this.singleSelectItemHandle(item);
   }
 
+  private getContentItem(event: Event): HTMLElement | null {
+    if (!(event.target instanceof HTMLElement)) return null;
+    const item = event.target.closest<HTMLElement>(".vot-select-content-item");
+    return item && !item.inert && this.contentList?.contains(item)
+      ? item
+      : null;
+  }
+
   private readonly onContentItemClick = (event: Event) => {
     if (this.ignoreNextContentClick) {
       this.ignoreNextContentClick = false;
       return;
     }
 
-    if (!(event.target instanceof HTMLElement)) {
-      return;
-    }
-
-    const contentItem = event.target.closest<HTMLElement>(
-      ".vot-select-content-item",
-    );
-    if (
-      !contentItem ||
-      contentItem.inert ||
-      !this.contentList?.contains(contentItem)
-    ) {
-      return;
-    }
-
+    const contentItem = this.getContentItem(event);
+    if (!contentItem) return;
     this.activateContentItem(contentItem);
   };
 
   private readonly onContentItemPointerDown = (event: Event) => {
-    if (!(event.target instanceof HTMLElement)) {
-      return;
-    }
-
-    const contentItem = event.target.closest<HTMLElement>(
-      ".vot-select-content-item",
-    );
-    if (
-      !contentItem ||
-      contentItem.inert ||
-      !this.contentList?.contains(contentItem)
-    ) {
-      return;
-    }
-
+    const contentItem = this.getContentItem(event);
+    if (!contentItem) return;
     event.preventDefault();
     event.stopPropagation();
     this.ignoreNextContentClick = true;

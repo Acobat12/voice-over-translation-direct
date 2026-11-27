@@ -1,7 +1,7 @@
 import type { VideoHandler } from "../..";
 import type { LangOverride } from "../../localization/localizationProvider";
 import type { SubtitleFontFamily } from "../../subtitles/types";
-import type { Position } from "../components/votButton";
+import type { Position } from "../components/votRail";
 import type { Account, StorageData } from "../storage";
 import type { TranslateService } from "../translateApis";
 

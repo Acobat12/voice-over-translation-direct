@@ -1,8 +1,8 @@
 import { AudioDownloadType } from "@vot.js/core/types/yandex";
 import { config } from "@vot.js/shared";
-
 import type { GetAudioFromAPIOptions } from "../../types/audioDownloader";
 import { GM_fetch } from "../../utils/gm";
+import { splitAudioBuffer } from "../strategies/audioChunks";
 import { makeFileId } from "../strategies/fileId";
 import {
   type AudioChunkStreamResult,
@@ -11,6 +11,10 @@ import {
   YtWatchContextForbiddenError,
 } from "./index";
 import { pickAdaptiveAudioFormat } from "./src/internal/format-selection";
+import {
+  parseContentLengthFromContentRange,
+  parsePositiveInteger,
+} from "./src/internal/http-headers";
 
 const DEFAULT_YT_AUDIO_QUALITY = "bestefficiency";
 const DEFAULT_FETCH_TIMEOUT_MS = 30_000;
@@ -297,29 +301,6 @@ function pickProgressiveMp4Format(
   }
 
   return selected;
-}
-
-function parsePositiveInteger(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function parseContentLengthFromContentRange(
-  contentRange: string | null,
-): number | null {
-  if (!contentRange) {
-    return null;
-  }
-
-  return parsePositiveInteger(/\/(\d+)\s*$/i.exec(contentRange)?.[1]);
 }
 
 async function resolveActiveAudioSize({
@@ -753,12 +734,7 @@ async function recordCurrentYoutubeAudio({
     return {
       fileId,
       mediaPartsLength,
-      async *getMediaBuffers(): AsyncGenerator<Uint8Array> {
-        for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-          const end = Math.min(start + chunkSize, bytes.byteLength);
-          yield bytes.subarray(start, end);
-        }
-      },
+      getMediaBuffers: () => splitAudioBuffer(bytes, chunkSize),
     };
   } catch (error) {
     stopMediaStream(stream);
@@ -924,11 +900,6 @@ export async function getAudioFromYtAudio(
   return {
     fileId,
     mediaPartsLength,
-    async *getMediaBuffers(): AsyncGenerator<Uint8Array> {
-      for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-        const end = Math.min(start + chunkSize, bytes.byteLength);
-        yield bytes.subarray(start, end);
-      }
-    },
+    getMediaBuffers: () => splitAudioBuffer(bytes, chunkSize),
   };
 }

@@ -1,9 +1,12 @@
+import { localizationProvider } from "../localization/localizationProvider";
 export type YouTubeAudioMode =
   | "auto"
   | "player-mse"
   | "hls"
   | "external"
-  | "legacy";
+  | "legacy"
+  | "sabr"
+  | "web-abr";
 
 const KEY = "vot.youtubeAudioMode.v1";
 
@@ -13,6 +16,8 @@ export const YOUTUBE_AUDIO_MODES: readonly YouTubeAudioMode[] = [
   "hls",
   "external",
   "legacy",
+  "sabr",
+  "web-abr",
 ];
 
 export function getYouTubeAudioMode(): YouTubeAudioMode {
@@ -37,10 +42,12 @@ export function setYouTubeAudioMode(mode: YouTubeAudioMode): void {
 
 export function getYouTubeAudioModeLabel(mode: YouTubeAudioMode): string {
   return {
-    auto: "Авто (обучение)",
+    auto: localizationProvider.get("VOTAudioAutoLearning"),
     "player-mse": "Player/MSE tap",
     hls: "YouTube HLS",
-    external: "External provider",
+    external: localizationProvider.get("VOTAudioExternal"),
     legacy: "Legacy ABR / iframe MSE",
+    sabr: localizationProvider.get("VOTAudioSabr"),
+    "web-abr": localizationProvider.get("VOTAudioWebAbr"),
   }[mode];
 }

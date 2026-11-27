@@ -1,3 +1,5 @@
+import { isMobileYouTubePage } from "../utils/pageContext";
+
 export type LifecycleTranslationResetHost = {
   videoData?: unknown;
   stopTranslation(): void | Promise<void>;
@@ -7,7 +9,7 @@ export type LifecycleTranslationResetHost = {
 export type LifecycleOverlayViewLike = {
   votButton?: {
     container?: {
-      hidden: boolean;
+      hidden: boolean | string;
     };
   };
   votMenu?: {
@@ -15,14 +17,8 @@ export type LifecycleOverlayViewLike = {
   };
 };
 
-function isMobileYouTubeDebugHost(): boolean {
-  return /^(m|music)\.youtube\.com$/i.test(
-    String(globalThis.location.hostname || ""),
-  );
-}
-
 function logMobileOverlayLifecycle(message: string, details?: unknown): void {
-  if (!isMobileYouTubeDebugHost()) {
+  if (!isMobileYouTubePage()) {
     return;
   }
 

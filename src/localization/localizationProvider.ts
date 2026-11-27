@@ -94,6 +94,7 @@ class LocalizationProvider {
   constructor() {
     this.lang = this.getLang();
     this.locale = {};
+    this.applyBundledLocale(this.lang);
   }
 
   async init() {
@@ -164,7 +165,8 @@ class LocalizationProvider {
     await votStorage.set("localeLangOverride", newLang);
     this._langOverride = newLang;
     this.lang = this.getLang();
-    await this.update(true);
+    // Apply the selected bundled language before rebuilding the UI.
+    this.applyBundledLocale(this.lang);
     return true;
   }
 
@@ -318,7 +320,11 @@ class LocalizationProvider {
   }
 
   get(key: Phrase) {
-    return this.getFromLocale(this.locale, key) ?? this.getDefault(key);
+    return (
+      this.locale[key] ||
+      this.getBundledLocale(this.lang)?.[key] ||
+      this.getDefault(key)
+    );
   }
 
   getLangLabel(lang: string) {

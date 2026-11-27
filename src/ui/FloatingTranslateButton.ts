@@ -1,3 +1,4 @@
+import { localizationProvider } from "../localization/localizationProvider";
 export function ensureFloatingTranslateButton(
   onClick: () => void,
 ): HTMLButtonElement {
@@ -8,7 +9,7 @@ export function ensureFloatingTranslateButton(
   if (!btn) {
     btn = document.createElement("button");
     btn.id = "vot-floating-translate-btn";
-    btn.textContent = "Перевод";
+    btn.textContent = localizationProvider.get("translateVideo");
     btn.style.position = "fixed";
     btn.style.right = "16px";
     btn.style.bottom = "16px";
@@ -27,6 +28,7 @@ export function ensureFloatingTranslateButton(
     document.body.appendChild(btn);
   }
 
+  btn.textContent = localizationProvider.get("translateVideo");
   btn.onclick = onClick;
   btn.style.display = "block";
 

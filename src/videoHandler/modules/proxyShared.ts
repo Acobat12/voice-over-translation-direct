@@ -11,10 +11,17 @@ const SUBTITLE_PROXY_PATH_PREFIX = "/video-subtitles/subtitles-proxy/";
 type ProxyConfig = {
   translateProxyEnabled?: number | null;
   proxyWorkerHost?: string | null;
+  proxyServerPreset?: string | null;
 };
 
-function getProxyHost(host?: string | null): string {
-  return host ?? proxyWorkerHost;
+function getProxyHost(host?: string | null, preset?: string | null): string {
+  if (preset === "builtin" || !preset) return proxyWorkerHost;
+  const clean = (host || proxyWorkerHost)
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/+$/, "");
+  // Preserve the path entered by the user; never append or strip /vot.
+  return clean;
 }
 
 function isProxyRoutingEnabled(config: ProxyConfig): boolean {
@@ -34,7 +41,7 @@ export function proxifyYandexAudioUrl(
 
   return audioUrl.replace(
     AUDIO_SOURCE_PREFIX,
-    `https://${getProxyHost(config.proxyWorkerHost)}${AUDIO_PROXY_PATH_PREFIX}`,
+    `https://${getProxyHost(config.proxyWorkerHost, config.proxyServerPreset)}${AUDIO_PROXY_PATH_PREFIX}`,
   );
 }
 
@@ -44,13 +51,21 @@ export function unproxifyYandexAudioUrl(audioUrl: string): string {
 
   try {
     const url = new URL(str);
-    if (!url.pathname.startsWith(AUDIO_PROXY_PATH_PREFIX)) {
+    const marker = `/vot${AUDIO_PROXY_PATH_PREFIX}`;
+    if (
+      !url.pathname.startsWith(AUDIO_PROXY_PATH_PREFIX) &&
+      !url.pathname.startsWith(marker)
+    ) {
       return str;
     }
 
     url.host = "vtrans.s3-private.mds.yandex.net";
     url.pathname = `/tts/prod/${url.pathname
-      .slice(AUDIO_PROXY_PATH_PREFIX.length)
+      .slice(
+        url.pathname.startsWith(marker)
+          ? marker.length
+          : AUDIO_PROXY_PATH_PREFIX.length,
+      )
       .replace(/^\/+/, "")}`;
     url.protocol = "https:";
     return url.toString();
@@ -63,12 +78,13 @@ export function isYandexAudioUrlOrProxy(
   url: string,
   config: {
     proxyWorkerHost?: string | null;
+    proxyServerPreset?: string | null;
   },
 ): boolean {
   return (
     url.startsWith(AUDIO_SOURCE_PREFIX) ||
     url.startsWith(
-      `https://${getProxyHost(config.proxyWorkerHost)}${AUDIO_PROXY_PATH_PREFIX}`,
+      `https://${getProxyHost(config.proxyWorkerHost, config.proxyServerPreset)}${AUDIO_PROXY_PATH_PREFIX}`,
     )
   );
 }
@@ -85,5 +101,5 @@ export function proxifyYandexSubtitlesUrl(
   }
 
   const subtitlesPath = subtitlesUrl.slice(SUBTITLE_SOURCE_PREFIX.length);
-  return `https://${getProxyHost(config.proxyWorkerHost)}${SUBTITLE_PROXY_PATH_PREFIX}${subtitlesPath}`;
+  return `https://${getProxyHost(config.proxyWorkerHost, config.proxyServerPreset)}${SUBTITLE_PROXY_PATH_PREFIX}${subtitlesPath}`;
 }

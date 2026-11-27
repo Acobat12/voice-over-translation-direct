@@ -5,15 +5,48 @@ import type {
   DownloadedPartialAudioData,
 } from "../types/audioDownloader";
 import debug from "../utils/debug";
-import { isAbortError } from "../utils/errors";
 
 import {
   type AvailableAudioDownloadType,
+  SABR_STRATEGY,
   strategies,
   WEB_ABR_STRATEGY,
   WEB_MSE_PROXY_STRATEGY,
 } from "./strategies";
+import type { AudioChunk } from "./strategies/audioChunks";
 export const LOCAL_FILE_STRATEGY = "localFile";
+
+type AudioDownloadEvents = {
+  downloadedAudio: [translationId: string, data: DownloadedAudioData];
+  downloadedPartialAudio: [
+    translationId: string,
+    data: DownloadedPartialAudioData,
+  ];
+  downloadAudioError: [
+    translationId: string,
+    videoId: string,
+    signInSuggested: boolean,
+  ];
+};
+
+const FALLBACK_STRATEGIES: Partial<
+  Record<AvailableAudioDownloadType, readonly AvailableAudioDownloadType[]>
+> = {
+  [SABR_STRATEGY]: [
+    SABR_STRATEGY,
+    WEB_ABR_STRATEGY,
+    WEB_MSE_PROXY_STRATEGY,
+    "ytAudio",
+  ],
+  [WEB_ABR_STRATEGY]: [
+    WEB_ABR_STRATEGY,
+    SABR_STRATEGY,
+    WEB_MSE_PROXY_STRATEGY,
+    "ytAudio",
+  ],
+  [WEB_MSE_PROXY_STRATEGY]: [WEB_MSE_PROXY_STRATEGY, "ytAudio"],
+};
+
 function assertValidMediaPartsLength(mediaPartsLength: number | null): void {
   if (mediaPartsLength === null) return;
   if (!Number.isInteger(mediaPartsLength) || mediaPartsLength < 1) {
@@ -37,10 +70,12 @@ async function handleCommonAudioDownloadRequest({
   preferredVideo,
   webAbrTransportStartIndex = 0,
   sourceLanguage,
+  onChunkCommitted,
 }: AudioDownloadRequestOptions & {
   attemptedStrategy?: AvailableAudioDownloadType;
   webAbrTransportStartIndex?: number;
   sourceLanguage?: string;
+  onChunkCommitted?: () => void;
 }) {
   const audioData = await strategies[attemptedStrategy]({
     videoId,
@@ -60,61 +95,38 @@ async function handleCommonAudioDownloadRequest({
   const { getMediaBuffers, mediaPartsLength, fileId } = audioData;
   assertValidMediaPartsLength(mediaPartsLength);
 
-  if (mediaPartsLength === null) {
-    let index = 0;
-    let receivedLastChunk = false;
-
-    for await (const rawChunk of getMediaBuffers() as AsyncIterable<
-      Uint8Array | { buffer: Uint8Array; isLastChunk: boolean }
-    >) {
-      const wrapped =
-        rawChunk instanceof Uint8Array
-          ? { buffer: rawChunk, isLastChunk: false }
-          : rawChunk;
-      const chunk =
-        wrapped.isLastChunk && index > 0
-          ? wrapped.buffer
-          : assertHasAudioChunk(wrapped.buffer);
-
-      await audioDownloader.onDownloadedPartialAudio.dispatchAsync(
-        translationId,
-        {
-          videoId,
-          fileId,
-          audioData: chunk,
-          version: 1,
-          index,
-          amount: wrapped.isLastChunk ? index + 1 : 0,
-        },
-      );
-
-      receivedLastChunk ||= wrapped.isLastChunk;
-      index += 1;
-    }
-
-    if (!receivedLastChunk) {
-      throw new Error("Audio downloader. Stream ended without a last chunk");
-    }
-    return;
-  }
-
-  if (mediaPartsLength < 2) {
+  if (mediaPartsLength === 1) {
     const iterator = getMediaBuffers();
-    const { value } = (await iterator.next()) as { value: Uint8Array };
-    const singleChunk = assertHasAudioChunk(value);
-
-    await audioDownloader.onDownloadedAudio.dispatchAsync(translationId, {
-      videoId,
-      fileId,
-      audioData: singleChunk,
-    });
+    try {
+      const { value } = (await iterator.next()) as { value: Uint8Array };
+      const singleChunk = assertHasAudioChunk(value);
+      onChunkCommitted?.();
+      await audioDownloader.onDownloadedAudio.dispatchAsync(translationId, {
+        videoId,
+        fileId,
+        audioData: singleChunk,
+      });
+    } finally {
+      await iterator.return?.(undefined);
+    }
     return;
   }
 
   let index = 0;
-  for await (const audioChunk of getMediaBuffers()) {
-    const chunk = assertHasAudioChunk(audioChunk as Uint8Array);
+  let receivedLastChunk = false;
+  for await (const rawChunk of getMediaBuffers() as AsyncIterable<
+    Uint8Array | AudioChunk
+  >) {
+    const wrapped =
+      rawChunk instanceof Uint8Array
+        ? { buffer: rawChunk, isLastChunk: false }
+        : rawChunk;
+    const chunk =
+      mediaPartsLength === null && wrapped.isLastChunk && index > 0
+        ? wrapped.buffer
+        : assertHasAudioChunk(wrapped.buffer);
 
+    onChunkCommitted?.();
     await audioDownloader.onDownloadedPartialAudio.dispatchAsync(
       translationId,
       {
@@ -123,14 +135,18 @@ async function handleCommonAudioDownloadRequest({
         audioData: chunk,
         version: 1,
         index,
-        amount: mediaPartsLength,
+        amount: mediaPartsLength ?? (wrapped.isLastChunk ? index + 1 : 0),
       },
     );
 
-    index++;
+    receivedLastChunk ||= wrapped.isLastChunk;
+    index += 1;
   }
 
-  if (index !== mediaPartsLength) {
+  if (mediaPartsLength === null && !receivedLastChunk) {
+    throw new Error("Audio downloader. Stream ended without a last chunk");
+  }
+  if (mediaPartsLength !== null && index !== mediaPartsLength) {
     throw new Error(
       `Audio downloader. Expected ${mediaPartsLength} chunks, got ${index}`,
     );
@@ -138,15 +154,17 @@ async function handleCommonAudioDownloadRequest({
 }
 
 export class AudioDownloader {
-  onDownloadedAudio = new EventImpl<[string, DownloadedAudioData]>();
+  onDownloadedAudio = new EventImpl<AudioDownloadEvents["downloadedAudio"]>();
   onDownloadedPartialAudio = new EventImpl<
-    [string, DownloadedPartialAudioData]
+    AudioDownloadEvents["downloadedPartialAudio"]
   >();
-  onDownloadAudioError = new EventImpl<[string, string, boolean]>();
+  onDownloadAudioError = new EventImpl<
+    AudioDownloadEvents["downloadAudioError"]
+  >();
 
   strategy: AvailableAudioDownloadType;
 
-  constructor(strategy: AvailableAudioDownloadType = WEB_ABR_STRATEGY) {
+  constructor(strategy: AvailableAudioDownloadType = SABR_STRATEGY) {
     this.strategy = strategy;
     debug.log("Audio downloader created", {
       strategy,
@@ -161,10 +179,10 @@ export class AudioDownloader {
     webAbrTransportStartIndex = 0,
     sourceLanguage?: string,
   ) {
-    const attempts: AvailableAudioDownloadType[] =
-      this.strategy === WEB_ABR_STRATEGY
-        ? [WEB_ABR_STRATEGY, WEB_MSE_PROXY_STRATEGY]
-        : [this.strategy];
+    // Never start a new strategy after streaming has reached the translation API:
+    // mixing chunks from different audio sources corrupts the upload.
+    const attempts = FALLBACK_STRATEGIES[this.strategy] ?? [this.strategy];
+    let chunksCommitted = false;
 
     for (const attemptedStrategy of attempts) {
       try {
@@ -177,6 +195,9 @@ export class AudioDownloader {
           preferredVideo,
           webAbrTransportStartIndex,
           sourceLanguage,
+          onChunkCommitted: () => {
+            chunksCommitted = true;
+          },
         });
 
         debug.log("Audio downloader. Audio download finished", {
@@ -204,7 +225,8 @@ export class AudioDownloader {
         // translation button instead of reporting a generic audio failure or
         // sending fail-audio-js.
         if (
-          attemptedStrategy === WEB_ABR_STRATEGY &&
+          (attemptedStrategy === WEB_ABR_STRATEGY ||
+            attemptedStrategy === SABR_STRATEGY) &&
           err instanceof Error &&
           err.message.includes("YOUTUBE_SIGN_IN_SUGGESTED")
         ) {
@@ -217,6 +239,13 @@ export class AudioDownloader {
           audioDownloadType: attemptedStrategy,
           error: err instanceof Error ? err.message : String(err),
         });
+        if (chunksCommitted) {
+          debug.error(
+            "Audio downloader. Cannot safely fall back after audio chunks were emitted",
+            { videoId },
+          );
+          break;
+        }
       }
     }
 
@@ -226,73 +255,30 @@ export class AudioDownloader {
     this.onDownloadAudioError.dispatch(translationId, videoId, false);
   }
 
-  addEventListener(
-    type: "downloadedAudio",
-    listener: (translationId: string, data: DownloadedAudioData) => void,
-  ): this;
-  addEventListener(
-    type: "downloadedPartialAudio",
-    listener: (translationId: string, data: DownloadedPartialAudioData) => void,
-  ): this;
-  addEventListener(
-    type: "downloadAudioError",
-    listener: (
-      translationId: string,
-      videoId: string,
-      signInSuggested: boolean,
-    ) => void,
-  ): this;
-  addEventListener(
-    type: "downloadedAudio" | "downloadedPartialAudio" | "downloadAudioError",
-    listener: (...data: any[]) => void,
-  ): this {
-    switch (type) {
-      case "downloadedAudio":
-        this.onDownloadedAudio.addListener(listener);
-        break;
-      case "downloadedPartialAudio":
-        this.onDownloadedPartialAudio.addListener(listener);
-        break;
-      case "downloadAudioError":
-        this.onDownloadAudioError.addListener(listener);
-        break;
-    }
+  private getEvent<Type extends keyof AudioDownloadEvents>(type: Type) {
+    const events: {
+      [Key in keyof AudioDownloadEvents]: EventImpl<AudioDownloadEvents[Key]>;
+    } = {
+      downloadedAudio: this.onDownloadedAudio,
+      downloadedPartialAudio: this.onDownloadedPartialAudio,
+      downloadAudioError: this.onDownloadAudioError,
+    };
+    return events[type];
+  }
 
+  addEventListener<Type extends keyof AudioDownloadEvents>(
+    type: Type,
+    listener: (...data: AudioDownloadEvents[Type]) => void,
+  ): this {
+    this.getEvent(type)?.addListener(listener);
     return this;
   }
 
-  removeEventListener(
-    type: "downloadedAudio",
-    listener: (translationId: string, data: DownloadedAudioData) => void,
-  ): this;
-  removeEventListener(
-    type: "downloadedPartialAudio",
-    listener: (translationId: string, data: DownloadedPartialAudioData) => void,
-  ): this;
-  removeEventListener(
-    type: "downloadAudioError",
-    listener: (
-      translationId: string,
-      videoId: string,
-      signInSuggested: boolean,
-    ) => void,
-  ): this;
-  removeEventListener(
-    type: "downloadedAudio" | "downloadedPartialAudio" | "downloadAudioError",
-    listener: (...data: any[]) => void,
+  removeEventListener<Type extends keyof AudioDownloadEvents>(
+    type: Type,
+    listener: (...data: AudioDownloadEvents[Type]) => void,
   ): this {
-    switch (type) {
-      case "downloadedAudio":
-        this.onDownloadedAudio.removeListener(listener);
-        break;
-      case "downloadedPartialAudio":
-        this.onDownloadedPartialAudio.removeListener(listener);
-        break;
-      case "downloadAudioError":
-        this.onDownloadAudioError.removeListener(listener);
-        break;
-    }
-
+    this.getEvent(type)?.removeListener(listener);
     return this;
   }
 }

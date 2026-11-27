@@ -1,13 +1,9 @@
 import type { VideoHandler } from "..";
-import {
-  actualCompatVersion,
-  maxAudioVolume,
-  repositoryUrl,
-} from "../config/config";
+import { maxAudioVolume, repositoryUrl } from "../config/config";
 import { dispatchGoogleDriveBridgeSync } from "../core/google-drive-bridge";
 import { localizationProvider } from "../localization/localizationProvider";
 import { serializeProcessedSubtitles } from "../subtitles/standards";
-import type { Status } from "../types/components/votButton";
+import type { Status } from "../types/components/votRail";
 import type { StorageData } from "../types/storage";
 import type { OverlayMount, UIManagerProps } from "../types/uiManager";
 import ui from "../ui";
@@ -34,6 +30,7 @@ export class UIManager {
   private translationActionInFlight = false;
   private translationActionGeneration = 0;
 
+  private menuReloadInFlight = false;
   private overlayEventsBound = false;
   private settingsEventsBound = false;
   private initialized = false;
@@ -291,10 +288,7 @@ export class UIManager {
         }
       })
       .addEventListener("click:settings", async () => {
-        this.videoHandler?.subtitlesWidget?.releaseTooltip();
-        this.videoHandler?.overlayVisibility?.cancel();
-        this.videoHandler?.overlayVisibility?.show();
-        this.votSettingsView.open();
+        this.openSettingsFromOverlay();
       })
       .addEventListener("click:downloadTranslation", async () => {
         await this.handleDownloadTranslationClick();
@@ -305,10 +299,7 @@ export class UIManager {
       .addEventListener("select:voiceMode", async (mode) => {
         const livelyEnabled = mode === "lively";
         if (livelyEnabled && !this.data.account?.token) {
-          this.videoHandler?.subtitlesWidget?.releaseTooltip();
-          this.videoHandler?.overlayVisibility?.cancel();
-          this.videoHandler?.overlayVisibility?.show();
-          this.votSettingsView.open();
+          this.openSettingsFromOverlay();
           return;
         }
 
@@ -384,20 +375,7 @@ export class UIManager {
         // Prefer the actual event payload (the overlay also updates `data`, but
         // using the payload is simpler and avoids accidental desyncs).
         const nextVolume = volume ?? this.data.defaultVolume ?? 100;
-        this.videoHandler.syncTranslationPlaybackVolume();
-        if (!this.data.syncVolume) {
-          this.videoHandler.onTranslationVolumeSliderSynced(nextVolume);
-          return;
-        }
-        const syncResult = this.videoHandler.syncVolumeWrapper(
-          "translation",
-          nextVolume,
-        );
-        if (typeof syncResult?.nextVideo === "number") {
-          this.videoHandler.applyManualVideoVolumeOverride(
-            syncResult.nextVideo / 100,
-          );
-        }
+        this.syncTranslationVolume(nextVolume);
       })
       .addEventListener("select:subtitles", (data) => {
         if (!this.videoHandler) {
@@ -701,9 +679,7 @@ export class UIManager {
 
     if (hasActiveSource || isBusy) {
       try {
-        await videoHandler.stopTranslation();
-        await videoHandler.waitForPendingStopTranslate();
-        await this.waitForTranslationActionSettled();
+        await this.stopTranslationAndWait(videoHandler);
       } catch (err) {
         debug.warn(
           "[FORK] Failed to stop translation before voice mode restart",
@@ -750,6 +726,19 @@ export class UIManager {
     }
   }
 
+  private openSettingsFromOverlay() {
+    this.videoHandler?.subtitlesWidget?.releaseTooltip();
+    this.videoHandler?.overlayVisibility?.cancel();
+    this.videoHandler?.overlayVisibility?.show();
+    this.votSettingsView.open();
+  }
+
+  private async stopTranslationAndWait(videoHandler: VideoHandler) {
+    await videoHandler.stopTranslation();
+    await videoHandler.waitForPendingStopTranslate();
+    await this.waitForTranslationActionSettled();
+  }
+
   private async restartDriveTranslationIfActive() {
     const videoHandler = this.videoHandler;
     if (!videoHandler || !this.votOverlayView?.isInitialized()) {
@@ -761,9 +750,7 @@ export class UIManager {
     }
 
     try {
-      await videoHandler.stopTranslation();
-      await videoHandler.waitForPendingStopTranslate();
-      await this.waitForTranslationActionSettled();
+      await this.stopTranslationAndWait(videoHandler);
       await this.handleTranslationBtnClick();
     } catch (err) {
       debug.warn(
@@ -863,6 +850,10 @@ export class UIManager {
       void votStorage.set("defaultVolume", nextVolume);
     }
 
+    this.syncTranslationVolume(nextVolume);
+  }
+
+  private syncTranslationVolume(nextVolume: number) {
     this.videoHandler.syncTranslationPlaybackVolume();
     if (!this.data.syncVolume) {
       this.videoHandler.onTranslationVolumeSliderSynced(nextVolume);
@@ -886,6 +877,11 @@ export class UIManager {
     }
 
     this.data.syncVolume = enabled;
+    this.updateVolumeLink(enabled);
+  }
+
+  private updateVolumeLink(enabled: boolean) {
+    if (!this.videoHandler) return;
     this.videoHandler.setupAudioSettings();
     if (!enabled) {
       return;
@@ -909,6 +905,10 @@ export class UIManager {
   applyDriveShowVideoSlider(checked: boolean) {
     this.data.showVideoSlider = checked;
 
+    this.updateVideoSliderVisibility();
+  }
+
+  private updateVideoSliderVisibility() {
     this.withInitializedOverlayView((overlayView) => {
       if (!overlayView.videoVolumeSlider || !overlayView.votButton) {
         return;
@@ -923,6 +923,10 @@ export class UIManager {
   applyDriveAudioBooster(enabled: boolean) {
     this.data.audioBooster = enabled;
 
+    this.updateTranslationVolumeRange();
+  }
+
+  private updateTranslationVolumeRange() {
     this.withInitializedOverlayView((overlayView) => {
       if (!overlayView.translationVolumeSlider) {
         return;
@@ -993,54 +997,13 @@ export class UIManager {
         await this.videoHandler.enableSubtitlesForCurrentLangPair();
       })
       .addEventListener("change:showVideoVolume", () => {
-        this.withInitializedOverlayView((overlayView) => {
-          if (!overlayView.videoVolumeSlider || !overlayView.votButton) {
-            return;
-          }
-
-          overlayView.videoVolumeSlider.container.hidden =
-            !this.data.showVideoSlider ||
-            overlayView.votButton.status !== "success";
-        });
+        this.updateVideoSliderVisibility();
       })
-      .addEventListener("change:audioBooster", async () => {
-        this.withInitializedOverlayView((overlayView) => {
-          if (!overlayView.translationVolumeSlider) {
-            return;
-          }
-
-          const currentVolume = overlayView.translationVolumeSlider.value;
-          const maxVolume = this.data.audioBooster ? maxAudioVolume : 100;
-          overlayView.translationVolumeSlider.max = maxVolume;
-          const nextVolume = clamp(currentVolume, 0, maxVolume);
-          overlayView.translationVolumeSlider.value = nextVolume;
-          this.videoHandler?.onTranslationVolumeSliderSynced(nextVolume);
-          this.videoHandler?.syncTranslationPlaybackVolume();
-        });
+      .addEventListener("change:audioBooster", () => {
+        this.updateTranslationVolumeRange();
       })
       .addEventListener("change:syncVolume", (checked) => {
-        if (!this.videoHandler) {
-          return;
-        }
-        this.videoHandler.setupAudioSettings();
-        if (!checked) {
-          return;
-        }
-
-        this.withInitializedOverlayView((overlayView) => {
-          const videoSlider = overlayView.videoVolumeSlider;
-          const translationSlider = overlayView.translationVolumeSlider;
-          if (!videoSlider || !translationSlider) {
-            return;
-          }
-
-          this.videoHandler.syncTranslationPlaybackVolume();
-
-          this.videoHandler.resetVolumeLinkState(
-            Number(videoSlider.value),
-            Number(translationSlider.value),
-          );
-        });
+        this.updateVolumeLink(checked);
       })
       .addEventListener("change:useLivelyVoice", (checked) => {
         if (!this.videoHandler) {
@@ -1197,9 +1160,7 @@ export class UIManager {
           ?.focus();
       })
       .addEventListener("click:resetSettings", async () => {
-        const valuesForClear = await votStorage.list();
-        await Promise.all(valuesForClear.map((key) => votStorage.delete(key)));
-        await votStorage.set("compatVersion", actualCompatVersion);
+        await votStorage.reset();
 
         globalThis.location.reload();
       });
@@ -1304,6 +1265,16 @@ export class UIManager {
   }
 
   async reloadMenu() {
+    if (this.menuReloadInFlight) return this;
+    this.menuReloadInFlight = true;
+    try {
+      return await this.rebuildMenu();
+    } finally {
+      this.menuReloadInFlight = false;
+    }
+  }
+
+  private async rebuildMenu() {
     if (!this.votOverlayView?.isInitialized()) {
       throw new Error("[FORK] OverlayView isn't initialized");
     }
@@ -1316,7 +1287,11 @@ export class UIManager {
     const settingsWasOpen =
       this.votSettingsView?.dialog?.container?.hidden === false;
 
-    await this.videoHandler?.stopTranslation();
+    try {
+      await this.videoHandler?.stopTranslation();
+    } catch (err) {
+      debug.warn("[FORK] Failed to stop translation before menu reload", err);
+    }
     this.release();
     this.initUI();
     this.initUIEvents();
@@ -1375,9 +1350,7 @@ export class UIManager {
     if (!videoData.videoId) return this;
 
     if (videoHandler.hasActiveSource() || this.isTranslationBusy()) {
-      await videoHandler.stopTranslation();
-      await videoHandler.waitForPendingStopTranslate();
-      await this.waitForTranslationActionSettled();
+      await this.stopTranslationAndWait(videoHandler);
     }
 
     // Do not clear the normal translation cache here. The one-shot flag already
@@ -1399,41 +1372,11 @@ export class UIManager {
     // The normal button handler deliberately toggles an active translation off
     // and has normal-action cleanup semantics.  This action must always START a
     // fresh translation flow after arming the one-shot reprocess state.
-    const actionGeneration = ++this.translationActionGeneration;
-    this.translationActionInFlight = true;
-
-    try {
-      await this.startTranslationFlow(videoHandler);
-    } catch (err) {
-      // Do not leave a reprocess flag armed when the explicit start itself fails.
+    return this.runTranslationAction(videoHandler, () => {
       videoHandler.translationHandler.cancelYouTubeReprocess(
         "new translation start failed",
       );
-
-      if (this.isAbortError(err)) {
-        this.transformBtn("none", localizationProvider.get("translateVideo"));
-        return this;
-      }
-
-      console.error("[FORK]", err);
-
-      if (!(err instanceof Error)) {
-        this.transformBtn("error", String(err));
-        return this;
-      }
-
-      const message =
-        err.name === "VOTLocalizedError"
-          ? (err as VOTLocalizedError).localizedMessage
-          : err.message;
-      this.transformBtn("error", message);
-    } finally {
-      if (this.translationActionGeneration === actionGeneration) {
-        this.translationActionInFlight = false;
-      }
-    }
-
-    return this;
+    });
   }
 
   async handleTranslationBtnClick(preserveYouTubeReprocess = false) {
@@ -1481,12 +1424,20 @@ export class UIManager {
       return this;
     }
 
+    return this.runTranslationAction(videoHandler);
+  }
+
+  private async runTranslationAction(
+    videoHandler: VideoHandler,
+    onFailure?: () => void,
+  ) {
     const actionGeneration = ++this.translationActionGeneration;
     this.translationActionInFlight = true;
 
     try {
       await this.startTranslationFlow(videoHandler);
     } catch (err) {
+      onFailure?.();
       if (this.isAbortError(err)) {
         this.transformBtn("none", localizationProvider.get("translateVideo"));
         return this;
@@ -1584,6 +1535,8 @@ export class UIManager {
     this.votOverlayView?.release();
     this.votSettingsView?.release();
     this.votGlobalPortal?.remove();
+    this.overlayEventsBound = false;
+    this.settingsEventsBound = false;
 
     this.initialized = false;
     return this;

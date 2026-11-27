@@ -1,7 +1,7 @@
 import { normalizeLang } from "@vot.js/shared/utils/utils";
 import type { SubtitleDescriptor, SubtitleFormat } from "../subtitles/types";
+import { isVkPage, normalizePageUrl } from "./pageContext";
 
-const VK_HOST_PATTERN = /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i;
 const VK_REQUEST_PATTERN =
   /api\.vkvideo\.ru|\/al_video\.php(?:$|[?#])|\/method\/video\.|video_ext\.php|vkvideo\.ru/i;
 const SUBTITLE_URL_PATTERN = /\.(vtt|srt|ass|json)(?:$|[?#])/i;
@@ -24,22 +24,6 @@ type CollectContext = {
 const sniffedTracksByHost = new Map<string, SniffedSubtitleTrack[]>();
 const xhrUrlKey = Symbol("votSniffedSubtitleUrl");
 let installed = false;
-
-function isVkHost(hostname: string): boolean {
-  return VK_HOST_PATTERN.test(hostname);
-}
-
-function isVkPage(): boolean {
-  return isVkHost(String(globalThis.location.hostname || ""));
-}
-
-function normalizeUrl(input: string): string {
-  try {
-    return new URL(input, globalThis.location.href).href;
-  } catch {
-    return input;
-  }
-}
 
 function inferSubtitleFormat(url: string): SubtitleFormat | null {
   const normalized = url.split(/[?#]/u, 1)[0]?.toLowerCase() ?? "";
@@ -245,7 +229,7 @@ function toSubtitleDescriptor(
     return null;
   }
 
-  const url = normalizeUrl(rawUrl);
+  const url = normalizePageUrl(rawUrl);
   const format =
     inferSubtitleFormat(url) ?? (context.collectionHint ? "vtt" : null);
   if (!format) {
@@ -383,7 +367,7 @@ function extractDescriptorsFromText(
     const normalizedLanguage = normalizeLanguageCandidate(
       language ?? inferLanguageFromUrl(String(url || "")),
     );
-    const normalizedUrl = typeof url === "string" ? normalizeUrl(url) : "";
+    const normalizedUrl = typeof url === "string" ? normalizePageUrl(url) : "";
     const format = inferSubtitleFormat(normalizedUrl) ?? "vtt";
     if (!normalizedLanguage || !normalizedUrl) {
       return;
@@ -472,7 +456,7 @@ function rememberTracks(
 }
 
 function rememberSubtitleUrl(rawUrl: string): void {
-  const url = normalizeUrl(rawUrl);
+  const url = normalizePageUrl(rawUrl);
   const format = inferSubtitleFormat(url);
   const language = inferLanguageFromUrl(url);
   if (!format || !language) {

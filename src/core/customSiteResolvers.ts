@@ -28,24 +28,7 @@ function pickBestResourceUrl(names: string[]): string | null {
     .map((x) => String(x).trim())
     .filter(Boolean);
 
-  const reject = (url: string) => {
-    const lower = url.toLowerCase();
-    const isManifest =
-      /\.m3u8([?#]|$)/i.test(lower) || /\.mpd([?#]|$)/i.test(lower);
-    return (
-      lower.includes("thumbnails.") ||
-      lower.includes("/speech/") ||
-      lower.endsWith(".jpg") ||
-      lower.endsWith(".jpeg") ||
-      lower.endsWith(".png") ||
-      lower.endsWith(".webp") ||
-      lower.includes("okcdn.ru/?") ||
-      /[?&]bytes=\d+-\d+/i.test(lower) ||
-      (!isManifest && /[?&]type=\d+/i.test(lower))
-    );
-  };
-
-  const candidates = clean.filter((url) => !reject(url));
+  const candidates = clean.filter((url) => !isRejectedMediaResource(url));
 
   return (
     candidates.find((u) => /\.m3u8([?#]|$)/i.test(u)) ||
@@ -75,14 +58,11 @@ function pickBestDirectSource(direct: any): string {
   );
 }
 
-function isBadDirectVideoUrl(url: string): boolean {
-  const lower = String(url || "").toLowerCase();
+function isRejectedMediaResource(url: string): boolean {
+  const lower = url.toLowerCase();
   const isManifest =
     /\.m3u8([?#]|$)/i.test(lower) || /\.mpd([?#]|$)/i.test(lower);
-
   return (
-    !lower ||
-    lower.startsWith("blob:") ||
     lower.includes("thumbnails.") ||
     lower.includes("/speech/") ||
     lower.endsWith(".jpg") ||
@@ -95,17 +75,29 @@ function isBadDirectVideoUrl(url: string): boolean {
   );
 }
 
+function isBadDirectVideoUrl(url: string): boolean {
+  return (
+    !url ||
+    url.toLowerCase().startsWith("blob:") ||
+    isRejectedMediaResource(url)
+  );
+}
+
+function getBestPerformanceResourceUrl(): string | null {
+  const names = performance
+    .getEntriesByType("resource")
+    .map((entry) => (typeof entry.name === "string" ? entry.name : ""))
+    .filter(Boolean);
+  return pickBestResourceUrl(names);
+}
+
 export async function resolveCustomSiteVideo(
   hostname: string,
   href: string,
 ): Promise<CustomResolvedVideo | null> {
   const tunnelPlayer = getTunnelPlayerContext(href);
   if (tunnelPlayer) {
-    const entries = performance.getEntriesByType("resource");
-    const names = entries
-      .map((e) => (typeof e.name === "string" ? e.name : ""))
-      .filter(Boolean);
-    const resourceUrl = pickBestResourceUrl(names);
+    const resourceUrl = getBestPerformanceResourceUrl();
     const video = document.querySelector("video") as HTMLVideoElement | null;
     const currentSrc = String(video?.currentSrc || video?.src || "").trim();
     const resolvedUrl =
@@ -272,12 +264,7 @@ export async function resolveCustomSiteVideo(
       };
     }
 
-    const entries = performance.getEntriesByType("resource");
-    const names = entries
-      .map((e) => (typeof e.name === "string" ? e.name : ""))
-      .filter(Boolean);
-
-    const best = pickBestResourceUrl(names);
+    const best = getBestPerformanceResourceUrl();
     if (best) {
       console.log(
         "[FORK][custom][cdnvideohub] using performance resource",
@@ -325,12 +312,7 @@ export async function resolveCustomSiteVideo(
       };
     }
 
-    const entries = performance.getEntriesByType("resource");
-    const names = entries
-      .map((e) => (typeof e.name === "string" ? e.name : ""))
-      .filter(Boolean);
-
-    const best = pickBestResourceUrl(names);
+    const best = getBestPerformanceResourceUrl();
     if (best) {
       console.log(
         "[FORK][custom][wikianimex] using performance resource",
@@ -370,12 +352,7 @@ export async function resolveCustomSiteVideo(
 
   // Generic fallback for any custom site
   {
-    const entries = performance.getEntriesByType("resource");
-    const names = entries
-      .map((e) => (typeof e.name === "string" ? e.name : ""))
-      .filter(Boolean);
-
-    const best = pickBestResourceUrl(names);
+    const best = getBestPerformanceResourceUrl();
     if (best) {
       console.log("[FORK][custom][generic] resolved media url", best);
       return {

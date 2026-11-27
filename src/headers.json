@@ -1,7 +1,7 @@
 {
   "name": "[FORK] - Voice Over Translation",
   "description": "A small extension that adds a Yandex Browser video translation to other browsers",
-  "version": "1.11.6.30",
+  "version": "1.11.8.8",
   "author": "Toil, SashaXser, MrSoczekXD, mynovelhost, sodapng, Acobat12",
   "namespace": "vot-direct",
   "icon": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/master/src/extension/icons/icon-128.png",
@@ -9,6 +9,12 @@
     "*://*.*",
     "*://cloud.mail.ru/*",
     "*://*.cloud.mail.ru/*",
+    "*://anthropic-partners.skilljar.com/*",
+    "*://*.skilljar.com/*",
+    "*://www3.nhk.or.jp/*",
+    "*://*.nhk.or.jp/*",
+    "*://web.nhk/*",
+    "*://*.web.nhk/*",
     "*://*.kodik.info/*",
     "*://*.kodik.biz/*",
     "*://*.kodik.cc/*",
@@ -192,6 +198,10 @@
     "cloud-api.yandex.com",
     "oauth.yandex.ru",
     "yandex.ru",
+    "web.nhk",
+    "*.web.nhk",
+    "media.vd.st.nhk",
+    "vod-stream.nhk.jp",
     "disk.yandex.kz",
     "disk.yandex.com",
     "disk.yandex.com.am",
@@ -214,6 +224,7 @@
     "raw.githubusercontent.com",
     "vimeo.com",
     "vot.toil.cc",
+    "media-proxy.mooo.com",
     "*.toil.cc",
     "toil.cc",
     "deno.dev",
@@ -238,6 +249,7 @@
     "bytecdn.cn",
     "*.byteimg.com",
     "byteimg.com",
-    "*"
+    "*",
+    "api.github.com"
   ]
 }

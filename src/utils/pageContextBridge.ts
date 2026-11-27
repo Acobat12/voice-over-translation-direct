@@ -154,9 +154,9 @@ export function extractPageContextSnapshot(
     methodName: string,
   ): unknown => {
     try {
-      const maybeMethod = (moviePlayer as Record<string, unknown> | null)?.[
-        methodName
-      ];
+      const maybeMethod = (
+        moviePlayer as unknown as Record<string, unknown> | null
+      )?.[methodName];
       if (typeof maybeMethod === "function") {
         return sanitize(
           (maybeMethod as (this: unknown) => unknown).call(moviePlayer),
@@ -213,7 +213,7 @@ export function extractPageContextSnapshot(
 
   const getVkPlayerObject = (): unknown => {
     try {
-      const pageWindow = window as Record<string, unknown>;
+      const pageWindow = window as unknown as Record<string, unknown>;
       const videoview = pageWindow.Videoview as
         | { getPlayerObject?: () => unknown }
         | undefined;
@@ -238,7 +238,9 @@ export function extractPageContextSnapshot(
 
     try {
       if (key in window) {
-        const sanitized = sanitize((window as Record<string, unknown>)[key]);
+        const sanitized = sanitize(
+          (window as unknown as Record<string, unknown>)[key],
+        );
         if (sanitized !== undefined) {
           globals[key] = sanitized;
         }
@@ -251,7 +253,7 @@ export function extractPageContextSnapshot(
   let player: unknown;
   let awemeInfo: unknown;
   try {
-    const pageWindow = window as Record<string, unknown>;
+    const pageWindow = window as unknown as Record<string, unknown>;
     const playerObject = pageWindow.player as
       | { config?: { awemeInfo?: unknown } }
       | undefined;
@@ -350,13 +352,12 @@ function installPageContextBridge(): void {
     return;
   }
 
-  bridgeInstallRequested = true;
-
   const parent = document.head || document.documentElement;
   if (!parent) {
     return;
   }
 
+  bridgeInstallRequested = true;
   const script = document.createElement("script");
   script.id = BRIDGE_SCRIPT_ID;
   script.textContent = buildBridgeSource();
@@ -375,6 +376,7 @@ export async function requestPageContextSnapshot(
 
   return await new Promise((resolve) => {
     let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
 
     const finish = () => {
       if (settled) {
@@ -382,6 +384,7 @@ export async function requestPageContextSnapshot(
       }
 
       settled = true;
+      if (timeout !== undefined) clearTimeout(timeout);
       document.removeEventListener(READY_EVENT, onReady as EventListener);
       resolve(parseSnapshot(getDatasetSnapshotRaw()));
     };
@@ -394,12 +397,11 @@ export async function requestPageContextSnapshot(
       once: true,
     });
 
+    timeout = globalThis.setTimeout(finish, timeoutMs);
     try {
       document.dispatchEvent(new CustomEvent(REQUEST_EVENT));
     } catch {
       // Ignore sync request failures and fall back to the last snapshot.
     }
-
-    globalThis.setTimeout(finish, timeoutMs);
   });
 }

@@ -34,20 +34,9 @@ export function getRememberedYouTubeTranslationMethod():
   return readWinner()?.method;
 }
 
-function shuffle<T>(items: readonly T[]): T[] {
-  const result = [...items];
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [result[i], result[j]] = [result[j] as T, result[i] as T];
-  }
-  return result;
-}
-
 export function getYouTubeStrategyOrder(): Array<"ytAudio" | "webMseProxy"> {
-  const winner = readWinner()?.method;
-  if (winner === "mse") return ["webMseProxy", "ytAudio"];
-  if (winner && winner !== "empty-audio") return ["ytAudio", "webMseProxy"];
-  return shuffle(["ytAudio", "webMseProxy"] as const);
+  // Do not use the legacy hidden YouTube embed: it can fail with error 153.
+  return ["ytAudio"];
 }
 
 export function rememberYouTubeTranslationMethod(

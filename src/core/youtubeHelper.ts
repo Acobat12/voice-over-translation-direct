@@ -13,6 +13,11 @@ type YoutubeTranslationLanguage = {
 };
 
 type YoutubePlayerResponse = {
+  microformat?: {
+    playerMicroformatRenderer?: {
+      liveBroadcastDetails?: { isLiveNow?: boolean };
+    };
+  };
   captions?: {
     playerCaptionsTracklistRenderer?: {
       captionTracks?: YoutubeCaptionTrack[];
@@ -191,20 +196,20 @@ export function isMobileYouTubeAdditionalData(value?: string | null): boolean {
   return value === "mobile" || value === "music";
 }
 
-export default class YoutubeHelper {
-  static isMobile() {
+const YoutubeHelper = {
+  isMobile() {
     return getHostname() === "m.youtube.com";
-  }
+  },
 
-  static isMusic() {
+  isMusic() {
     return getHostname() === "music.youtube.com";
-  }
+  },
 
-  static isMobileVariant() {
+  isMobileVariant() {
     return YoutubeHelper.isMobile() || YoutubeHelper.isMusic();
-  }
+  },
 
-  static getPlayer(): YoutubePlayerLike | null {
+  getPlayer(): YoutubePlayerLike | null {
     const player = ExtYoutubeHelper.getPlayer() as YoutubePlayerLike | null;
     if (player) {
       return player;
@@ -218,9 +223,9 @@ export default class YoutubeHelper {
     // stable desktop-like `#movie_player` is attached, so we probe mobile
     // containers and fall back to `ytInitialPlayerResponse`.
     return getPlayerFallback();
-  }
+  },
 
-  static getPlayerResponse(): YoutubePlayerResponse | undefined {
+  getPlayerResponse(): YoutubePlayerResponse | undefined {
     const playerResponse =
       YoutubeHelper.getPlayer()?.getPlayerResponse?.call(undefined);
     if (isPlayerResponse(playerResponse)) {
@@ -233,9 +238,9 @@ export default class YoutubeHelper {
     }
 
     return getWindowPlayerResponse();
-  }
+  },
 
-  static getPlayerData(): YoutubePlayerData | undefined {
+  getPlayerData(): YoutubePlayerData | undefined {
     const playerData = YoutubeHelper.getPlayer()?.getVideoData?.call(undefined);
     if (isPlayerData(playerData)) {
       return playerData;
@@ -255,9 +260,9 @@ export default class YoutubeHelper {
     }
 
     return getWindowPlayerData();
-  }
+  },
 
-  static getVolume() {
+  getVolume() {
     const player = YoutubeHelper.getPlayer();
     if (player?.getVolume) {
       return player.getVolume() / 100;
@@ -265,9 +270,9 @@ export default class YoutubeHelper {
 
     const media = document.querySelector("video");
     return media instanceof HTMLMediaElement ? media.volume : 1;
-  }
+  },
 
-  static setVolume(volume: number) {
+  setVolume(volume: number) {
     const player = YoutubeHelper.getPlayer();
     if (player?.setVolume) {
       return player.setVolume(Math.round(volume * 100));
@@ -280,9 +285,9 @@ export default class YoutubeHelper {
     }
 
     return false;
-  }
+  },
 
-  static isMuted() {
+  isMuted() {
     const player = YoutubeHelper.getPlayer();
     if (player?.isMuted) {
       return player.isMuted();
@@ -290,9 +295,9 @@ export default class YoutubeHelper {
 
     const media = document.querySelector("video");
     return media instanceof HTMLMediaElement ? media.muted : false;
-  }
+  },
 
-  static getVideoDuration(video?: HTMLVideoElement): number | undefined {
+  getVideoDuration(video?: HTMLVideoElement): number | undefined {
     const playerDuration =
       YoutubeHelper.getPlayer()?.getDuration?.call(undefined);
     if (typeof playerDuration === "number" && Number.isFinite(playerDuration)) {
@@ -305,9 +310,9 @@ export default class YoutubeHelper {
       media.duration > 0
       ? media.duration
       : undefined;
-  }
+  },
 
-  static getCurrentVideoId(url = new URL(globalThis.location.href)) {
+  getCurrentVideoId(url = new URL(globalThis.location.href)) {
     const playerData = YoutubeHelper.getPlayerData();
     const response = YoutubeHelper.getPlayerResponse();
 
@@ -331,16 +336,16 @@ export default class YoutubeHelper {
       (candidate): candidate is string =>
         typeof candidate === "string" && candidate.trim().length > 0,
     );
-  }
+  },
 
-  static getCanonicalVideoUrl(videoId?: string): string | undefined {
+  getCanonicalVideoUrl(videoId?: string): string | undefined {
     const resolvedVideoId = videoId ?? YoutubeHelper.getCurrentVideoId();
     return resolvedVideoId
       ? `https://youtu.be/${encodeURIComponent(resolvedVideoId)}`
       : undefined;
-  }
+  },
 
-  static getSubtitles(userLang: string) {
+  getSubtitles(userLang: string) {
     const response = YoutubeHelper.getPlayerResponse();
     const playerCaptions = response?.captions?.playerCaptionsTracklistRenderer;
     if (!playerCaptions) {
@@ -362,7 +367,7 @@ export default class YoutubeHelper {
             (captionTrack) =>
               captionTrack?.kind === "asr" && captionTrack.languageCode,
           )
-          .map((captionTrack) => normalizeLang(captionTrack.languageCode!))
+          .map((captionTrack) => normalizeLang(captionTrack.languageCode))
           .filter((language): language is string => Boolean(language)),
       ),
     );
@@ -417,9 +422,9 @@ export default class YoutubeHelper {
 
       return result;
     }, []);
-  }
+  },
 
-  static getLanguage() {
+  getLanguage() {
     const trackInfo = YoutubeHelper.getPlayer()
       ?.getAudioTrack?.()
       ?.getLanguageInfo?.();
@@ -434,7 +439,7 @@ export default class YoutubeHelper {
       new Set(
         captionTracks
           .filter((caption) => caption.kind === "asr" && caption.languageCode)
-          .map((caption) => normalizeLang(caption.languageCode!))
+          .map((caption) => normalizeLang(caption.languageCode))
           .filter((language): language is string => Boolean(language)),
       ),
     );
@@ -443,5 +448,6 @@ export default class YoutubeHelper {
     // exposes several different ASR languages. Let the higher-level resolver
     // use audio-track metadata or text detection instead.
     return asrLanguages.length === 1 ? asrLanguages[0] : undefined;
-  }
-}
+  },
+};
+export default YoutubeHelper;

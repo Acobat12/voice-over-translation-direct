@@ -2,6 +2,7 @@ import type { GetAudioFromAPIOptions } from "../../types/audioDownloader";
 import debug from "../../utils/debug";
 import { GM_fetch } from "../../utils/gm";
 import { getLastManifestUrl } from "../../utils/manifestSniffer";
+import { splitAudioBuffer } from "./audioChunks";
 
 const VK_PLAYER_SELECTOR = ".videoplayer_media, vk-video-player";
 
@@ -541,11 +542,6 @@ export async function getAudioFromVkVideo({
   return {
     fileId,
     mediaPartsLength,
-    async *getMediaBuffers(): AsyncGenerator<Uint8Array> {
-      for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-        const end = Math.min(start + chunkSize, bytes.byteLength);
-        yield bytes.subarray(start, end);
-      }
-    },
+    getMediaBuffers: () => splitAudioBuffer(bytes, chunkSize),
   };
 }

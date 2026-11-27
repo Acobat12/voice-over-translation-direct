@@ -5,6 +5,7 @@ import {
   createIntervalIdleChecker,
   type IntervalIdleChecker,
 } from "./intervalIdleChecker";
+import { isMobileYouTubePage } from "./pageContext";
 
 const AD_ATTRS = ["class", "id", "title"] as const;
 const AD_KEYWORDS = [
@@ -46,12 +47,6 @@ type AttachShadowHookState = {
 };
 
 const ATTACH_SHADOW_HOOK_KEY = Symbol.for("vot.attachShadowHook");
-
-function shouldLogMobileOverlay(): boolean {
-  return /^(m|music)\.youtube\.com$/i.test(
-    String(globalThis.location?.hostname || ""),
-  );
-}
 
 const DEFAULT_VIDEO_OBSERVER_POLICY: VideoObserverPolicy = {
   preferProbeBootstrap: false,
@@ -225,8 +220,28 @@ export class VideoObserver {
   }
 
   private isInsideAd(video: HTMLVideoElement): boolean {
+    const skilljar =
+      globalThis.location?.hostname === "anthropic-partners.skilljar.com";
+
     for (let p = video.parentElement; p; p = p.parentElement) {
-      if (this.isAdRelated(p)) return true;
+      if (!this.isAdRelated(p)) continue;
+
+      // На Skilljar "promo" обозначает оформление урока, а не рекламу.
+      if (
+        skilljar &&
+        p.tagName === "DIV" &&
+        (p.classList.contains("dp-promo-image") ||
+          p.classList.contains("dp-promo-image-wrapper")) &&
+        !["id", "title"].some((attr) =>
+          VideoObserver.containsAdKeyword(
+            (p.getAttribute(attr) || "").toLowerCase(),
+          ),
+        )
+      ) {
+        continue;
+      }
+
+      return true;
     }
 
     return false;
@@ -332,7 +347,7 @@ export class VideoObserver {
   }
 
   private stopObservingDom(): void {
-    if (shouldLogMobileOverlay()) {
+    if (isMobileYouTubePage()) {
       console.log(
         "[FORK][mobile-overlay][video-observer] disconnect DOM observer",
       );
@@ -828,47 +843,21 @@ export class VideoObserver {
       this.scan(scanTarget);
     };
 
-    if (!this.policy.startDomObservationOnEnable) {
-      const root = document.documentElement;
+    if (this.policy.startDomObservationOnEnable) {
+      this.checkerUnsubscribe?.();
+      this.checkerUnsubscribe = this.intervalIdleChecker.subscribe(
+        this.onCheckerTick,
+      );
 
-      if (root) {
-        startWhenReady();
-        return;
-      }
+      this.intervalIdleChecker.start();
+      this.intervalIdleChecker.markActivity("video-observer-enable");
 
-      const onReady = () => {
-        document.removeEventListener("readystatechange", onReady);
-        this.onDocumentReady = null;
+      this.installAttachShadowHook();
 
-        if (!this.enabled) return;
-
-        startWhenReady();
-      };
-
-      this.onDocumentReady = onReady;
-      document.addEventListener("readystatechange", onReady);
-
-      if (typeof queueMicrotask === "function") {
-        queueMicrotask(onReady);
-      } else {
-        void Promise.resolve().then(onReady);
-      }
-      return;
+      globalThis.addEventListener("pageshow", this.onPageShow, {
+        passive: true,
+      });
     }
-
-    this.checkerUnsubscribe?.();
-    this.checkerUnsubscribe = this.intervalIdleChecker.subscribe(
-      this.onCheckerTick,
-    );
-
-    this.intervalIdleChecker.start();
-    this.intervalIdleChecker.markActivity("video-observer-enable");
-
-    this.installAttachShadowHook();
-
-    globalThis.addEventListener("pageshow", this.onPageShow, {
-      passive: true,
-    });
 
     const root = document.documentElement;
 
@@ -903,7 +892,7 @@ export class VideoObserver {
   disable(): void {
     if (!this.enabled) return;
 
-    if (shouldLogMobileOverlay()) {
+    if (isMobileYouTubePage()) {
       console.log("[FORK][mobile-overlay][video-observer] disable observer");
     }
     this.enabled = false;

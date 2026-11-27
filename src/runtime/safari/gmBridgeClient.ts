@@ -2,84 +2,19 @@ import {
   SAFARI_GM_ABORT,
   SAFARI_GM_REQUEST,
   SAFARI_GM_RESPONSE,
-  type SafariGmBody,
   type SafariGmRequest,
   type SafariGmResponse,
 } from "./protocol";
+import {
+  base64ToArrayBuffer,
+  deserializeBody,
+  makeRequestId,
+  parseBridgeDetail,
+  parseRawResponseHeaders,
+  serializeBody,
+} from "./serialization";
 
 const CLIENT_FLAG = "__votSafariGmBridgeClientInstalled__";
-
-function makeRequestId(): string {
-  return `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
-  }
-
-  return btoa(binary);
-}
-
-function base64ToArrayBuffer(value: string): ArrayBuffer {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes.buffer;
-}
-
-async function serializeBody(body: unknown): Promise<SafariGmBody | undefined> {
-  if (body == null) return undefined;
-  if (typeof body === "string") return { type: "text", value: body };
-
-  if (body instanceof URLSearchParams) {
-    return { type: "text", value: body.toString() };
-  }
-
-  if (body instanceof Blob) {
-    return {
-      type: "base64",
-      value: arrayBufferToBase64(await body.arrayBuffer()),
-      mimeType: body.type || undefined,
-    };
-  }
-
-  if (body instanceof ArrayBuffer) {
-    return { type: "base64", value: arrayBufferToBase64(body) };
-  }
-
-  if (ArrayBuffer.isView(body)) {
-    const view = body as ArrayBufferView;
-    const bytes = new Uint8Array(view.byteLength);
-    bytes.set(new Uint8Array(view.buffer, view.byteOffset, view.byteLength));
-    return {
-      type: "base64",
-      value: arrayBufferToBase64(bytes.buffer),
-    };
-  }
-
-  return { type: "text", value: String(body) };
-}
-
-function deserializeBody(body?: SafariGmBody): BodyInit | null {
-  if (!body) return null;
-  if (body.type === "text") return body.value;
-
-  const buffer = base64ToArrayBuffer(body.value);
-  if (body.mimeType) {
-    return new Blob([buffer], { type: body.mimeType });
-  }
-
-  return buffer;
-}
 
 function headersToRecord(
   headers?: HeadersInit,
@@ -88,34 +23,6 @@ function headersToRecord(
   if (headers instanceof Headers) return Object.fromEntries(headers.entries());
   if (Array.isArray(headers)) return Object.fromEntries(headers);
   return headers as Record<string, string>;
-}
-
-function parseRawResponseHeaders(rawHeaders?: string): Record<string, string> {
-  if (!rawHeaders) return {};
-
-  return rawHeaders
-    .split(/\r?\n/)
-    .reduce<Record<string, string>>((acc, line) => {
-      const match = /^([\w-]+):\s*(.+)$/.exec(line);
-      if (match) acc[match[1]] = match[2];
-      return acc;
-    }, {});
-}
-
-function parseBridgeResponse(detail: unknown): SafariGmResponse | undefined {
-  if (typeof detail === "string") {
-    try {
-      return JSON.parse(detail) as SafariGmResponse;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (detail && typeof detail === "object") {
-    return detail as SafariGmResponse;
-  }
-
-  return undefined;
 }
 
 async function requestViaMain(
@@ -141,7 +48,7 @@ async function requestViaMain(
     );
 
     function onResponse(event: Event): void {
-      const response = parseBridgeResponse(
+      const response = parseBridgeDetail<SafariGmResponse>(
         (event as CustomEvent<SafariGmResponse | string>).detail,
       );
       if (!response || response.id !== id) return;
@@ -204,7 +111,7 @@ export async function safariProxyFetch(
     throw new TypeError(response.error || `Safari GM bridge ${response.phase}`);
   }
 
-  const body = deserializeBody(response.body);
+  const body = deserializeBody(response.body) ?? null;
   const fetchResponse = new Response(body, {
     status: response.status || 200,
     statusText: response.statusText || "",
@@ -249,7 +156,7 @@ export function safariProxyGMXmlHttpRequest(details: {
   }
 
   function onResponse(event: Event): void {
-    const response = parseBridgeResponse(
+    const response = parseBridgeDetail<SafariGmResponse>(
       (event as CustomEvent<SafariGmResponse | string>).detail,
     );
     if (!response || response.id !== id) return;
@@ -269,7 +176,7 @@ export function safariProxyGMXmlHttpRequest(details: {
       return;
     }
 
-    const responseBody = deserializeBody(response.body);
+    const responseBody = deserializeBody(response.body) ?? null;
     const rawHeaders = response.responseHeadersRaw || "";
     const textBody = response.body?.type === "text" ? response.body.value : "";
 

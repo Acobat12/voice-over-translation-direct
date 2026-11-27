@@ -1,11 +1,10 @@
 import { availableLangs, availableTTS } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
-import { render } from "lit-html";
 import type { VideoHandler } from "../..";
 import { maxAudioVolume } from "../../config/config";
 import { EventImpl } from "../../core/eventImpl";
 import { localizationProvider } from "../../localization/localizationProvider";
-import type { Direction, Position } from "../../types/components/votButton";
+import type { Direction, Position } from "../../types/components/votRail";
 import type { StorageData } from "../../types/storage";
 import type { ButtonLayout, OverlayMount } from "../../types/uiManager";
 import type {
@@ -16,6 +15,7 @@ import ui from "../../ui";
 import debug from "../../utils/debug";
 import { getEnvironmentInfo } from "../../utils/environment";
 import type { IntervalIdleChecker } from "../../utils/intervalIdleChecker";
+import { isMobileYouTubePage } from "../../utils/pageContext";
 import { votStorage } from "../../utils/storage";
 import { checkForUpdate, getUpdatePlatform } from "../../utils/updateChecker";
 import { isPiPAvailable } from "../../utils/utils";
@@ -26,15 +26,15 @@ import Select from "../components/select";
 import Slider from "../components/slider";
 import SliderLabel from "../components/sliderLabel";
 import Tooltip from "../components/tooltip";
-import VOTButton from "../components/votButton";
+import {
+  createVoiceModeMenuItem,
+  getVoiceModeDescription,
+  getVoiceModeLabel,
+} from "../components/voiceModeMenuItem";
 import VOTMenu from "../components/votMenu";
 import VOTRail from "../components/votRail";
-import {
-  CHECK_ICON,
-  SETTINGS_ICON,
-  SUBTITLES_ICON,
-  VOICE_WAVE_ICON,
-} from "./../icons";
+import { SETTINGS_ICON, SUBTITLES_ICON } from "./../icons";
+import { clampMenuPosition } from "../menuPosition";
 import { didTooltipMountContextChange } from "../mount";
 
 export class OverlayView {
@@ -51,6 +51,7 @@ export class OverlayView {
   private voiceModeMenuOpenedAt = 0;
 
   private dragging = false;
+  private dragPointerId: number | null = null;
   private dragCandidate = false;
   private dragDirty = false;
   private dragStartX = 0;
@@ -63,7 +64,7 @@ export class OverlayView {
 
   private updateNotice?: HTMLButtonElement;
   private updateNoticeTimer?: ReturnType<typeof setTimeout>;
-  private updateNoticeActive = false;
+  private updateNoticeVideoKey?: string;
   private updateNoticeGeneration = 0;
   private initialized = false;
   private readonly data: Partial<StorageData>;
@@ -107,7 +108,7 @@ export class OverlayView {
   };
 
   // button
-  votButton?: VOTButton | VOTRail;
+  votButton?: VOTRail;
   votButtonTooltip?: Tooltip;
   // menu
   votMenu?: VOTMenu;
@@ -171,52 +172,6 @@ export class OverlayView {
     return this.data.useLivelyVoice ? "lively" : "standard";
   }
 
-  private getVoiceModeLabel(mode = this.selectedVoiceMode): string {
-    return mode === "lively"
-      ? localizationProvider.get("VOTLivelyVoices")
-      : localizationProvider.get("VOTStandardVoices");
-  }
-
-  private getVoiceModeDescription(mode = this.selectedVoiceMode): string {
-    return mode === "lively"
-      ? localizationProvider.get("VOTLivelyVoicesDescription")
-      : localizationProvider.get("VOTStandardVoicesDescription");
-  }
-
-  private createVoiceModeMenuItem(mode: "standard" | "lively"): HTMLElement {
-    const item = ui.createEl("vot-block", ["vot-voice-mode-menu-item"]);
-    ui.makeButtonLike(item, {
-      ariaLabel: this.getVoiceModeLabel(mode),
-    });
-    item.dataset.mode = mode;
-
-    const icon = ui.createEl("vot-block", ["vot-voice-mode-menu-item-icon"]);
-    render(VOICE_WAVE_ICON, icon);
-
-    const content = ui.createEl("vot-block", [
-      "vot-voice-mode-menu-item-content",
-    ]);
-    const title = ui.createEl("vot-block", ["vot-voice-mode-menu-item-title"]);
-    title.textContent = this.getVoiceModeLabel(mode);
-    const description = ui.createEl("vot-block", [
-      "vot-voice-mode-menu-item-description",
-    ]);
-    description.textContent = this.getVoiceModeDescription(mode);
-    content.append(title, description);
-
-    const check = ui.createEl("vot-block", ["vot-voice-mode-menu-item-check"]);
-    render(CHECK_ICON, check);
-
-    item.append(icon, content, check);
-    return item;
-  }
-
-  private shouldLogMobileOverlay(): boolean {
-    return /^(m|music)\.youtube\.com$/i.test(
-      String(globalThis.location.hostname || ""),
-    );
-  }
-
   /**
    * Update mount points (root/tooltipLayoutRoot) when the player container changes.
    * Moves already-mounted UI nodes and rebinds root-bound listeners (dragging).
@@ -227,6 +182,7 @@ export class OverlayView {
     const prevTooltipRoot = this.mount.tooltipLayoutRoot;
     const nextTooltipRoot = nextMount.tooltipLayoutRoot;
 
+    if (prevRoot !== nextRoot) this.onDragEnd();
     this.mount = nextMount;
 
     if (!this.isInitialized()) {
@@ -293,7 +249,7 @@ export class OverlayView {
 
   isInitialized(): this is {
     // #region Button type
-    votButton: VOTButton | VOTRail;
+    votButton: VOTRail;
     votButtonTooltip: Tooltip;
     // #endregion Button type
     // #region Menu type
@@ -382,39 +338,39 @@ export class OverlayView {
     void votStorage.set("defaultVolume", this.data.defaultVolume);
   }
 
-  /** Display an update notice for two minutes at most, once per day. */
-  private async showUpdateNoticeIfDue(): Promise<void> {
+  /** Show once per video visit, independently of the release-check cache. */
+  async showUpdateNoticeForVideo(videoKey: string): Promise<void> {
+    if (
+      !this.initialized ||
+      !videoKey ||
+      this.updateNoticeVideoKey === videoKey
+    )
+      return;
+    this.updateNoticeVideoKey = videoKey;
     const generation = ++this.updateNoticeGeneration;
+    if (this.updateNoticeTimer !== undefined)
+      clearTimeout(this.updateNoticeTimer);
+    this.updateNoticeTimer = undefined;
+    this.updateNotice?.remove();
+    this.updateNotice = undefined;
+    this.votButton.container.classList.remove("vot-has-update-notice");
     const platform = getUpdatePlatform();
-    if (platform === "userscript" || this.updateNoticeActive) return;
     const version = getEnvironmentInfo().scriptVersion;
-    if (!/^\d+(?:\.\d+)*$/.test(version)) return;
-
-    const storageKey = `vot-update-notice:${platform}:${version}`;
-    const interval = 0 * 60 * 60 * 1000;
+    if (version === "unknown") return;
     try {
-      const lastShown = await votStorage.getRaw<number>(storageKey, 0);
-      if (generation !== this.updateNoticeGeneration || !this.initialized)
-        return;
-      if (
-        Number.isFinite(lastShown) &&
-        Date.now() - lastShown >= 0 &&
-        Date.now() - lastShown < interval
-      )
-        return;
-
       const update = await checkForUpdate(version, platform);
       if (
         !update ||
         generation !== this.updateNoticeGeneration ||
-        !this.initialized ||
-        this.updateNoticeActive
+        !this.initialized
       )
         return;
 
       const notice = document.createElement("button");
       notice.type = "button";
-      notice.textContent = `Доступно обновление ${update.version} — Скачать`;
+      notice.textContent = localizationProvider
+        .get("VOTUpdateNotice")
+        .replace("{0}", () => update.version);
       notice.setAttribute("aria-label", notice.textContent);
       notice.style.cssText = [
         "display:flex",
@@ -438,7 +394,6 @@ export class OverlayView {
         this.votButton.container.classList.remove("vot-has-update-notice");
         if (this.updateNotice === notice) {
           this.updateNotice = undefined;
-          this.updateNoticeActive = false;
         }
         if (this.updateNoticeTimer !== undefined)
           clearTimeout(this.updateNoticeTimer);
@@ -448,24 +403,16 @@ export class OverlayView {
         const url = !update.complete
           ? update.releaseUrl
           : (update.assets[0]?.url ?? update.releaseUrl);
-        window.location.assign(url);
+        window.open(url, "_blank", "noopener,noreferrer");
         dismiss();
       });
-      // Render before recording the cooldown: a failed or cancelled render
-      // must not suppress the notification for the next 24 hours.
       if (!this.votButton.container.isConnected) return;
       // Place the action in the actual translation controls, so the menu grows.
       const controls = this.votButton.container;
       controls.appendChild(notice);
       controls.classList.add("vot-has-update-notice");
       this.updateNotice = notice;
-      this.updateNoticeActive = true;
-      this.updateNoticeTimer = setTimeout(dismiss, 2 * 60 * 1000);
-      try {
-        await votStorage.setRaw(storageKey, Date.now());
-      } catch (error) {
-        console.warn("[VOT updates] Could not save notice cooldown", error);
-      }
+      this.updateNoticeTimer = setTimeout(dismiss, 6000);
     } catch (error) {
       console.warn("[VOT updates] Update notification check failed", error);
     }
@@ -483,19 +430,12 @@ export class OverlayView {
 
     // #endregion Shared logic
     // #region VOT Button
-    this.votButton = this.useRailLayout
-      ? new VOTRail({
-          position,
-          direction,
-          status: "none",
-          labelHtml: localizationProvider.get("VOTRailTranslateAndDub"),
-        })
-      : new VOTButton({
-          position,
-          direction,
-          status: "none",
-          labelHtml: localizationProvider.get("translateVideo"),
-        });
+    this.votButton = new VOTRail({
+      position,
+      direction,
+      status: "none",
+      labelHtml: localizationProvider.get("VOTRailTranslateAndDub"),
+    });
     this.votButton.opacity = 0;
     if (!this.pipButtonVisible) {
       this.votButton.showPiPButton(false);
@@ -510,7 +450,9 @@ export class OverlayView {
     }
     this.root.appendChild(this.votButton.container);
     this.syncSharedRailPlacement();
-    void this.showUpdateNoticeIfDue();
+    if (this.videoHandler?.videoData?.videoId) {
+      void this.showUpdateNoticeForVideo(this.videoHandler.videoData.videoId);
+    }
     this.votButtonTooltip = new Tooltip({
       target: this.votButton.translateButton,
       content: this.useRailLayout
@@ -670,8 +612,8 @@ export class OverlayView {
       this.voiceModeMenu.contentWrapper.style.overflowX = "visible";
       this.voiceModeMenu.hidden = true;
 
-      const standardItem = this.createVoiceModeMenuItem("standard");
-      const livelyItem = this.createVoiceModeMenuItem("lively");
+      const standardItem = createVoiceModeMenuItem("standard");
+      const livelyItem = createVoiceModeMenuItem("lively");
       this.voiceModeMenu.bodyContainer.append(standardItem, livelyItem);
       this.menuHost.appendChild(this.voiceModeMenu.container);
 
@@ -712,16 +654,6 @@ export class OverlayView {
     const isVertical =
       this.votButton.position === "left" || this.votButton.position === "right";
     const gap = OverlayView.MENU_CLAMP_GAP_PX;
-    const boundsLeft = Math.max(gap, boundsRect.left + gap);
-    const boundsTop = Math.max(gap, boundsRect.top + gap);
-    const boundsRight = Math.min(
-      globalThis.innerWidth - gap,
-      boundsRect.right - gap,
-    );
-    const boundsBottom = Math.min(
-      globalThis.innerHeight - gap,
-      boundsRect.bottom - gap,
-    );
     const horizontalAnchorRect = opts.alignToGroup ?? anchorRect;
 
     const desiredLeft = isVertical
@@ -730,26 +662,21 @@ export class OverlayView {
         : anchorRect.right + gap
       : horizontalAnchorRect.left +
         (horizontalAnchorRect.width - menuWidth) / 2;
-    const left = Math.max(
-      boundsLeft,
-      Math.min(Math.max(boundsLeft, boundsRight - menuWidth), desiredLeft),
-    );
-
     const desiredTop = isVertical
       ? anchorRect.top
       : (opts.alignToGroup?.bottom ?? anchorRect.bottom) + gap;
     const fallbackTop = isVertical
-      ? Math.max(boundsTop, boundsBottom - menuHeight)
+      ? undefined
       : (opts.alignToGroup?.top ?? anchorRect.top) - menuHeight - gap;
-    const top = Math.max(
-      boundsTop,
-      Math.min(
-        Math.max(boundsTop, boundsBottom - menuHeight),
-        desiredTop + menuHeight <= boundsBottom
-          ? desiredTop
-          : Math.max(boundsTop, fallbackTop),
-      ),
-    );
+    const { left, top } = clampMenuPosition({
+      desiredLeft,
+      desiredTop,
+      fallbackTop,
+      menuWidth,
+      menuHeight,
+      boundsRect,
+      gap,
+    });
 
     menu.container.style.left = `${left}px`;
     menu.container.style.top = `${top}px`;
@@ -906,8 +833,8 @@ export class OverlayView {
     this.votButton.container.dataset.voicePlaybackState = playbackState;
 
     if (status === "success") {
-      this.votButton.setText(this.getVoiceModeLabel(displayedMode));
-      this.votButtonTooltip?.setContent(this.getVoiceModeLabel(displayedMode));
+      this.votButton.setText(getVoiceModeLabel(displayedMode));
+      this.votButtonTooltip?.setContent(getVoiceModeLabel(displayedMode));
     }
 
     if (!this.voiceModeMenu) {
@@ -929,7 +856,7 @@ export class OverlayView {
       const description = item.querySelector<HTMLElement>(
         ".vot-voice-mode-menu-item-description",
       );
-      const label = this.getVoiceModeLabel(mode);
+      const label = getVoiceModeLabel(mode);
 
       item.dataset.selected = String(isSelected);
       item.dataset.playbackState = isSelected ? playbackState : "idle";
@@ -942,7 +869,7 @@ export class OverlayView {
       }
 
       if (description) {
-        description.textContent = this.getVoiceModeDescription(mode);
+        description.textContent = getVoiceModeDescription(mode);
       }
     }
 
@@ -961,17 +888,17 @@ export class OverlayView {
       this.onCheckerTick();
     });
 
+    const stopClickPropagation = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+
     // #region [Events] VOT Button
     // Prevent button click events from propagating.
-    this.votButton.container.addEventListener(
-      "click",
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      },
-      { signal },
-    );
+    this.votButton.container.addEventListener("click", stopClickPropagation, {
+      signal,
+    });
 
     // Keyboard support for custom elements.
     const activateOnKey = (handler: () => void) => (e: KeyboardEvent) => {
@@ -1211,15 +1138,9 @@ export class OverlayView {
       },
       { signal, capture: true },
     );
-    this.votMenu.container.addEventListener(
-      "click",
-      (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      },
-      { signal },
-    );
+    this.votMenu.container.addEventListener("click", stopClickPropagation, {
+      signal,
+    });
 
     // don't change mousedown, otherwise it may break on youtube
     for (const event of ["pointerdown", "mousedown"]) {
@@ -1260,11 +1181,7 @@ export class OverlayView {
       );
       this.voiceModeMenu.container.addEventListener(
         "click",
-        (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          e.stopImmediatePropagation();
-        },
+        stopClickPropagation,
         { signal },
       );
 
@@ -1596,12 +1513,12 @@ export class OverlayView {
     }
 
     const isBigContainer = this.dragIsBigContainer ?? this.isBigContainer;
-    const position = VOTButton.calcPosition(percentX, isBigContainer);
+    const position = VOTRail.calcPosition(percentX, isBigContainer);
     if (position === this.votButton.position) {
       return this;
     }
 
-    const direction = VOTButton.calcDirection(position);
+    const direction = VOTRail.calcDirection(position);
     this.data.buttonPos = position;
     this.updateButtonLayout(position, direction);
 
@@ -1671,13 +1588,22 @@ export class OverlayView {
 
     event.preventDefault();
 
+    this.onDragEnd();
+    this.dragPointerId = event.pointerId;
     this.startDragSession(event.clientX, event.clientY, "overlay-pointer-down");
+    this.bindDragCancellation();
 
     document.addEventListener("pointermove", this.onGlobalPointerMove, {
       passive: true,
+      capture: true,
     });
-    document.addEventListener("pointerup", this.onDragEnd);
-    document.addEventListener("pointercancel", this.onDragEnd);
+    document.addEventListener("pointerup", this.onPointerDragEnd, true);
+    document.addEventListener("pointercancel", this.onPointerDragEnd, true);
+    document.addEventListener(
+      "lostpointercapture",
+      this.onPointerDragEnd,
+      true,
+    );
   };
 
   // Touch fallback for browsers/environments that don't deliver Pointer Events
@@ -1685,6 +1611,12 @@ export class OverlayView {
   onTouchDragStart = (event: TouchEvent) => {
     if (!event.touches || event.touches.length === 0) return;
 
+    if (event.touches.length !== 1) {
+      this.onDragEnd();
+      return;
+    }
+    this.onDragEnd();
+    this.bindDragCancellation();
     const touch = event.touches[0];
     this.startDragSession(touch.clientX, touch.clientY, "overlay-touch-start");
 
@@ -1708,7 +1640,31 @@ export class OverlayView {
     }
   };
 
+  private bindDragCancellation(): void {
+    window.addEventListener("blur", this.onDragEnd);
+    window.addEventListener("pagehide", this.onDragEnd);
+    document.addEventListener("visibilitychange", this.onDragVisibilityChange);
+    window.addEventListener("mouseup", this.onMouseDragEnd, true);
+  }
+
+  private onDragVisibilityChange = () => {
+    if (document.hidden) this.onDragEnd();
+  };
+
+  private onMouseDragEnd = (event: MouseEvent) => {
+    if (this.dragPointerId !== null && event.button === 0) this.onDragEnd();
+  };
+
+  private onPointerDragEnd = (event: PointerEvent) => {
+    if (event.pointerId === this.dragPointerId) this.onDragEnd();
+  };
+
   onGlobalPointerMove = (event: PointerEvent) => {
+    if (!this.dragCandidate || event.pointerId !== this.dragPointerId) return;
+    if ((event.buttons & 1) === 0) {
+      this.onDragEnd();
+      return;
+    }
     this.updateDragFromMove(
       event.clientX,
       event.clientY,
@@ -1737,17 +1693,29 @@ export class OverlayView {
   };
 
   onDragEnd = () => {
-    document.removeEventListener("pointermove", this.onGlobalPointerMove);
-    document.removeEventListener("pointerup", this.onDragEnd);
-    document.removeEventListener("pointercancel", this.onDragEnd);
+    document.removeEventListener("pointermove", this.onGlobalPointerMove, true);
+    document.removeEventListener("pointerup", this.onPointerDragEnd, true);
+    document.removeEventListener("pointercancel", this.onPointerDragEnd, true);
+    document.removeEventListener(
+      "lostpointercapture",
+      this.onPointerDragEnd,
+      true,
+    );
+    window.removeEventListener("blur", this.onDragEnd);
+    window.removeEventListener("pagehide", this.onDragEnd);
+    window.removeEventListener("mouseup", this.onMouseDragEnd, true);
+    document.removeEventListener(
+      "visibilitychange",
+      this.onDragVisibilityChange,
+    );
+    this.dragPointerId = null;
 
     document.removeEventListener("touchmove", this.onGlobalTouchMove);
     document.removeEventListener("touchend", this.onDragEnd);
     document.removeEventListener("touchcancel", this.onDragEnd);
     this.applyDragFromState();
 
-    const isBigContainer = this.dragIsBigContainer ?? this.isBigContainer;
-    if (this.dragging && isBigContainer && this.data.buttonPos) {
+    if (this.dragging && this.dragIsBigContainer && this.data.buttonPos) {
       void votStorage.set("buttonPos", this.data.buttonPos);
     }
 
@@ -1771,7 +1739,7 @@ export class OverlayView {
   }
 
   private doReleaseUI(): void {
-    if (this.shouldLogMobileOverlay()) {
+    if (isMobileYouTubePage()) {
       console.log("[FORK][mobile-overlay][ui] remove overlay UI nodes", {
         hasButton: Boolean(this.votButton?.container?.isConnected),
         hasMenu: Boolean(this.votMenu?.container?.isConnected),
@@ -1802,7 +1770,7 @@ export class OverlayView {
       return this;
     }
 
-    if (this.shouldLogMobileOverlay()) {
+    if (isMobileYouTubePage()) {
       console.log("[FORK][mobile-overlay][ui] overlay view release");
     }
     // Release events first to prevent late handlers from touching removed DOM.
@@ -1813,7 +1781,7 @@ export class OverlayView {
     this.updateNotice?.remove();
     this.votButton.container.classList.remove("vot-has-update-notice");
     this.updateNotice = undefined;
-    this.updateNoticeActive = false;
+    this.updateNoticeVideoKey = undefined;
     this.doReleaseUIEvents();
     this.doReleaseUI();
 

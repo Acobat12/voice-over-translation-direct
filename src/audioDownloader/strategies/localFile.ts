@@ -1,4 +1,5 @@
 import { GM_fetch } from "../../utils/gm";
+import { splitAudioBuffer } from "./audioChunks";
 
 function makeSimpleFileId(size: number, chunkSize: number): string {
   return `local_${size}_${chunkSize}_${Date.now()}`;
@@ -142,11 +143,6 @@ export async function getAudioFromLocalFile({
   return {
     fileId,
     mediaPartsLength,
-    async *getMediaBuffers(): AsyncGenerator<Uint8Array> {
-      for (let start = 0; start < bytes.byteLength; start += chunkSize) {
-        const end = Math.min(start + chunkSize, bytes.byteLength);
-        yield bytes.subarray(start, end);
-      }
-    },
+    getMediaBuffers: () => splitAudioBuffer(bytes, chunkSize),
   };
 }

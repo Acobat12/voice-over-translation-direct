@@ -380,6 +380,12 @@ class VOTStorage {
 
     return this.syncList(support);
   }
+
+  async reset(): Promise<void> {
+    const keys = await this.list();
+    await Promise.all(keys.map((key) => this.delete(key)));
+    await this.set("compatVersion", actualCompatVersion);
+  }
 }
 
 const VOT_STORAGE_GLOBAL_KEY = "__VOT_STORAGE_SINGLETON__";

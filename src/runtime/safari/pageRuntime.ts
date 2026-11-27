@@ -16,26 +16,9 @@ import {
   type SafariPageRuntimeRequest,
   type SafariPageRuntimeResponse,
 } from "./protocol";
+import { parseBridgeDetail } from "./serialization";
 
 const RUNTIME_FLAG = "__votSafariPageRuntimeInstalled__";
-
-function parseRequestDetail(
-  detail: unknown,
-): SafariPageRuntimeRequest | undefined {
-  if (typeof detail === "string") {
-    try {
-      return JSON.parse(detail) as SafariPageRuntimeRequest;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (detail && typeof detail === "object") {
-    return detail as SafariPageRuntimeRequest;
-  }
-
-  return undefined;
-}
 
 function dispatchResponse<T>(response: SafariPageRuntimeResponse<T>): void {
   document.dispatchEvent(
@@ -98,7 +81,7 @@ function installSafariPageRuntime(): void {
   }
 
   document.addEventListener(SAFARI_PAGE_RUNTIME_REQUEST, (event) => {
-    const request = parseRequestDetail(
+    const request = parseBridgeDetail<SafariPageRuntimeRequest>(
       (event as CustomEvent<SafariPageRuntimeRequest | string>).detail,
     );
     if (!request?.id || !request.action) return;

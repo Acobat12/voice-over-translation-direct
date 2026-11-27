@@ -3,13 +3,18 @@
     "types": ["@toil/gm-types/v3", "@toil/gm-types/v4"],
     "target": "ES2024",
     "module": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "lib": ["DOM", "DOM.Iterable", "DOM.AsyncIterable", "ESNext"],
     "strict": false,
+    "noUnusedLocals": true,
     "noImplicitAny": false,
     "moduleResolution": "bundler",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts"]
+  "include": ["src/**/*.ts", "src/**/*.d.ts"],
+  "exclude": [
+    "src/**/* \u2014 \u043a\u043e\u043f\u0438\u044f.ts",
+    "src/**/*#U*.ts"
+  ]
 }

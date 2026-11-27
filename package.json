@@ -15,7 +15,7 @@
     "voice-over-translation-direct"
   ],
   "devDependencies": {
-    "@biomejs/biome": "^2.5.2",
+    "@biomejs/biome": "2.4.13",
     "@toil/typebox-genx": "^0.1.0",
     "@types/bun": "1.3.14",
     "@vot.js/core": "^2.4.12",
@@ -30,6 +30,7 @@
     "zip-a-folder": "6.1.2"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:unit": "bun test",
     "test:unit:watch": "bun test --watch",
@@ -54,7 +55,8 @@
     "build:safari:main": "vite build --config vite.safari-userscript.config.ts",
     "build:safari:main:diag": "vite build --mode diagnostic --config vite.safari-userscript.config.ts",
     "build:safari:page": "vite build --config vite.safari-userscript.config.ts",
-    "build:safari:page:diag": "vite build --mode diagnostic --config vite.safari-userscript.config.ts"
+    "build:safari:page:diag": "vite build --mode diagnostic --config vite.safari-userscript.config.ts",
+    "check:locales": "node scripts/check-locales.mjs"
   },
   "dependencies": {
     "@toil/gm-types": "1.0.4",

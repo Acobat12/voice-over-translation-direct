@@ -20,6 +20,11 @@ import type { VideoHandler } from "../../index";
 import debug from "../../utils/debug";
 import { containsCrossShadow } from "../../utils/dom";
 import { GM_fetch } from "../../utils/gm";
+import {
+  getPageKey,
+  isMobileYouTubePage,
+  isVkPage,
+} from "../../utils/pageContext";
 import { getPlatformEventConfig } from "../../utils/platformEvents";
 import { clampPercentInt } from "../../utils/volume";
 
@@ -90,30 +95,15 @@ function mergeListenerSignals(
 }
 
 function isVkLikeSiteHost(host: string): boolean {
-  return (
-    host === "vk" ||
-    /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
-      String(globalThis.location?.hostname || ""),
-    )
-  );
-}
-
-function isMobileYouTubeDebugHost(): boolean {
-  return /^(m|music)\.youtube\.com$/i.test(
-    String(globalThis.location?.hostname || ""),
-  );
+  return host === "vk" || isVkPage();
 }
 
 function logMobileOverlay(message: string, details?: unknown): void {
-  if (!isMobileYouTubeDebugHost()) {
+  if (!isMobileYouTubePage()) {
     return;
   }
 
   console.log(`[FORK][mobile-overlay][events] ${message}`, details ?? {});
-}
-
-function getMobileYouTubePageKey(): string {
-  return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`;
 }
 
 function clearMobileYouTubeLifecycleDebounce(self: VideoHandler): void {
@@ -141,7 +131,7 @@ function scheduleMobileYouTubeLifecycleRetry(
 ): void {
   clearMobileYouTubeLifecycleDebounce(self);
 
-  const pageKey = getMobileYouTubePageKey();
+  const pageKey = getPageKey();
   logMobileOverlay("schedule lifecycle retry", {
     reason,
     pageKey,
@@ -156,7 +146,7 @@ function scheduleMobileYouTubeLifecycleRetry(
       return;
     }
 
-    const currentPageKey = getMobileYouTubePageKey();
+    const currentPageKey = getPageKey();
     if (currentPageKey !== pageKey) {
       logMobileOverlay("run lifecycle cleanup after page change", {
         reason,
@@ -717,6 +707,63 @@ function bindGlobalDismissAndHotkeys(ctx: ExtraEventsContext): void {
 }
 function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
   const { self, overlayView, add } = ctx;
+
+  // TikTok: немедленно сбрасываем перевод при смене ролика.
+  let tiktokSwitchPromise = null;
+  let tiktokSwitchTarget = null;
+
+  const checkTikTokVideoSwitch = () => {
+    if (self.site.host !== "tiktok") return;
+
+    const currentVideo = self.video;
+    if (!currentVideo?.isConnected) return;
+
+    const card = currentVideo.closest(
+      '[class*="SectionMediaCardContainer"],' +
+        '[data-e2e="recommend-list-item-container"]',
+    );
+    if (!card) return;
+
+    const wrapper = card.querySelector('[id^="xgwrapper-"]');
+
+    const newId =
+      card
+        .querySelector("[data-more-menu-item-id]")
+        ?.getAttribute("data-more-menu-item-id") ||
+      wrapper?.id.match(/(\d{15,22})$/)?.[1];
+
+    const oldId = self.videoData?.videoId;
+
+    if (!/^\d{10,25}$/.test(newId || "")) return;
+    if (!oldId || newId === oldId) return;
+
+    if (tiktokSwitchPromise) {
+      if (tiktokSwitchTarget === newId) return;
+      // Повторную проверку выполнит механизм обновления видео.
+      return;
+    }
+
+    console.info("[FORK][tiktok] stopping previous translation", {
+      previous: oldId,
+      current: newId,
+    });
+
+    tiktokSwitchTarget = newId;
+
+    // Убираем устаревшие данные сразу.
+    self.videoData = undefined;
+
+    tiktokSwitchPromise = Promise.resolve()
+      .then(() => self.stopTranslation())
+      .catch((error) => {
+        console.error("[FORK][tiktok] translation stop failed", error);
+      })
+      .finally(() => {
+        tiktokSwitchPromise = null;
+        tiktokSwitchTarget = null;
+      });
+  };
+
   const safeSetCanPlay = async () => {
     try {
       await self.setCanPlay();
@@ -747,6 +794,9 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
     // playback or after a later metadata repaint. Re-run the lifecycle check so
     // the button can move from the temporary disabled state back to normal.
     add(self.video, eventName, () => {
+      if (self.site.host === "tiktok") {
+        checkTikTokVideoSwitch();
+      }
       if (eventName === "play" || eventName === "playing") {
         console.log("[FORK][source-audio] play event received", {
           eventName,
@@ -815,7 +865,7 @@ function bindVideoLifecycleEvents(ctx: ExtraEventsContext): void {
       logMobileOverlay("video emptied; start grace period", {
         currentVideoId: self.videoData?.videoId,
         resolvedVideoId: videoId,
-        pageKey: getMobileYouTubePageKey(),
+        pageKey: getPageKey(),
       });
       resetLifecycleTranslation(self, {
         clearVideoData: true,

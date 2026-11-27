@@ -1,105 +1,33 @@
+import { config as votConfig } from "@vot.js/shared";
 import { SabrStream } from "googlevideo/sabr-stream";
 import debug from "../../utils/debug";
-import {
-  getYoutubeAudioFormatLanguage as getAudioFormatLanguage,
-  normalizeAudioLanguageTag as normalizeAudioLanguage,
-} from "../utils";
+import { normalizeAudioLanguageTag as normalizeAudioLanguage } from "../utils";
 import { type AudioChunk, concatBuffers } from "./audioChunks";
 import {
-  audioLanguageMatches,
+  getYouTubeAudioMetadata,
+  isSupportedYouTubeSourceLanguage,
+  selectSmallestYouTubeAudio,
+} from "./youtubeAudioMetadata";
+import {
   buildSabrPlayerRequest,
   getConfigValue,
   getNativePlayerResponse,
+  getPageExperimentFlags,
   getTopPageWindow,
   getYouTubeAuthorization,
   mintPagePoToken,
   postInnertubePlayer,
   resolveSabrStreamingUrl,
   resolveYtcfg,
-  selectEconomyAudioFormat,
   selectGvsPoTokenBinding,
   type WebAbrWindow,
 } from "./youtubePlayer";
 import {
-  sabrTrackLanguage,
   setGeneratedSabrAudioTrackId,
-  switchYouTubeSabrAudioTrack,
   toSabrFormat,
   VOT_SABR_INSTANCE_CONTEXT,
   WEB_ABR_RESOLVED_AUDIO_LANGUAGES,
-  waitForSabrAudioTrackId,
 } from "./youtubeSabrSupport";
-
-function readProtoVarint(
-  bytes: Uint8Array,
-  start: number,
-): { value: number; next: number } {
-  let value = 0;
-  let shift = 0;
-  let offset = start;
-  while (offset < bytes.length && shift <= 35) {
-    const byte = bytes[offset++];
-    value += (byte & 0x7f) * 2 ** shift;
-    if ((byte & 0x80) === 0) return { value, next: offset };
-    shift += 7;
-  }
-  throw new Error("invalid protobuf varint");
-}
-
-function getGeneratedSabrAudioTrackId(bytes: Uint8Array): string | undefined {
-  try {
-    let offset = 0;
-    while (offset < bytes.length) {
-      const tag = readProtoVarint(bytes, offset);
-      offset = tag.next;
-      const field = Math.floor(tag.value / 8);
-      const wire = tag.value & 7;
-      if (wire !== 2) {
-        if (wire === 0) offset = readProtoVarint(bytes, offset).next;
-        else if (wire === 1) offset += 8;
-        else if (wire === 5) offset += 4;
-        else return undefined;
-        continue;
-      }
-      const length = readProtoVarint(bytes, offset);
-      const start = length.next;
-      const end = start + length.value;
-      if (end > bytes.length) return undefined;
-      if (field === 1) {
-        let inner = start;
-        while (inner < end) {
-          const innerTag = readProtoVarint(bytes, inner);
-          inner = innerTag.next;
-          const innerField = Math.floor(innerTag.value / 8);
-          const innerWire = innerTag.value & 7;
-          if (innerWire === 2) {
-            const innerLength = readProtoVarint(bytes, inner);
-            const valueStart = innerLength.next;
-            const valueEnd = valueStart + innerLength.value;
-            if (valueEnd > end) return undefined;
-            if (innerField === 69) {
-              const trackId = new TextDecoder().decode(
-                bytes.slice(valueStart, valueEnd),
-              );
-              return /^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\.\d{1,3}$/.test(
-                trackId,
-              )
-                ? trackId
-                : undefined;
-            }
-            inner = valueEnd;
-          } else if (innerWire === 0)
-            inner = readProtoVarint(bytes, inner).next;
-          else if (innerWire === 1) inner += 8;
-          else if (innerWire === 5) inner += 4;
-          else return undefined;
-        }
-      }
-      offset = end;
-    }
-  } catch {}
-  return undefined;
-}
 
 export async function* trySabrAudioChunks(
   targetWindow: WebAbrWindow,
@@ -177,101 +105,87 @@ export async function* trySabrAudioChunks(
   // separately generated /player response can be valid while still producing
   // a different SABR request payload. Keep our fetched response as fallback.
   const nativePlayer = getNativePlayerResponse(targetWindow, videoId);
-  if (nativePlayer) player = nativePlayer;
+  // A native Shorts response may advertise SABR but omit usable audio formats.
+  // Only prefer it when it can actually select an audio representation.
+  const hasUsableSabrAudio = (candidate: typeof player | undefined) =>
+    Boolean(
+      candidate?.streamingData?.serverAbrStreamingUrl &&
+        candidate.playerConfig?.mediaCommonConfig?.mediaUstreamerRequestConfig
+          ?.videoPlaybackUstreamerConfig &&
+        [
+          ...(candidate.streamingData?.adaptiveFormats ?? []),
+          ...(candidate.streamingData?.formats ?? []),
+        ].some((format) => format.mimeType?.startsWith("audio/")),
+    );
+  if (nativePlayer && hasUsableSabrAudio(nativePlayer)) {
+    player = nativePlayer;
+  } else if (!hasUsableSabrAudio(player)) {
+    throw new Error(
+      "Audio downloader. no complete SABR player response with audio formats",
+    );
+  }
 
   const playerServerAbrStreamingUrl =
     player.streamingData?.serverAbrStreamingUrl;
 
-  // The translation request language and the YouTube audio-track selection are
-  // different things. A user can ask VOT to translate from English while the
-  // YouTube player is currently playing Japanese (or any other alternate audio
-  // track). Never derive SABR trackId from requestLang/sourceLanguage.
-  //
-  // Instead capture a fresh native SABR request from the current YouTube player
-  // and read its concrete ClientAbrState.audioTrackId (field 1 -> field 69).
-  // This preserves YouTube's actual selection exactly: ja.10, en.4, en-US.4,
-  // es-US.10, etc. No suffix/region is constructed or hard-coded.
-  // Native SABR capture is diagnostic/track-selection assistance only.
-  // Do not make VOT depend on the native player having already emitted a SABR POST.
-  // YouTube keeps the document alive between watch pages. Explicitly drop a
-  // snapshot from the previous video, while preserving the original fast SABR
-  // request loop and all of its timing/backoff behavior.
+  // One source of truth for the selected supported audio language and logical track.
+  // A supported alternate is allowed when the original is unsupported.
+  const metadata = getYouTubeAudioMetadata(videoId);
+  const availableAudio = [
+    ...(player.streamingData?.adaptiveFormats ?? []),
+    ...(player.streamingData?.formats ?? []),
+  ].filter((format) => format.mimeType?.startsWith("audio/"));
+  const availableTrackIds = [
+    ...new Set(
+      availableAudio
+        .map((format) => format.audioTrackId ?? format.audioTrack?.id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  // Player captions can be absent in Shorts. Use the selected response's
+  // actual format track IDs rather than assuming that means single-language.
+  const metadataTrackId = metadata?.trackId;
+  const sabrAudioTrackId =
+    metadataTrackId && availableTrackIds.includes(metadataTrackId)
+      ? metadataTrackId
+      : (availableTrackIds.find(
+          (id) => id.endsWith(".4") && isSupportedYouTubeSourceLanguage(id),
+        ) ??
+        (availableTrackIds.length === 1 ? availableTrackIds[0] : undefined));
+  const actualSabrLanguage =
+    sabrAudioTrackId?.split(".")[0] ?? metadata?.language;
   const requestedSabrLanguage = normalizeAudioLanguage(sourceLanguage);
-  const resolvedSabrTrack = await waitForSabrAudioTrackId(
-    targetWindow,
-    signal,
-    sourceLanguage,
-    2000,
-  );
-  const sabrAvailableTrackIds = resolvedSabrTrack.availableTrackIds;
-  if (resolvedSabrTrack.trackId)
-    switchYouTubeSabrAudioTrack(targetWindow, resolvedSabrTrack.trackId);
+  const sabrTrackSelection = "player-response" as const;
 
-  // PURE-ONLY build: do not arm, inspect, wait for, replay, or compare against
-  // YouTube's native SABR requests. This path starts exclusively from /player.
-  const nativeSabrAudioTrackId: string | undefined = undefined;
-
-  // Track selection policy:
-  // 1. Prefer the VOT UI language when YouTube exposes that real track.
-  // 2. If it is absent, only consider tracks whose language exists in VOT's
-  //    local SABR_ALTERNATIVE_SOURCE_LANGUAGES whitelist. Never use availableTrackIds[0] blindly.
-  // 3. Among supported alternatives prefer the native YouTube track, because
-  //    it is already bound to the captured SABR session.
-  // 4. With no runtime list, preserve the native/default track.
-  let sabrAudioTrackId = resolvedSabrTrack.trackId;
-  let sabrTrackSelection:
-    | "ui-language"
-    | "supported-alternative"
-    | "native-only"
-    | "native-auto";
-
-  if (resolvedSabrTrack.usedSupportedAlternative) {
-    const supportedSet = new Set(
-      resolvedSabrTrack.supportedAlternativeTrackIds,
-    );
-    if (nativeSabrAudioTrackId && supportedSet.has(nativeSabrAudioTrackId)) {
-      sabrAudioTrackId = nativeSabrAudioTrackId;
-    }
-    sabrTrackSelection = "supported-alternative";
-  } else if (sabrAudioTrackId) {
-    sabrTrackSelection = "ui-language";
-  } else if (sabrAvailableTrackIds.length === 0) {
-    sabrAudioTrackId = nativeSabrAudioTrackId;
-    sabrTrackSelection =
-      requestedSabrLanguage && requestedSabrLanguage !== "auto"
-        ? "native-only"
-        : "native-auto";
-  } else {
+  // Missing/unknown metadata is not proof that the selected audio is unusable.
+  // Allow SABR to fetch it; language detection for translation happens later.
+  // Keep rejecting explicitly known unsupported languages.
+  const knownSabrLanguage =
+    actualSabrLanguage &&
+    !["unknown", "auto", "und"].includes(actualSabrLanguage.toLowerCase())
+      ? actualSabrLanguage
+      : undefined;
+  if (
+    knownSabrLanguage &&
+    !isSupportedYouTubeSourceLanguage(knownSabrLanguage)
+  ) {
     throw new Error(
-      `Audio downloader. SABR found no VOT-supported audio track ` +
-        `(requested: ${sourceLanguage ?? "auto"}, available: ${sabrAvailableTrackIds.join(", ")})`,
+      `Audio downloader. unsupported selected YouTube language for ${videoId}: ${knownSabrLanguage}`,
     );
   }
-
-  const actualSabrLanguage = sabrAudioTrackId
-    ? sabrTrackLanguage(sabrAudioTrackId)
-    : requestedSabrLanguage || undefined;
+  if (!sabrAudioTrackId && availableTrackIds.length > 1) {
+    throw new Error(
+      `Audio downloader. ambiguous multilingual YouTube audio for ${videoId}`,
+    );
+  }
 
   WEB_ABR_RESOLVED_AUDIO_LANGUAGES.set(videoId, {
     videoId,
     requestedLanguage: requestedSabrLanguage || undefined,
-    actualLanguage: actualSabrLanguage,
+    actualLanguage: knownSabrLanguage,
     trackId: sabrAudioTrackId,
     selection: sabrTrackSelection,
   });
-
-  // Native SABR is a bootstrap/session reference, not the authority for VOT's
-  // selected language. YouTube player switching is unreliable across builds and
-  // previously caused valid alternate tracks to fail before format selection.
-  // The concrete media track is enforced below by (audioTrackId/language + itag)
-  // filtering and by exposing only that track's audio formats to SabrStream.
-  const confirmedNativeTrackId = nativeSabrAudioTrackId;
-  const nativeTrackConfirmed =
-    !sabrAudioTrackId || sabrAudioTrackId === nativeSabrAudioTrackId;
-
-  // PURE_ONLY: no native SABR session/body exists in this path.
-  const nativeSabrSession: NativeSabrSession | undefined = undefined;
-  const nativeSabrBody: NativeSabrBodySnapshot | undefined = undefined;
 
   // Keep config/formats from one coherent player response. SabrStream starts
   // from that response URL, while sabrDiagnosticFetch may substitute a fresh
@@ -299,10 +213,6 @@ export async function* trySabrAudioChunks(
     ...(player.streamingData?.adaptiveFormats ?? []),
     ...(player.streamingData?.formats ?? []),
   ];
-  const sabrFormats = rawFormats.flatMap((format) => {
-    const converted = toSabrFormat(format);
-    return converted ? [converted] : [];
-  });
   const audioCandidates = rawFormats.filter(
     (format) =>
       format.mimeType?.includes("audio/") &&
@@ -314,79 +224,39 @@ export async function* trySabrAudioChunks(
   // duplicate happens to occur first (observed as ar.10 / array index 0).
   // Resolve the concrete track first, then choose the economy representation
   // *inside that track*. Never convert a track position into a hard-coded index.
-  const normalizedSelectedTrackId = sabrAudioTrackId?.toLowerCase();
-  const requestedTrackLanguage = normalizedSelectedTrackId
-    ? normalizeAudioLanguage(normalizedSelectedTrackId.split(".")[0])
-    : normalizeAudioLanguage(sourceLanguage);
-  const formatTrackId = (format: WebEmbeddedFormat): string | undefined =>
-    format.audioTrackId ?? format.audioTrack?.id;
-
-  const exactTrackAudioCandidates = normalizedSelectedTrackId
-    ? audioCandidates.filter(
-        (format) =>
-          formatTrackId(format)?.toLowerCase() === normalizedSelectedTrackId,
-      )
-    : [];
-  const languageTrackAudioCandidates =
-    exactTrackAudioCandidates.length === 0 && requestedTrackLanguage
-      ? audioCandidates.filter((format) =>
-          audioLanguageMatches(
-            getAudioFormatLanguage(format),
-            requestedTrackLanguage,
-          ),
-        )
-      : [];
-  // Some native WEB SABR responses expose the concrete audioTrackId only in
-  // ClientAbrState while adaptiveFormats contains no audioTrackId/language at
-  // all. In that case requiring the player-format metadata to prove the track
-  // again rejects a selection that the native SABR request already proves.
-  //
-  // This is deliberately NOT an itag/array[0] fallback. We only open the
-  // representation set when (a) every audio format is track-unscoped and
-  // (b) this exact selected track is present in the captured native request.
-  // The preserved native ClientAbrState remains the authority for which audio
-  // track the SABR server serves; selectEconomyAudioFormat only chooses the
-  // representation/quality (249/250/251/140, DRC vs non-DRC).
-  const playerHasConcreteAudioTrackMetadata = audioCandidates.some((format) =>
-    Boolean(
-      formatTrackId(format) ||
-        normalizeAudioLanguage(getAudioFormatLanguage(format)),
-    ),
+  // Only accept formats of the chosen logical track on multilingual videos.
+  // If adaptiveFormats lacks track IDs, SABR cannot safely bind a format to a language.
+  const selected = selectSmallestYouTubeAudio(
+    audioCandidates,
+    sabrAudioTrackId,
+    availableTrackIds.length > 1,
   );
-  const nativeRequestConfirmsSelectedTrack = false;
-  const nativeBoundUnscopedAudioCandidates =
-    exactTrackAudioCandidates.length === 0 &&
-    languageTrackAudioCandidates.length === 0 &&
-    !playerHasConcreteAudioTrackMetadata &&
-    nativeRequestConfirmsSelectedTrack
-      ? audioCandidates
-      : [];
-
-  const selectedTrackAudioCandidates =
-    exactTrackAudioCandidates.length > 0
-      ? exactTrackAudioCandidates
-      : languageTrackAudioCandidates.length > 0
-        ? languageTrackAudioCandidates
-        : nativeBoundUnscopedAudioCandidates.length > 0
-          ? nativeBoundUnscopedAudioCandidates
-          : sabrAvailableTrackIds.length <= 1
-            ? audioCandidates
-            : [];
-
-  if (selectedTrackAudioCandidates.length === 0) {
+  if (!selected) {
     throw new Error(
-      `Audio downloader. SABR has no concrete formats for selected track ` +
-        `${sabrAudioTrackId ?? "native/default"}; refusing array[0] fallback`,
+      `Audio downloader. no audio format for ${sabrAudioTrackId ?? "default"}`,
     );
   }
+  const audioFormatsForSelection = audioCandidates.filter((format) =>
+    availableTrackIds.length > 1
+      ? (format.audioTrackId ?? format.audioTrack?.id) === sabrAudioTrackId
+      : true,
+  );
 
-  const selected = selectEconomyAudioFormat(selectedTrackAudioCandidates);
   if (!selected?.itag)
     throw new Error("Audio downloader. SABR audio format is unavailable");
 
   // Do not recover the selected format with find(itag): the same itag exists in
   // several audio tracks. Convert the exact object that won track + quality
   // selection so its audioTrackId/language metadata stays attached.
+  debug.log("[FORK][SABR] selected original audio format", {
+    videoId,
+    trackId: sabrAudioTrackId,
+    itag: selected.itag,
+    expectedBytes: selected.contentLength,
+    candidateCount: audioCandidates.length,
+    availableTrackIds,
+    playerSource: player === nativePlayer ? "native" : "innertube",
+  });
   const selectedSabr = toSabrFormat(selected);
   if (!selectedSabr)
     throw new Error(
@@ -396,7 +266,7 @@ export async function* trySabrAudioChunks(
   // SabrStream also indexes/chooses formats by itag. Supplying duplicate audio
   // itags for 20+ languages can collapse back to the first track. Keep all video
   // representations, but expose only the selected audio track to this instance.
-  const selectedTrackAudioObjects = new Set(selectedTrackAudioCandidates);
+  const selectedTrackAudioObjects = new Set(audioFormatsForSelection);
   const sabrFormatsForStream = rawFormats.flatMap((format) => {
     const isAudio =
       format.mimeType?.includes("audio/") &&
@@ -435,21 +305,14 @@ export async function* trySabrAudioChunks(
   // SABR (sabr=1) does not send the GVS PO token as a `pot=` URL query.
   // googlevideo/SabrStream serializes `poToken` into the SABR protobuf payload.
   // Reuse the same page BotGuard minter/binding policy as the direct Web-ABR path.
-  const playerContexts = getConfigValue(config, "WEB_PLAYER_CONTEXT_CONFIGS");
-  const pageExperimentFlags = Object.values(
-    playerContexts && typeof playerContexts === "object" ? playerContexts : {},
-  ).flatMap((entry: { serializedExperimentFlags?: unknown } | null) =>
-    typeof entry?.serializedExperimentFlags === "string"
-      ? [entry.serializedExperimentFlags]
-      : [],
-  );
+
   const sabrPoTokenBinding = selectGvsPoTokenBinding(videoId, {
     loggedIn: Boolean(authorization),
     dataSyncId:
       player.responseContext?.mainAppWebResponseContext?.datasyncId ??
       dataSyncId,
     visitorData,
-    experimentFlags: pageExperimentFlags,
+    experimentFlags: getPageExperimentFlags(config),
   });
   const sabrPoToken = sabrPoTokenBinding
     ? await mintPagePoToken(targetWindow, sabrPoTokenBinding.value, signal)
@@ -473,7 +336,7 @@ export async function* trySabrAudioChunks(
       offset < bytes.length && offset < start + 10;
       offset++
     ) {
-      const byte = bytes[offset]!;
+      const byte = bytes[offset];
       value |= BigInt(byte & 0x7f) << shift;
       if ((byte & 0x80) === 0) return { value, next: offset + 1 };
       shift += 7n;
@@ -583,7 +446,6 @@ export async function* trySabrAudioChunks(
   let consecutivePostBootstrapRequestsWithoutBufferedRanges = 0;
   const sabrDiagnosticFetch: typeof fetch = async (input, init) => {
     const index = ++sabrRequestIndex;
-    const startedAt = performance.now();
     const inputIsRequest =
       typeof targetWindow.Request !== "undefined" &&
       input instanceof targetWindow.Request;
@@ -600,19 +462,8 @@ export async function* trySabrAudioChunks(
       url.hostname.endsWith("googlevideo.com") &&
       url.pathname === "/videoplayback" &&
       url.searchParams.get("sabr") === "1";
-    if (isSabrRequest) {
-      // Do not graft a native player's signed URL/cpn/rn onto this pump.
-      // serverAbrStreamingUrl was independently n-solved above and SabrStream
-      // is authoritative for this request sequence and redirects.
-    }
     const method =
       init?.method ?? (inputIsRequest ? input.method : undefined) ?? "GET";
-    const credentials =
-      init?.credentials ?? (inputIsRequest ? input.credentials : undefined);
-    const mode = init?.mode ?? (inputIsRequest ? input.mode : undefined);
-    const redirect =
-      init?.redirect ?? (inputIsRequest ? input.redirect : undefined);
-    const cache = init?.cache ?? (inputIsRequest ? input.cache : undefined);
     const body = init?.body ?? null;
 
     const headers = new targetWindow.Headers(
@@ -625,7 +476,6 @@ export async function* trySabrAudioChunks(
     // Removing it changes only HTTP metadata; the body remains protobuf.
     if (isSabrRequest) {
       headers.delete("content-type");
-      headers.delete("Content-Type");
     }
 
     // A Blob with type="application/x-protobuf" makes Fetch synthesize the
@@ -642,22 +492,7 @@ export async function* trySabrAudioChunks(
 
     const headerEntries = Object.fromEntries(headers.entries());
 
-    let bodyType = body === null ? "none" : typeof body;
-    let bodyConstructor: string | null = null;
-    let bodyByteLength: number | null = null;
-    let bodyIsReadableStream = false;
-    let bodyHexPreview: string | null = null;
-
     if (body !== null) {
-      bodyConstructor =
-        typeof body === "object" && body && "constructor" in body
-          ? ((body as { constructor?: { name?: string } }).constructor?.name ??
-            null)
-          : null;
-      bodyIsReadableStream =
-        typeof targetWindow.ReadableStream !== "undefined" &&
-        body instanceof targetWindow.ReadableStream;
-
       let bytes: Uint8Array | null = null;
       if (typeof body === "string") {
         bytes = new TextEncoder().encode(body);
@@ -665,23 +500,10 @@ export async function* trySabrAudioChunks(
         bytes = new Uint8Array(body);
       } else if (ArrayBuffer.isView(body)) {
         bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
-      } else if (
-        typeof targetWindow.Blob !== "undefined" &&
-        body instanceof targetWindow.Blob
-      ) {
-        bodyByteLength = body.size;
       }
 
       if (bytes) {
-        bodyByteLength = bytes.byteLength;
-        bodyHexPreview = [...bytes.subarray(0, 24)]
-          .map((value) => value.toString(16).padStart(2, "0"))
-          .join(" ");
         const protobuf = inspectSabrProto(bytes);
-        const encodedAudioTrackId = getGeneratedSabrAudioTrackId(bytes);
-        if (index <= 3 || encodedAudioTrackId !== sabrAudioTrackId) {
-        }
-
         // A healthy post-bootstrap SabrStream must start reporting buffered
         // ranges. Without field 3 the server can keep returning data while the
         // client's playback position never advances, producing a request storm.
@@ -699,10 +521,6 @@ export async function* trySabrAudioChunks(
           }
         }
       }
-    } else if (inputIsRequest) {
-      bodyType = input.body ? "request-stream" : "none";
-      bodyConstructor = input.body?.constructor?.name ?? null;
-      bodyIsReadableStream = Boolean(input.body);
     }
 
     const fetchWithGmFallback = async (): Promise<Response> => {
@@ -863,7 +681,7 @@ export async function* trySabrAudioChunks(
       }
     };
 
-    try {
+    {
       const response = await fetchWithGmFallback();
       // `targetWindow.fetch()` (and the GM fallback above) return a Response
       // whose body chunks are created in the YouTube page realm. googlevideo's
@@ -913,8 +731,6 @@ export async function* trySabrAudioChunks(
       }
 
       return response;
-    } catch (error) {
-      throw error;
     }
   };
 
@@ -970,81 +786,66 @@ export async function* trySabrAudioChunks(
           );
         }
         return selfBuilt;
-      } catch {
-        return generated;
+      } catch (error) {
+        // Never silently send an unbound track on multilingual videos.
+        throw new Error(
+          `Audio downloader. SABR audioTrackId protobuf patch failed: ${String(error)}`,
+        );
       }
     };
     sabrPrototype.__votNativeAbrStatePatched = true;
   }
 
-  let stream: SabrStream;
-  try {
-    stream = new SabrStream({
-      videoId,
-      fetch: sabrDiagnosticFetch,
-      poToken: sabrPoToken,
-      serverAbrStreamingUrl,
-      videoPlaybackUstreamerConfig,
-      clientInfo,
-      formats: sabrFormatsForStream,
-      stripDuplicateInit: true,
-    });
-    VOT_SABR_INSTANCE_CONTEXT.set(stream as unknown as object, {
-      videoId,
-      // Deliberately do not expose the captured body to PURE SELF_BUILT.
-      // Capture remains available only to diagnostics and the later DIRECT fallback.
-      nativeSabrBody: undefined,
-      sabrAudioTrackId,
-      buildIndex: 0,
-      pageWindow,
-    });
-    debug.log("[FORK][SABR][PURE_ONLY] SabrStream created", {
-      videoId,
-      sabrAudioTrackId,
-      bootstrap: "playerResponse+SabrStream-generated-protobuf",
-      nativeSabrCapture: "disabled",
-      nativeBodyUsed: false,
-      nativeUrlUsed: false,
-      nativeCpnUsed: false,
-      nativeRnUsed: false,
-      serverAbrSource: "playerResponse",
-      onlySabrStrategy: "PURE_SELF_BUILT",
-    });
-  } catch (error) {
-    throw error;
-  }
+  const stream = new SabrStream({
+    fetch: sabrDiagnosticFetch,
+    poToken: sabrPoToken,
+    serverAbrStreamingUrl,
+    videoPlaybackUstreamerConfig,
+    clientInfo,
+    formats: sabrFormatsForStream,
+  });
+  VOT_SABR_INSTANCE_CONTEXT.set(stream as unknown as object, {
+    videoId,
+    sabrAudioTrackId,
+    buildIndex: 0,
+    pageWindow,
+  });
+  debug.log("[FORK][SABR][PURE_ONLY] SabrStream created", {
+    videoId,
+    sabrAudioTrackId,
+    bootstrap: "playerResponse+SabrStream-generated-protobuf",
+    nativeSabrCapture: "disabled",
+    nativeBodyUsed: false,
+    nativeUrlUsed: false,
+    nativeCpnUsed: false,
+    nativeRnUsed: false,
+    serverAbrSource: "playerResponse",
+    onlySabrStrategy: "PURE_SELF_BUILT",
+  });
 
   const abort = () => stream.abort();
   signal.addEventListener("abort", abort, { once: true });
   try {
-    let started: Awaited<ReturnType<typeof stream.start>>;
-    try {
-      started = await stream.start({
-        audioFormat: selectedSabr,
-        // SABR currently initializes both tracks. Pick the smallest video and
-        // drain it below so video backpressure cannot stall the audio download.
-        videoFormat: (formats) =>
-          formats
-            .filter((format) => format.mimeType?.includes("video/"))
-            .sort((a, b) => a.bitrate - b.bitrate)[0],
-        isPostLiveDvr: false,
-        // We only consume audio. Telling SabrStream this explicitly makes it
-        // mark the dummy video format as discarded and, crucially, emit a
-        // BufferedRange (protobuf field 3) from the first post-bootstrap
-        // request instead of waiting for both tracks to initialize.
-        enabledTrackTypes: 1,
-        maxRetries: 3,
-        stallDetectionMs: 20_000,
-      });
-      debug.log("[FORK][SABR][PURE_ONLY] SabrStream started", {
-        videoId,
-        sabrAudioTrackId,
-      });
-    } catch (error) {
-      throw error;
-    }
-
-    let audioReadCount = 0;
+    const started = await stream.start({
+      audioFormat: selectedSabr,
+      // SABR currently initializes both tracks. Pick the smallest video and
+      // drain it below so video backpressure cannot stall the audio download.
+      videoFormat: (formats) =>
+        formats
+          .filter((format) => format.mimeType?.includes("video/"))
+          .sort((a, b) => a.bitrate - b.bitrate)[0],
+      // We only consume audio. Telling SabrStream this explicitly makes it
+      // mark the dummy video format as discarded and, crucially, emit a
+      // BufferedRange (protobuf field 3) from the first post-bootstrap
+      // request instead of waiting for both tracks to initialize.
+      enabledTrackTypes: 1,
+      maxRetries: 3,
+      stallDetectionMs: 20_000,
+    });
+    debug.log("[FORK][SABR][PURE_ONLY] SabrStream started", {
+      videoId,
+      sabrAudioTrackId,
+    });
 
     // Do not cancel videoStream while SabrStream is active. Some versions use
     // both exposed streams as part of their internal scheduling/backpressure
@@ -1067,25 +868,18 @@ export async function* trySabrAudioChunks(
     // In some userscript builds @vot.js/shared exposes config without
     // minChunkSize at runtime. Do not let `undefined` poison the arithmetic
     // below and turn pendingSize into NaN.
-    const configuredMinChunkSize = Number(config.minChunkSize);
+    const configuredMinChunkSize = Number(votConfig.minChunkSize);
     const minChunkSize =
       Number.isFinite(configuredMinChunkSize) && configuredMinChunkSize > 0
         ? Math.floor(configuredMinChunkSize)
         : 5_295_308;
 
-    console.log("[FORK][SABR] chunk config", {
-      configuredMinChunkSize: config.minChunkSize,
-      minChunkSize,
-      usedFallback: minChunkSize !== configuredMinChunkSize,
-    });
     try {
       while (true) {
         signal.throwIfAborted();
-        const index = ++audioReadCount;
-        const startedAt = performance.now();
 
         let result: ReadableStreamReadResult<Uint8Array>;
-        try {
+        {
           const readTimeoutMs = 25_000;
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
           const timeout = new Promise<never>((_, reject) => {
@@ -1102,8 +896,6 @@ export async function* trySabrAudioChunks(
           } finally {
             if (timeoutId !== undefined) clearTimeout(timeoutId);
           }
-        } catch (error) {
-          throw error;
         }
 
         const { value, done } = result;
@@ -1112,13 +904,9 @@ export async function* trySabrAudioChunks(
         if (!value?.byteLength) continue;
 
         const copy = new Uint8Array(value.byteLength);
-        try {
-          copy.set(
-            new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
-          );
-        } catch (error) {
-          throw error;
-        }
+        copy.set(
+          new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
+        );
 
         total += copy.byteLength;
 
@@ -1139,18 +927,7 @@ export async function* trySabrAudioChunks(
             pendingSize = 0;
 
             if (readyChunk) {
-              console.log("[FORK][SABR] yielding chunk", {
-                size: readyChunk.byteLength,
-                isLastChunk: false,
-                total,
-                pendingSize,
-                aborted: signal.aborted,
-              });
               yield { buffer: readyChunk, isLastChunk: false };
-              console.log("[FORK][SABR] resumed after yield", {
-                total,
-                aborted: signal.aborted,
-              });
             }
             readyChunk = nextChunk;
           }
@@ -1163,18 +940,7 @@ export async function* trySabrAudioChunks(
         pendingSize = 0;
 
         if (readyChunk) {
-          console.log("[FORK][SABR] yielding chunk", {
-            size: readyChunk.byteLength,
-            isLastChunk: false,
-            total,
-            pendingSize,
-            aborted: signal.aborted,
-          });
           yield { buffer: readyChunk, isLastChunk: false };
-          console.log("[FORK][SABR] resumed after yield", {
-            total,
-            aborted: signal.aborted,
-          });
         }
         readyChunk = tail;
       }
@@ -1196,8 +962,10 @@ export async function* trySabrAudioChunks(
         // googlevideo SabrStream closes its audio stream. At that point tolerate
         // only container/init accounting differences, not a large percentage of
         // the representation (the old 10% tolerance could hide a real truncation).
+        // A 256 KiB absolute tolerance accepts nearly 30% loss on short audio.
+        // Permit only a small container/init discrepancy.
         const allowedDeficit = Math.max(
-          256 * 1024,
+          16 * 1024,
           expectedContentLength * 0.02,
         );
         if (missingBytes > allowedDeficit) {
@@ -1207,17 +975,7 @@ export async function* trySabrAudioChunks(
         }
       }
 
-      console.log("[FORK][SABR] yielding final chunk", {
-        size: readyChunk.byteLength,
-        isLastChunk: true,
-        total,
-        aborted: signal.aborted,
-      });
       yield { buffer: readyChunk, isLastChunk: true };
-      console.log("[FORK][SABR] resumed after final yield", {
-        total,
-        aborted: signal.aborted,
-      });
     } catch (error) {
       console.error("[FORK][SABR] audio reader failed", {
         error,
@@ -1229,13 +987,6 @@ export async function* trySabrAudioChunks(
       });
       throw error;
     } finally {
-      console.log("[FORK][SABR] releasing audio reader", {
-        total,
-        pendingSize,
-        readyChunkSize: readyChunk?.byteLength ?? 0,
-        aborted: signal.aborted,
-        reason: signal.reason,
-      });
       try {
         audioReader.releaseLock();
       } catch {

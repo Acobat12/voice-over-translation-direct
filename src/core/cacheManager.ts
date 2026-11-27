@@ -217,6 +217,10 @@ class InMemoryCacheManager {
     this.setValue(key, "translation", translation);
   }
 
+  deleteTranslation(key: string): void {
+    this.deleteValue(key, "translation");
+  }
+
   getSubtitles(key: string): CacheSubtitle[] | undefined {
     return this.getValue(key, "subtitles");
   }

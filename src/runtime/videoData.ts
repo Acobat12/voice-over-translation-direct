@@ -19,6 +19,12 @@ type RuntimeSiteBridge = ServiceConf & {
   getVideoId?: () => Promise<string | undefined>;
 };
 
+function isAvailableHelper(
+  host: string,
+): host is keyof typeof availableHelpers {
+  return Object.hasOwn(availableHelpers, host);
+}
+
 let runtimeHelperOverridesInstalled = false;
 
 function ensureRuntimeHelperOverrides(): void {
@@ -65,7 +71,7 @@ export async function getVideoID(
 
   const url = new URL(globalThis.location.href);
 
-  if (Object.hasOwn(availableHelpers, serviceHost)) {
+  if (isAvailableHelper(serviceHost)) {
     const helper = new VideoHelper({
       ...opts,
       service: runtimeSite,
@@ -134,6 +140,10 @@ export async function getVideoData(
       host: runtimeSite.host,
       duration: undefined,
     };
+  }
+
+  if (!isAvailableHelper(serviceHost)) {
+    throw new VideoDataError(`Unsupported video helper: "${serviceHost}"`);
   }
 
   const helper = new VideoHelper({

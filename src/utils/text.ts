@@ -46,3 +46,14 @@ export function cleanText(title: string, description?: string): string {
 
   return trimToMaxLength(cleaned, MAX_TEXT_LENGTH);
 }
+
+export function normalizeGoogleDriveTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const normalized = value
+    .replace(/\s*-\s*Google Drive\s*$/i, "")
+    .replace(/\s*-\s*Google Диск\s*$/i, "")
+    .trim();
+
+  return normalized || undefined;
+}

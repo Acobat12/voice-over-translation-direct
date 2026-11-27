@@ -1,15 +1,20 @@
+import type { VideoData as CoreVideoData } from "@vot.js/core/types/client";
 import { getVideoData } from "@vot.js/ext/utils/videoData";
 import votConfig from "@vot.js/shared/config";
 import { availableLangs } from "@vot.js/shared/consts";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
 import type { VideoHandler } from "..";
+import {
+  getYouTubeAudioMetadata,
+  YOUTUBE_VOT_SOURCE_LANGUAGES,
+} from "../audioDownloader/strategies/youtubeAudioMetadata";
 import { localizationProvider } from "../localization/localizationProvider";
 import debug from "../utils/debug";
 import { GM_fetch } from "../utils/gm";
 import { getLastManifestUrl } from "../utils/manifestSniffer";
 import { getSniffedSiteSubtitles } from "../utils/siteSubtitlesSniffer";
 import { votStorage } from "../utils/storage";
-import { cleanText } from "../utils/text";
+import { cleanText, normalizeGoogleDriveTitle } from "../utils/text";
 import { detect } from "../utils/translateApis";
 import VOTLocalizedError from "../utils/VOTLocalizedError";
 import {
@@ -50,17 +55,8 @@ const MAX_SHARED_LANGUAGE_STATES = 500;
 const REQUEST_LANG_SET = new Set<RequestLang>(
   availableLangs as readonly RequestLang[],
 );
-const SUPPORTED_TRANSLATION_SOURCE_LANGS = new Set<RequestLang>([
-  "ru",
-  "en",
-  "zh",
-  "ko",
-  "fr",
-  "it",
-  "es",
-  "de",
-  "ja",
-]);
+const SUPPORTED_TRANSLATION_SOURCE_LANGS =
+  YOUTUBE_VOT_SOURCE_LANGUAGES as Set<RequestLang>;
 
 type ResolvedRequestLang = Exclude<RequestLang, "auto">;
 type SharedLanguageState = {
@@ -156,22 +152,13 @@ function isBadGoogleDriveTitle(value: unknown): boolean {
   );
 }
 
-function normalizeGoogleDriveTitle(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-
-  const normalized = value
-    .replace(/\s*-\s*Google Drive\s*$/i, "")
-    .replace(/\s*-\s*Google Диск\s*$/i, "")
-    .trim();
-
-  return normalized || undefined;
-}
-
 async function getStoredGoogleDriveTitle(
   videoId: string,
 ): Promise<string | undefined> {
   try {
-    const storedTitle = await votStorage.get(`googledrive:title:${videoId}`);
+    const storedTitle = await votStorage.getRaw<string>(
+      `googledrive:title:${videoId}`,
+    );
     return normalizeGoogleDriveTitle(storedTitle);
   } catch {
     return undefined;
@@ -634,276 +621,18 @@ function resolveHostDetectedLanguage(host: string): RequestLang | undefined {
   return undefined;
 }
 
-type YoutubeRuntimeAudioTrack = {
-  id?: unknown;
-  wM?: {
-    id?: unknown;
-    name?: unknown;
-    isDefault?: unknown;
-    isAutoDubbed?: unknown;
+// Single YouTube player-response source of truth for source-language detection.
+function findSupportedYoutubeAlternateAudioTrack() {
+  const videoId = globalThis.location.pathname.startsWith("/shorts/")
+    ? globalThis.location.pathname.split("/")[2]
+    : new URLSearchParams(globalThis.location.search).get("v");
+  const metadata = videoId ? getYouTubeAudioMetadata(videoId) : undefined;
+  if (!metadata?.usingAlternative || !metadata.trackId || !metadata.language)
+    return undefined;
+  return {
+    language: metadata.language as ResolvedRequestLang,
+    trackId: metadata.trackId,
   };
-};
-
-function getYoutubeRuntimeAudioTracks(): {
-  current?: YoutubeRuntimeAudioTrack;
-  available: YoutubeRuntimeAudioTrack[];
-} {
-  try {
-    const player = document.querySelector("#movie_player") as
-      | (HTMLElement & {
-          getAudioTrack?: () => unknown;
-          getAvailableAudioTracks?: () => unknown;
-        })
-      | null;
-
-    const rawCurrent = player?.getAudioTrack?.();
-    const rawAvailable = player?.getAvailableAudioTracks?.();
-
-    return {
-      current:
-        rawCurrent && typeof rawCurrent === "object"
-          ? (rawCurrent as YoutubeRuntimeAudioTrack)
-          : undefined,
-      available: Array.isArray(rawAvailable)
-        ? rawAvailable.filter((track): track is YoutubeRuntimeAudioTrack =>
-            Boolean(track && typeof track === "object"),
-          )
-        : [],
-    };
-  } catch (error) {
-    debug.warn(
-      "[language] failed to inspect YouTube audio-track catalog",
-      error,
-    );
-    return { available: [] };
-  }
-}
-
-function getYoutubeTrackLanguage(
-  track: YoutubeRuntimeAudioTrack | undefined,
-): RequestLang | undefined {
-  return normalizeYoutubeSourceLanguage(track?.wM?.id);
-}
-
-function findSupportedYoutubeAlternateAudioTrack():
-  | {
-      track: YoutubeRuntimeAudioTrack;
-      language: ResolvedRequestLang;
-      trackId: string;
-    }
-  | undefined {
-  const { current, available } = getYoutubeRuntimeAudioTracks();
-  const currentTrackId =
-    typeof current?.wM?.id === "string" ? current.wM.id.trim() : "";
-
-  for (const track of available) {
-    const trackId = typeof track.wM?.id === "string" ? track.wM.id.trim() : "";
-    const language = getYoutubeTrackLanguage(track);
-
-    if (
-      !trackId ||
-      trackId === currentTrackId ||
-      !isResolvedLanguage(language) ||
-      !SUPPORTED_TRANSLATION_SOURCE_LANGS.has(language)
-    ) {
-      continue;
-    }
-
-    return { track, language, trackId };
-  }
-
-  return undefined;
-}
-
-function resolveYoutubeCurrentAudioLanguage(): RequestLang | undefined {
-  try {
-    const player = document.querySelector("#movie_player") as
-      | (HTMLElement & { getAudioTrack?: () => unknown })
-      | null;
-    const rawTrack = player?.getAudioTrack?.();
-    if (!rawTrack || typeof rawTrack !== "object") {
-      return undefined;
-    }
-
-    const track = rawTrack as {
-      id?: unknown;
-      language?: unknown;
-      languageCode?: unknown;
-      wM?: {
-        id?: unknown;
-        language?: unknown;
-        languageCode?: unknown;
-        isDefault?: unknown;
-        isAutoDubbed?: unknown;
-      };
-      captionTracks?: Array<{
-        languageCode?: unknown;
-        kind?: unknown;
-      }>;
-    };
-
-    // `wM.id` is YouTube's concrete logical audioTrackId (for example
-    // en-US.10). `track.id` is representation identity and may look like
-    // `251;<encoded attributes>`, so it must not be treated as the language id.
-    if (typeof track.wM?.id === "string") {
-      const language = normalizeYoutubeSourceLanguage(track.wM.id);
-      if (isResolvedLanguage(language)) {
-        debug.log("[language] YouTube current audio language resolved", {
-          language,
-          source: "audio-track-wM-id",
-          trackId: track.wM.id,
-          representationId: track.id,
-        });
-        return language;
-      }
-    }
-
-    // Some player builds expose the selected track language explicitly.
-    for (const value of [
-      track.languageCode,
-      track.language,
-      track.wM?.languageCode,
-      track.wM?.language,
-    ]) {
-      const language = normalizeYoutubeSourceLanguage(value);
-      if (isResolvedLanguage(language)) {
-        debug.log("[language] YouTube current audio language resolved", {
-          language,
-          source: "audio-track-language",
-          trackId: track.id,
-        });
-        return language;
-      }
-    }
-
-    // YouTube can expose the original/default audio as `und`. In that case
-    // a single ASR caption language is strong evidence for the spoken
-    // language, but only for the default non-auto-dubbed track. Do not use
-    // this fallback for dubbed/multi-audio selections.
-    if (track.wM?.isDefault === true && track.wM?.isAutoDubbed !== true) {
-      const asrLanguages = Array.from(
-        new Set(
-          (Array.isArray(track.captionTracks) ? track.captionTracks : [])
-            .filter((caption) => caption?.kind === "asr")
-            .map((caption) =>
-              normalizeYoutubeSourceLanguage(caption?.languageCode),
-            )
-            .filter(isResolvedLanguage),
-        ),
-      );
-
-      if (asrLanguages.length === 1) {
-        const language = asrLanguages[0];
-        debug.log("[language] YouTube current audio language resolved", {
-          language,
-          source: "default-audio-asr",
-          trackId: track.id,
-          isDefault: true,
-          isAutoDubbed: false,
-        });
-        return language;
-      }
-    }
-  } catch (error) {
-    debug.warn(
-      "[language] failed to inspect YouTube current audio track",
-      error,
-    );
-  }
-
-  return undefined;
-}
-
-function resolveYoutubeDetectedLanguageFromSubtitles(
-  subtitles: unknown,
-): RequestLang | undefined {
-  if (!Array.isArray(subtitles) || subtitles.length === 0) {
-    return undefined;
-  }
-
-  // Do not treat the first YouTube caption as the source language. YouTube can
-  // expose many ASR-looking tracks at once (kind=asr/caps=asr), and their array
-  // order is not an original-language signal. Prefer an explicit translation
-  // relationship; otherwise accept captions only when all untranslated YouTube
-  // candidates agree on one language.
-  const translatedFrom = new Set<RequestLang>();
-  const untranslated = new Set<RequestLang>();
-
-  for (const subtitle of subtitles) {
-    if (!subtitle || typeof subtitle !== "object") continue;
-
-    const candidate = subtitle as {
-      source?: unknown;
-      language?: unknown;
-      translatedFromLanguage?: unknown;
-      isAutoGenerated?: unknown;
-    };
-    if (candidate.source !== "youtube") continue;
-
-    const sourceLanguage = normalizeYoutubeSourceLanguage(
-      candidate.translatedFromLanguage,
-    );
-    if (isResolvedLanguage(sourceLanguage)) {
-      translatedFrom.add(sourceLanguage);
-      continue;
-    }
-
-    const language = normalizeYoutubeSourceLanguage(candidate.language);
-    if (isResolvedLanguage(language)) untranslated.add(language);
-  }
-
-  // translatedFromLanguage is only trustworthy when the untranslated source
-  // set itself is unambiguous. YouTube may expose many synthetic/ASR-looking
-  // source tracks at once and then attach a translated caption to one of them
-  // (for example ru translatedFromLanguage=ar). In that state, accepting the
-  // translation relation would simply re-introduce the first-caption bug.
-  if (untranslated.size > 1) {
-    debug.log("[language] ignoring ambiguous YouTube subtitle source set", {
-      untranslatedLanguages: [...untranslated],
-      translatedFromLanguages: [...translatedFrom],
-      reason: "multiple-untranslated-source-languages",
-    });
-    return undefined;
-  }
-
-  if (untranslated.size === 1) {
-    const onlyUntranslated = [...untranslated][0];
-
-    if (
-      translatedFrom.size === 0 ||
-      (translatedFrom.size === 1 && translatedFrom.has(onlyUntranslated))
-    ) {
-      debug.log("[language] YouTube subtitle source language resolved", {
-        language: onlyUntranslated,
-        source:
-          translatedFrom.size === 1
-            ? "single-source-with-translation-relation"
-            : "single-untranslated-language",
-      });
-      return onlyUntranslated;
-    }
-
-    debug.warn("[language] conflicting YouTube subtitle source evidence", {
-      untranslatedLanguage: onlyUntranslated,
-      translatedFromLanguages: [...translatedFrom],
-    });
-    return undefined;
-  }
-
-  // No untranslated source candidate exists. A translation relation alone is
-  // not enough to identify the actual audio language; continue to stronger
-  // audio metadata / title-description fallback instead of guessing.
-  if (translatedFrom.size > 0) {
-    debug.log(
-      "[language] ignoring translation-only YouTube subtitle evidence",
-      {
-        translatedFromLanguages: [...translatedFrom],
-      },
-    );
-    return undefined;
-  }
-
-  return undefined;
 }
 
 export async function resolveDetectedLanguageForVideo(
@@ -925,23 +654,11 @@ export async function resolveDetectedLanguageForVideo(
   }
 
   if (options.host === "youtube") {
-    // Prefer the language of the track that YouTube is actually playing.
-    // This must run before possibleLanguage/text detection so a stale
-    // `en` cannot override an original/default `pt`, `ja`, etc.
-    const currentAudioLanguage = resolveYoutubeCurrentAudioLanguage();
-    if (isResolvedLanguage(currentAudioLanguage)) {
-      return {
-        detectedLanguage: currentAudioLanguage,
-      };
-    }
-
-    const youtubeSubtitleDetectedLanguage =
-      resolveYoutubeDetectedLanguageFromSubtitles(options.subtitles);
-    if (isResolvedLanguage(youtubeSubtitleDetectedLanguage)) {
-      return {
-        detectedLanguage: youtubeSubtitleDetectedLanguage,
-      };
-    }
+    const id = globalThis.location.pathname.startsWith("/shorts/")
+      ? globalThis.location.pathname.split("/")[2]
+      : new URLSearchParams(globalThis.location.search).get("v");
+    const language = id ? getYouTubeAudioMetadata(id)?.language : undefined;
+    if (language) return { detectedLanguage: language as RequestLang };
   }
 
   // For YouTube, ambiguous caption arrays must not poison source-language
@@ -1107,8 +824,8 @@ export class VOTVideoManager {
 
     // A confidently detected unsupported YouTube original is not necessarily
     // a dead end: the player may expose a real supported alternate/dubbed track.
-    // Use only the concrete runtime AudioTrack catalog; never infer an alternate
-    // from duplicate adaptive-format itags.
+    // Prefer runtime AudioTrack metadata, with a supported-language fallback
+    // using concrete adaptiveFormats[].audioTrack.id (never duplicate itags).
     if (
       detected &&
       detected !== "auto" &&
@@ -1117,12 +834,12 @@ export class VOTVideoManager {
       const alternate = findSupportedYoutubeAlternateAudioTrack();
       if (alternate) {
         videoData.detectedLanguage = alternate.language;
+        this.videoHandler.translateFromLang = alternate.language;
         debug.log("[language] supported YouTube alternate audio track found", {
           videoId: videoData.videoId,
           originalLanguage: detected,
           selectedLanguage: alternate.language,
           audioTrackId: alternate.trackId,
-          isAutoDubbed: alternate.track.wM?.isAutoDubbed === true,
           action: "allow-translation-with-concrete-alternate-track",
         });
         return;
@@ -1156,7 +873,10 @@ export class VOTVideoManager {
     const playerData = YoutubeHelper.getPlayerData();
     const subtitles = YoutubeHelper.getSubtitles(localizationProvider.lang);
     let detectedLanguage = YoutubeHelper.getLanguage();
-    if (detectedLanguage && !availableLangs.includes(detectedLanguage)) {
+    if (
+      detectedLanguage &&
+      !REQUEST_LANG_SET.has(detectedLanguage as RequestLang)
+    ) {
       detectedLanguage = undefined;
     }
 
@@ -1200,21 +920,9 @@ export class VOTVideoManager {
     );
 
     let rawVideoDataError: unknown;
-    let rawVideoData:
-      | Awaited<ReturnType<typeof getVideoData>>
-      | {
-          duration: number;
-          url: string;
-          videoId: string;
-          host: string;
-          title?: string;
-          translationHelp: null;
-          localizedTitle?: string;
-          description?: string;
-          detectedLanguage: "auto";
-          subtitles: RuntimeVideoData["subtitles"];
-          isStream: false;
-        };
+    let rawVideoData: Omit<CoreVideoData<string>, "subtitles"> & {
+      subtitles?: RuntimeVideoData["subtitles"];
+    };
 
     try {
       rawVideoData = this.shouldUseRuntimeYouTubeHelper()
@@ -1251,6 +959,14 @@ export class VOTVideoManager {
       };
     }
 
+    // Cloud Mail.ru requires a registered UMP media URL. Never substitute
+    // a sniffed HLS manifest or route this service through Yandex Disk.
+    if (this.videoHandler.site.host === "cloudmailru" && rawVideoDataError) {
+      throw rawVideoDataError instanceof Error
+        ? rawVideoDataError
+        : new Error("Cloud Mail.ru helper failed");
+    }
+
     let {
       duration,
       url,
@@ -1264,6 +980,27 @@ export class VOTVideoManager {
       subtitles,
       isStream = false,
     } = rawVideoData;
+    if (this.videoHandler.site.host === "cloudmailru") {
+      let registeredMediaUrl: URL;
+      try {
+        registeredMediaUrl = new URL(String(url || ""));
+      } catch {
+        throw new Error(
+          "Cloud Mail.ru: UMP registration returned no valid URL",
+        );
+      }
+      if (
+        host !== "cloudmailru" ||
+        !videoId ||
+        registeredMediaUrl.origin !== "https://media-proxy.mooo.com" ||
+        !registeredMediaUrl.pathname.startsWith("/media/cloudmailru/")
+      ) {
+        throw new Error(
+          "Cloud Mail.ru: helper did not return a registered UMP media URL",
+        );
+      }
+    }
+
     subtitles = mergeSubtitleDescriptors(subtitles, nativeTrackSubtitles);
     if (this.videoHandler.site.host === "vk") {
       subtitles = mergeSubtitleDescriptors(
@@ -1308,25 +1045,10 @@ export class VOTVideoManager {
         ? YoutubeHelper.getCanonicalVideoUrl(youtubeFallbackVideoId)
         : undefined;
     const shouldUseDomFallback =
-      this.videoHandler.site.host === "custom" ||
-      Boolean(rawVideoDataError) ||
-      isUsefulResolvedFallback(url, videoId, resolvedFallback);
-
-    if (this.videoHandler.site.host === "douyin" && shouldUseDomFallback) {
-      console.warn("[FORK][douyin] DOM fallback blocked", {
-        rawVideoDataError,
-        url,
-        videoId,
-        sniffedManifestUrl,
-        mediaUrl,
-        pageUrl,
-        resolvedFallback,
-      });
-
-      throw rawVideoDataError instanceof Error
-        ? rawVideoDataError
-        : new Error("Douyin getVideoData failed");
-    }
+      this.videoHandler.site.host !== "cloudmailru" &&
+      (this.videoHandler.site.host === "custom" ||
+        Boolean(rawVideoDataError) ||
+        isUsefulResolvedFallback(url, videoId, resolvedFallback));
 
     if (shouldUseDomFallback) {
       const shouldPreserveVkSiteRoute =
@@ -1337,9 +1059,21 @@ export class VOTVideoManager {
       const shouldPreserveBilibiliSiteRoute =
         this.videoHandler.site.host === "bilibili" &&
         isBilibiliSupportedPageHost(hostname);
-      const _shouldPreserveDouyinSiteRoute =
-        this.videoHandler.site.host === "douyin" &&
-        /(^|\.)douyin\.com$/i.test(hostname);
+      const shouldPreserveTikTokSiteRoute =
+        this.videoHandler.site.host === "tiktok" &&
+        /(^|\.)tiktok\.com$/i.test(hostname);
+      const shouldPreserveUdemySiteRoute =
+        this.videoHandler.site.host === "udemy" &&
+        /^(?:www\.)?udemy\.com$/i.test(hostname);
+      // A signed CDN manifest is not a stable Udemy lecture identifier.
+      // Preserve helper output if available; otherwise retain page context.
+      const udemyHelperUrl = String(url || "").trim();
+      const udemyHelperVideoId = String(videoId || "").trim();
+      const udemyHelperHasIdentity =
+        !rawVideoDataError &&
+        !isBadGenericVideoId(udemyHelperVideoId) &&
+        !isPageScopedVideoId(udemyHelperVideoId, pageUrl) &&
+        !/\.(?:m3u8|mpd)(?:[?#]|$)/i.test(udemyHelperVideoId);
       const fallbackUrl = pickPreferredVideoUrl(
         resolvedFallback?.url,
         sniffedManifestUrl,
@@ -1379,13 +1113,17 @@ export class VOTVideoManager {
         !isBadGenericMediaUrl(fallbackCanonicalRutubeTarget.url)
       ) {
         url = fallbackCanonicalRutubeTarget.url;
-      } else if (fallbackUrl && !shouldPreserveBilibiliSiteRoute) {
+      } else if (
+        fallbackUrl &&
+        !shouldPreserveBilibiliSiteRoute &&
+        !shouldPreserveUdemySiteRoute
+      ) {
         url = fallbackUrl;
       }
 
       if (
-        isBadGenericVideoId(videoId) ||
-        isPageScopedVideoId(videoId, pageUrl)
+        !shouldPreserveUdemySiteRoute &&
+        (isBadGenericVideoId(videoId) || isPageScopedVideoId(videoId, pageUrl))
       ) {
         const fallbackVideoIdCandidate =
           !isBadGenericVideoId(fallbackUrl) &&
@@ -1424,6 +1162,27 @@ export class VOTVideoManager {
       } else if (shouldPreserveBilibiliSiteRoute) {
         host = "bilibili";
         videoId = !isBadGenericVideoId(videoId) ? videoId : pageUrl;
+      } else if (shouldPreserveUdemySiteRoute) {
+        host = "udemy";
+        url =
+          udemyHelperUrl && !isBadGenericMediaUrl(udemyHelperUrl)
+            ? udemyHelperUrl
+            : pageUrl;
+        videoId = udemyHelperHasIdentity ? udemyHelperVideoId : pageUrl;
+        if (!udemyHelperHasIdentity) {
+          console.warn(
+            "[FORK][udemy] helper did not provide a stable lecture ID",
+            {
+              helperFailed: Boolean(rawVideoDataError),
+              fallbackUsed: "page-url",
+            },
+          );
+        }
+      } else if (shouldPreserveTikTokSiteRoute) {
+        // Preserve TikTok routing even when a blob: source cannot be resolved.
+        // This does not make Short Drama media downloadable by itself.
+        host = "tiktok";
+        videoId = !isBadGenericVideoId(videoId) ? videoId : pageUrl;
       } else {
         host =
           this.videoHandler.site.host === "youtube" && youtubeFallbackVideoId
@@ -1433,7 +1192,9 @@ export class VOTVideoManager {
 
       const fallbackTitle =
         resolvedFallback?.title ||
-        normalizeLocalTitleFromUrl(url) ||
+        (!shouldPreserveUdemySiteRoute
+          ? normalizeLocalTitleFromUrl(url)
+          : undefined) ||
         (typeof document.title === "string"
           ? document.title.trim()
           : undefined);
@@ -1457,7 +1218,9 @@ export class VOTVideoManager {
         preservedSiteRoute:
           shouldPreserveVkSiteRoute ||
           shouldPreserveRutubeSiteRoute ||
-          shouldPreserveBilibiliSiteRoute,
+          shouldPreserveBilibiliSiteRoute ||
+          shouldPreserveTikTokSiteRoute ||
+          shouldPreserveUdemySiteRoute,
       });
     }
 
@@ -1523,10 +1286,11 @@ export class VOTVideoManager {
     const videoData = {
       translationHelp,
       isStream,
-      duration:
+      duration: Math.round(
         duration ||
-        this.videoHandler.video?.duration ||
-        votConfig.defaultDuration,
+          this.videoHandler.video?.duration ||
+          votConfig.defaultDuration,
+      ),
       videoId,
       url,
       host,
@@ -1610,7 +1374,6 @@ export class VOTVideoManager {
             originalLanguage: normalizedSourceLanguage,
             selectedLanguage: alternate.language,
             audioTrackId: alternate.trackId,
-            isAutoDubbed: alternate.track.wM?.isAutoDubbed === true,
           });
         } else {
           debug.warn("[language] translation blocked for unsupported source", {

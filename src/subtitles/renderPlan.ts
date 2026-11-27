@@ -1,4 +1,8 @@
-import type { SubtitleInlineStyle, SubtitleToken } from "./types";
+import {
+  type SubtitleInlineStyle,
+  type SubtitleToken,
+  subtitleStylesEqual,
+} from "./types";
 
 export type SubtitleRenderPlanPart =
   | {
@@ -14,14 +18,6 @@ export type SubtitleRenderPlanPart =
   | {
       kind: "break";
     };
-
-const stylesEqual = (
-  left: SubtitleInlineStyle | undefined,
-  right: SubtitleInlineStyle | undefined,
-): boolean =>
-  Boolean(left?.italic) === Boolean(right?.italic) &&
-  Boolean(left?.bold) === Boolean(right?.bold) &&
-  Boolean(left?.underline) === Boolean(right?.underline);
 
 /**
  * Build a render plan for subtitle tokens preserving existing grouping rules.
@@ -77,7 +73,7 @@ export function buildSubtitleRenderPlan(
           !next ||
           next.isWordLike ||
           next.text === "\n" ||
-          !stylesEqual(next.style, style)
+          !subtitleStylesEqual(next.style, style)
         )
           break;
         text += next.text;
@@ -133,7 +129,10 @@ export function buildSubtitleRenderPlan(
         pendingPrefix = "";
         pendingPrefixStyle = undefined;
       } else {
-        if (pendingPrefix && !stylesEqual(pendingPrefixStyle, token.style)) {
+        if (
+          pendingPrefix &&
+          !subtitleStylesEqual(pendingPrefixStyle, token.style)
+        ) {
           plan.push({
             kind: "text",
             text: pendingPrefix,

@@ -1,8 +1,12 @@
 import type { VideoHandler } from "../../index";
 import { localizationProvider } from "../../localization/localizationProvider";
 import { SubtitlesProcessor } from "../../subtitles/processor";
-import type { SubtitleDescriptor } from "../../subtitles/types";
+import type {
+  ProcessedSubtitles,
+  SubtitleDescriptor,
+} from "../../subtitles/types";
 import debug from "../../utils/debug";
+import { isVkPage } from "../../utils/pageContext";
 import { proxifyYandexSubtitlesUrl } from "./proxyShared";
 
 type IndexedSubtitleDescriptor = {
@@ -27,12 +31,6 @@ const VALID_SUBTITLE_FORMATS = new Set<SubtitleDescriptor["format"]>([
 const SUBTITLES_INDEX_OPTION_PATTERN = /^\d+$/u;
 const subtitlesSelectionRequestVersion = new WeakMap<VideoHandler, number>();
 const subtitlesListLogKey = new WeakMap<VideoHandler, string>();
-
-function isVkProbeHost(): boolean {
-  return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
-    String(globalThis.location.hostname || ""),
-  );
-}
 
 type SubtitleConsoleEntry = {
   index: number;
@@ -468,6 +466,15 @@ function pickBestSubtitlesIndex(
   return null;
 }
 
+function clearSubtitleContent(
+  handler: VideoHandler,
+  overlayView: NonNullable<VideoHandler["uiManager"]["votOverlayView"]>,
+): void {
+  if (handler.hasSubtitlesWidget()) handler.subtitlesWidget?.setContent(null);
+  overlayView.downloadSubtitlesButton.hidden = true;
+  handler.yandexSubtitles = null;
+}
+
 export async function changeSubtitlesLang(
   this: VideoHandler,
   subs: string,
@@ -480,22 +487,14 @@ export async function changeSubtitlesLang(
   }
   overlayView.subtitlesSelect.setSelectedValue(subs);
   if (subs === DISABLED_SUBTITLES_VALUE) {
-    if (this.hasSubtitlesWidget()) {
-      this.subtitlesWidget?.setContent(null);
-    }
-    overlayView.downloadSubtitlesButton.hidden = true;
-    this.yandexSubtitles = null;
+    clearSubtitleContent(this, overlayView);
     setSubtitleConsoleGlobals({ selected: null });
     return this;
   }
 
   const subtitlesIndex = parseSubtitlesOptionIndex(subs);
   if (subtitlesIndex == null) {
-    if (this.hasSubtitlesWidget()) {
-      this.subtitlesWidget?.setContent(null);
-    }
-    overlayView.downloadSubtitlesButton.hidden = true;
-    this.yandexSubtitles = null;
+    clearSubtitleContent(this, overlayView);
     return this;
   }
 
@@ -504,11 +503,7 @@ export async function changeSubtitlesLang(
     subtitlesIndex,
   );
   if (!descriptor) {
-    if (this.hasSubtitlesWidget()) {
-      this.subtitlesWidget?.setContent(null);
-    }
-    overlayView.downloadSubtitlesButton.hidden = true;
-    this.yandexSubtitles = null;
+    clearSubtitleContent(this, overlayView);
     setSubtitleConsoleGlobals({ selected: null });
     return this;
   }
@@ -517,6 +512,7 @@ export async function changeSubtitlesLang(
   const proxiedSubtitlesUrl = proxifyYandexSubtitlesUrl(subtitlesObj.url, {
     translateProxyEnabled: this.data?.translateProxyEnabled,
     proxyWorkerHost: this.data?.proxyWorkerHost,
+    proxyServerPreset: this.data?.proxyServerPreset,
   });
   if (proxiedSubtitlesUrl !== subtitlesObj.url) {
     subtitlesObj = {
@@ -537,7 +533,7 @@ export async function changeSubtitlesLang(
   };
   setSubtitleConsoleGlobals({ selected: selectedTrack });
 
-  let fetchedSubtitles: unknown;
+  let fetchedSubtitles: ProcessedSubtitles;
 
   try {
     fetchedSubtitles = await SubtitlesProcessor.fetchSubtitles(subtitlesObj);
@@ -606,11 +602,7 @@ export async function updateSubtitlesLangSelect(this: VideoHandler) {
   }
 
   if (currentValue !== DISABLED_SUBTITLES_VALUE) {
-    if (this.hasSubtitlesWidget()) {
-      this.subtitlesWidget?.setContent(null);
-    }
-    overlayView.downloadSubtitlesButton.hidden = true;
-    this.yandexSubtitles = null;
+    clearSubtitleContent(this, overlayView);
     setSubtitleConsoleGlobals({ selected: null });
   }
 }
@@ -664,7 +656,7 @@ export async function enableSubtitlesForCurrentLangPair(this: VideoHandler) {
   try {
     await ensureSubtitlesForCurrentLangPair.call(this);
   } catch (err) {
-    if (isVkProbeHost()) {
+    if (isVkPage()) {
       console.warn("[FORK][VK probe] auto subtitles failed", err);
     }
     // If loading fails, we can't enable anything.
@@ -683,7 +675,7 @@ export async function enableSubtitlesForCurrentLangPair(this: VideoHandler) {
     toLang,
   );
   if (bestIdx == null) {
-    if (isVkProbeHost()) {
+    if (isVkPage()) {
       console.warn("[FORK][VK probe] no suitable subtitles after load", {
         count: this.subtitles?.length || 0,
         fromLang,

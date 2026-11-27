@@ -26,13 +26,13 @@ export function removeComponentEventListener<
 
 export function setHiddenState(
   element: {
-    hidden: boolean;
+    hidden: boolean | string;
   },
   isHidden: boolean,
 ): void {
   element.hidden = isHidden;
 }
 
-export function getHiddenState(element: { hidden: boolean }): boolean {
-  return element.hidden;
+export function getHiddenState(element: { hidden: boolean | string }): boolean {
+  return Boolean(element.hidden);
 }

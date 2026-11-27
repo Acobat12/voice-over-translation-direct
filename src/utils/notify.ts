@@ -51,6 +51,14 @@ type LocalizedErrorLike = {
   unlocalizedMessage?: unknown;
 };
 
+function focusPage(): void {
+  try {
+    globalThis.focus();
+  } catch {
+    /* ignore */
+  }
+}
+
 function getScriptTitle(): string {
   return GM_info?.script?.name || "VOT";
 }
@@ -205,13 +213,7 @@ export class Notifier {
         timeout: 5000,
         silent: true,
         tag: "VOTTranslationCompleted",
-        onclick: () => {
-          try {
-            globalThis.focus();
-          } catch {
-            /* ignore */
-          }
-        },
+        onclick: focusPage,
       },
       { key: `translation_completed_${host}`, cooldownMs: 10_000 },
     );
@@ -233,13 +235,7 @@ export class Notifier {
         silent: true,
         // Keep legacy tag casing so existing notification replacement/dedupe continues to work.
         tag: `VOTtranslationFailed_${videoId || "unknown"}`,
-        onclick: () => {
-          try {
-            globalThis.focus();
-          } catch {
-            /* ignore */
-          }
-        },
+        onclick: focusPage,
       },
       // Errors can loop while polling; keep these non-spammy.
       { key: `translation_failed_${videoId || "unknown"}`, cooldownMs: 30_000 },

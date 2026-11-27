@@ -11,15 +11,20 @@ import {
   type SafariPageRuntimeService,
   type SafariPageRuntimeVideoData,
 } from "./protocol";
+import { makeRequestId, parseBridgeDetail } from "./serialization";
 
 let runtimeReadyPromise: Promise<boolean> | null = null;
 
 export function shouldUseSafariPageBridge(): boolean {
-  const handler = String(globalThis.GM_info?.scriptHandler || "");
+  const handler = String(
+    typeof GM_info === "undefined" ? "" : GM_info?.scriptHandler || "",
+  );
   return /^UserScripts$/i.test(handler);
 }
 
-function serializeService(service: ServiceConf): SafariPageRuntimeService {
+function serializeService(
+  service: ServiceConf & { priority?: number },
+): SafariPageRuntimeService {
   return {
     host: service.host,
     url: service.url,
@@ -32,28 +37,6 @@ function serializeService(service: ServiceConf): SafariPageRuntimeService {
     shadowRoot: service.shadowRoot,
     priority: service.priority,
   };
-}
-
-function makeRequestId(): string {
-  return `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-}
-
-function parseResponseDetail<T>(
-  detail: unknown,
-): SafariPageRuntimeResponse<T> | undefined {
-  if (typeof detail === "string") {
-    try {
-      return JSON.parse(detail) as SafariPageRuntimeResponse<T>;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (detail && typeof detail === "object") {
-    return detail as SafariPageRuntimeResponse<T>;
-  }
-
-  return undefined;
 }
 
 function isRuntimeMarkedReady(): boolean {
@@ -112,7 +95,7 @@ function requestPageRuntime<T>(
     }, timeoutMs);
 
     function onResponse(event: Event): void {
-      const response = parseResponseDetail<T>(
+      const response = parseBridgeDetail<SafariPageRuntimeResponse<T>>(
         (event as CustomEvent<SafariPageRuntimeResponse<T> | string>).detail,
       );
       if (!response || response.id !== id) return;

@@ -60,6 +60,17 @@ export type SubtitleInlineStyle = {
   underline?: boolean;
 };
 
+export function subtitleStylesEqual(
+  left: SubtitleInlineStyle | undefined,
+  right: SubtitleInlineStyle | undefined,
+): boolean {
+  return (
+    Boolean(left?.italic) === Boolean(right?.italic) &&
+    Boolean(left?.bold) === Boolean(right?.bold) &&
+    Boolean(left?.underline) === Boolean(right?.underline)
+  );
+}
+
 export type SubtitleToken = {
   text: string;
   startMs: number;
@@ -158,6 +169,7 @@ export type VideoDataForSubtitles = {
   host: string;
   url: string;
   detectedLanguage: string;
+  responseLanguage?: string;
   videoId: string;
   duration: number;
   subtitles?: SubtitleDescriptor[];

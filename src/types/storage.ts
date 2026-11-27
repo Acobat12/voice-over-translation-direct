@@ -1,7 +1,7 @@
 import type { ResponseLang } from "@vot.js/shared/types/data";
 import type { SubtitleFontFamily, SubtitleFormat } from "../subtitles/types";
 import type { LanguageSelectKey } from "./components/select";
-import type { Position } from "./components/votButton";
+import type { Position } from "./components/votRail";
 import type { DetectService, TranslateService } from "./translateApis";
 
 export type LocaleStorageKey =
@@ -48,6 +48,7 @@ export const storageKeys = [
   "subtitlesHotkey",
   "m3u8ProxyHost",
   "proxyWorkerHost",
+  "proxyServerPreset",
   "translateProxyEnabled",
   "translateProxyEnabledDefault",
   "audioBooster",
@@ -116,6 +117,7 @@ export type StorageData = {
   subtitlesHotkey: null | string;
   m3u8ProxyHost: string;
   proxyWorkerHost: string;
+  proxyServerPreset?: "builtin" | "ump-media" | "ump-protobuf" | "custom";
   translateProxyEnabled: TranslateProxyStatus;
   translateProxyEnabledDefault: boolean;
   audioBooster: boolean;

@@ -385,7 +385,7 @@ function getExistingProxyControls(): GoogleDriveProxyControls | null {
 }
 
 function findCurrentVotButtonContainer(): HTMLElement | null {
-  return document.querySelector<HTMLElement>(".vot-segmented-button");
+  return document.querySelector<HTMLElement>(".vot-rail");
 }
 
 function findCurrentVotButtonPart(selector: string): HTMLElement | null {
@@ -401,30 +401,12 @@ function findCurrentVoiceMenuButton(): HTMLElement | null {
 
 function findCurrentPipButton(): HTMLElement | null {
   const container = findCurrentVotButtonContainer();
-  const icons = Array.from(
-    container?.querySelectorAll<HTMLElement>(".vot-segment-only-icon") ?? [],
-  );
-
-  return (
-    icons.find((icon) =>
-      /picture in picture|pip/i.test(icon.getAttribute("aria-label") ?? ""),
-    ) ??
-    icons[0] ??
-    null
-  );
+  return container?.querySelector<HTMLElement>(".vot-pip-button") ?? null;
 }
 
 function findCurrentMenuButton(): HTMLElement | null {
   const container = findCurrentVotButtonContainer();
-  const icons = Array.from(
-    container?.querySelectorAll<HTMLElement>(".vot-segment-only-icon") ?? [],
-  );
-
-  return (
-    icons.find((icon) => /menu/i.test(icon.getAttribute("aria-label") ?? "")) ??
-    icons[1] ??
-    null
-  );
+  return container?.querySelector<HTMLElement>(".vot-menu-button") ?? null;
 }
 
 function getCurrentQuickMenuHeaderButtons(): {
@@ -521,7 +503,7 @@ function collectBridgeStatePayload(): GoogleDriveBridgeStatePayload {
   const button = findCurrentVotButtonContainer();
   const labelText =
     button
-      ?.querySelector<HTMLElement>(".vot-segment-label")
+      ?.querySelector<HTMLElement>(".vot-rail-button-label")
       ?.textContent?.trim() ?? "";
   const uiManager = getActiveGoogleDriveUiManager();
   const quickMenu = uiManager?.getDriveQuickMenuState?.() ?? null;
@@ -550,11 +532,11 @@ function collectBridgeStatePayload(): GoogleDriveBridgeStatePayload {
 }
 
 function postBridgeStateToParent(): void {
-  if (!topFrameBridgeConnected || globalThis.parent === globalThis) {
+  if (!topFrameBridgeConnected || globalThis.top === globalThis.window) {
     return;
   }
 
-  globalThis.parent.postMessage(
+  globalThis.top?.postMessage(
     {
       [GOOGLE_DRIVE_BRIDGE_FLAG]: true,
       kind: "state",
@@ -670,6 +652,15 @@ function handleTopFrameBridgeMessage(event: MessageEvent<unknown>): void {
     !data ||
     typeof data !== "object" ||
     !((data as Record<string, unknown>)[GOOGLE_DRIVE_BRIDGE_FLAG] === true)
+  ) {
+    return;
+  }
+
+  // Commands must come from the Drive top-level controller, not other embeds.
+  if (
+    event.source !== globalThis.top ||
+    (event.origin !== "https://drive.google.com" &&
+      event.origin !== "https://docs.google.com")
   ) {
     return;
   }
@@ -922,7 +913,7 @@ function getOverlayNodes(): OverlayNodes | null {
     playerRoot,
     controlsHost,
     proxyControls,
-    button: document.querySelector<HTMLElement>(".vot-segmented-button"),
+    button: document.querySelector<HTMLElement>(".vot-rail"),
     menu: document.querySelector<HTMLElement>(".vot-menu"),
     voiceModeMenu: document.querySelector<HTMLElement>(".vot-voice-mode-menu"),
   };
@@ -996,7 +987,7 @@ function hideButton(): void {
   }
 
   nodes.button.style.opacity = "0";
-  nodes.button.classList.add("vot-segmented-button--hidden");
+  nodes.button.classList.add("vot-rail--hidden");
 }
 
 function showButton(): void {
@@ -1008,7 +999,7 @@ function showButton(): void {
   nodes.button.hidden = false;
   nodes.button.removeAttribute("hidden");
   nodes.button.style.opacity = "1";
-  nodes.button.classList.remove("vot-segmented-button--hidden");
+  nodes.button.classList.remove("vot-rail--hidden");
 
   clearHideTimer();
   hideTimer = globalThis.setTimeout(

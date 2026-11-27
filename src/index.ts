@@ -40,7 +40,7 @@ import { localizationProvider } from "./localization/localizationProvider";
 import type { ProcessedSubtitles } from "./subtitles/processor";
 import type { SubtitleFontFamily } from "./subtitles/types";
 import { SubtitlesWidget } from "./subtitles/widget";
-import type { Status } from "./types/components/votButton";
+import type { Status } from "./types/components/votRail";
 import type { StorageData } from "./types/storage";
 import type { OverlayMount } from "./types/uiManager";
 import { UIManager } from "./ui/manager";
@@ -59,9 +59,12 @@ import {
   type IntervalIdleChecker,
 } from "./utils/intervalIdleChecker";
 import { installManifestSniffer } from "./utils/manifestSniffer";
+import { isDirectMediaUrl } from "./utils/media";
 import { Notifier } from "./utils/notify";
+import { isVkPage } from "./utils/pageContext";
 import { installSiteSubtitlesSniffer } from "./utils/siteSubtitlesSniffer";
 import { votStorage } from "./utils/storage";
+import { normalizeGoogleDriveTitle } from "./utils/text";
 import { translate } from "./utils/translateApis";
 import {
   calculatedResLang,
@@ -90,6 +93,7 @@ import {
 // VideoHandler is large; keep the public API but move big feature areas into
 // dedicated modules for cohesion.
 import { init as initVideoHandler } from "./videoHandler/modules/init";
+import VOTProtobufEnvelopeClient from "./videoHandler/modules/protobufEnvelopeProvider";
 import {
   changeSubtitlesLang as changeSubtitlesLangImpl,
   enableSubtitlesForCurrentLangPair as enableSubtitlesForCurrentLangPairImpl,
@@ -138,7 +142,7 @@ type InternalVideoVolumeSetHistoryEntry = {
   percent: number;
   suppressMs: number;
 };
-if (/(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(location.hostname)) {
+if (isVkPage()) {
   installSiteSubtitlesSniffer();
   installManifestSniffer();
 }
@@ -165,7 +169,7 @@ export class VideoHandler {
   firstPlay = true;
   audioContext?: AudioContext;
 
-  votClient!: VOTClient | VOTWorkerClient;
+  votClient!: VOTClient | VOTWorkerClient<string>;
   audioPlayer!: Chaimu;
 
   abortController!: AbortController;
@@ -251,6 +255,7 @@ export class VideoHandler {
   activeVoiceMode: "standard" | "lively" | null = null;
   lastTranslationVideoId: string | null = null;
   externalTranslationSourceUrl: string | null = null;
+  tiktokTranslationBlob?: { remoteUrl: string; blobUrl: string };
   pendingAutoplayRecovery: {
     gen: number;
     videoId: string;
@@ -823,10 +828,22 @@ export class VideoHandler {
    */
   getEventContainer() {
     if (!this.site.eventSelector) return this.container;
+
+    if (this.site.host === "yandexdisk") {
+      const target = document.querySelector<HTMLElement>(
+        this.site.eventSelector,
+      );
+
+      if (target?.isConnected) {
+        return target;
+      }
+    }
+
     const matched = findConnectedContainerBySelector(
       this.video,
       this.site.eventSelector,
     );
+
     return matched ?? this.container;
   }
 
@@ -1023,9 +1040,22 @@ export class VideoHandler {
    * @returns {VideoHandler} This instance.
    */
   async initVOTClient() {
-    const transportHost = this.data?.translateProxyEnabled
-      ? (this.data?.proxyWorkerHost ?? proxyWorkerHost)
-      : workerHost;
+    const mode = this.data?.translateProxyEnabled ?? 0;
+    const preset = this.data?.proxyServerPreset ?? "builtin";
+
+    const proxyActive = mode !== 0;
+    const usesUMP =
+      proxyActive && (preset === "ump-protobuf" || preset === "custom");
+
+    const rawHost = (this.data?.proxyWorkerHost || proxyWorkerHost).trim();
+    const cleanHost = rawHost.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+
+    if (usesUMP && !cleanHost) {
+      throw new Error("UMP proxy host is empty");
+    }
+
+    const transportHost = proxyActive ? cleanHost : workerHost;
+
     this.votOpts = {
       fetchFn: GM_fetch,
       fetchOpts: {
@@ -1033,12 +1063,23 @@ export class VideoHandler {
         forceGmXhr: true,
       },
       apiToken: this.data?.account?.token,
-      hostVOT: votBackendUrl,
+      hostVOT: usesUMP ? `https://${cleanHost}` : votBackendUrl,
       host: transportHost,
     };
-    this.votClient = new (
-      this.data?.translateProxyEnabled ? VOTWorkerClient : VOTClient
-    )(this.votOpts);
+
+    this.votClient = !proxyActive
+      ? new VOTClient(this.votOpts)
+      : usesUMP
+        ? new VOTProtobufEnvelopeClient(this.votOpts)
+        : new VOTWorkerClient<string>(this.votOpts);
+
+    console.info("[FORK][VOT routing]", {
+      preset,
+      mode,
+      client: this.votClient.constructor.name,
+      host: transportHost,
+      hostVOT: this.votOpts.hostVOT,
+    });
     this.votClient.sessions = await this.votSessionStorage.restore(
       transportHost,
       this.votClient.sessions,
@@ -1321,15 +1362,10 @@ export class VideoHandler {
   }
 
   isLivelyVoiceAllowed(
-    requestLang: RequestLang = this.videoData?.detectedLanguage ?? "auto",
+    _requestLang: RequestLang = this.videoData?.detectedLanguage ?? "auto",
     responseLang: ResponseLang = this.videoData?.responseLanguage ??
       this.translateToLang,
   ) {
-    const requestLangForApi = this.getRequestLangForTranslation(
-      requestLang,
-      responseLang,
-    );
-
     if (responseLang !== "ru") {
       return false;
     }
@@ -1478,10 +1514,7 @@ export class VideoHandler {
    * difference between volumes and works with "audio booster" (translation can
    * exceed 100%).
    */
-  syncVolumeWrapper(
-    fromType: "translation" | "video",
-    newVolume: number,
-  ): void {
+  syncVolumeWrapper(fromType: "translation" | "video", newVolume: number) {
     const overlayView = this.uiManager.votOverlayView;
     if (!overlayView?.isInitialized()) {
       return;
@@ -1493,7 +1526,7 @@ export class VideoHandler {
     if (!videoSlider || !translationSlider) {
       return;
     }
-    const { nextVideo, nextTranslation } = applyVolumeLinkDelta({
+    const result = applyVolumeLinkDelta({
       state: this.volumeLinkState,
       fromType,
       newVolume,
@@ -1502,19 +1535,21 @@ export class VideoHandler {
       translationMin: translationSlider.min,
       translationMax: translationSlider.max,
     });
+    const { nextVideo, nextTranslation } = result;
 
     if (typeof nextTranslation === "number") {
       translationSlider.value = nextTranslation;
       if (this.audioPlayer?.player) {
         this.audioPlayer.player.volume = nextTranslation / 100;
       }
-      return;
+      return result;
     }
 
     if (typeof nextVideo === "number") {
       videoSlider.value = nextVideo;
       this.setVideoVolume(nextVideo / 100);
     }
+    return result;
   }
 
   /**
@@ -1765,7 +1800,7 @@ export class VideoHandler {
       if (overlayView.downloadTranslationButton) {
         overlayView.downloadTranslationButton.hidden = false;
       }
-      this.downloadTranslationUrl = audioUrl;
+      this.downloadTranslationUrl = this.proxifyAudio(audioUrl);
     }
     debug.log(
       "afterUpdateTranslation downloadTranslationUrl",
@@ -1875,9 +1910,9 @@ export class VideoHandler {
   translateFunc(
     VIDEO_ID: string,
     isStream: boolean,
-    requestLang: string,
-    responseLang: string,
-    translationHelp?: any,
+    requestLang: RequestLang,
+    responseLang: ResponseLang,
+    translationHelp?: VideoData["translationHelp"],
   ): Promise<void> {
     return translateFuncImpl.call(
       this,
@@ -1913,7 +1948,7 @@ export class VideoHandler {
           globalThis.location.href,
         ).toString();
 
-        if (!this.votClient.isDirectMediaUrl(normalizedUrl)) {
+        if (!isDirectMediaUrl(this.votClient, normalizedUrl)) {
           return isCustomPlaybackTarget(host, this.videoData?.host);
         }
 
@@ -1939,7 +1974,6 @@ export class VideoHandler {
       host === "invidious" ||
       host === "piped" ||
       host === "yandexdisk" ||
-      host === "douyin" ||
       host === "custom" ||
       host === "vk"
     );
@@ -1997,6 +2031,10 @@ export class VideoHandler {
       await this.stopTranslation();
     } catch (err) {
       debug.log("[VideoHandler] stopTranslation failed during release", err);
+    }
+    if (this.tiktokTranslationBlob) {
+      URL.revokeObjectURL(this.tiktokTranslationBlob.blobUrl);
+      this.tiktokTranslationBlob = undefined;
     }
     this.lifecycleController?.teardown();
     this.abortController?.abort();
@@ -2078,17 +2116,6 @@ function extractGoogleDriveFileIdFromUrl(url: string): string | undefined {
   }
 }
 
-function normalizeGoogleDriveStoredTitle(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-
-  const normalized = value
-    .replace(/\s*-\s*Google Drive\s*$/i, "")
-    .replace(/\s*-\s*Google Диск\s*$/i, "")
-    .trim();
-
-  return normalized || undefined;
-}
-
 function getGoogleDriveTopFrameTitle(): string | undefined {
   const exactDriveTitle =
     Array.from(
@@ -2110,7 +2137,7 @@ function getGoogleDriveTopFrameTitle(): string | undefined {
 
   const docTitle = String(document.title || "").trim();
 
-  return normalizeGoogleDriveStoredTitle(
+  return normalizeGoogleDriveTitle(
     exactDriveTitle || headingTitle || metaTitle || docTitle,
   );
 }
@@ -2133,7 +2160,7 @@ async function persistGoogleDriveTopFrameTitleIfNeeded(): Promise<void> {
   }
 
   try {
-    await votStorage.set(`googledrive:title:${fileId}`, title);
+    await votStorage.setRaw(`googledrive:title:${fileId}`, title);
   } catch (error) {
     console.warn("[FORK] failed to persist Google Drive title", error);
   }

@@ -1,20 +1,19 @@
 import { YandexSessionProtobuf } from "@vot.js/core";
 import { VOTJSError } from "@vot.js/core/client";
+import type { ClientResponse as CoreClientResponse } from "@vot.js/core/types/client";
 import ExtVOTClient, { VOTWorkerClient } from "@vot.js/ext/client";
 import { getSignature, getUUID } from "@vot.js/shared/secure";
 import type { SessionModule } from "@vot.js/shared/types/secure";
 
 import { isAbortError, makeAbortError } from "./utils/errors";
 
-type ClientResponse<T = ArrayBuffer> = {
-  success: boolean;
+type ClientResponse<T = ArrayBuffer> = CoreClientResponse<T> & {
   status?: number;
   headers?: Record<string, string>;
   responseText?: string;
   responseJson?: unknown;
   errorCode?: string;
   errorMessage?: string;
-  data?: T | string;
 };
 
 function getResponseHeadersObject(
@@ -59,7 +58,7 @@ async function buildBinaryResponseResult<T = ArrayBuffer>(
   };
 }
 
-function buildRequestErrorResult(error: unknown): ClientResponse {
+function buildRequestErrorResult<T>(error: unknown): ClientResponse<T> {
   const err = error as {
     name?: unknown;
     message?: unknown;
@@ -78,14 +77,14 @@ function buildRequestErrorResult(error: unknown): ClientResponse {
   };
 }
 
-export default class VOTClient extends ExtVOTClient {
+export default class VOTClient extends ExtVOTClient<string> {
   override async request<T = ArrayBuffer>(
     path: string,
     body: Uint8Array,
     headers: Record<string, string> = {},
     method = "POST",
-  ): Promise<ClientResponse<T>> {
-    const options = this.getOpts(new Blob([body]), headers, method);
+  ): Promise<CoreClientResponse<T>> {
+    const options = this.getOpts(new Blob([body.slice()]), headers, method);
 
     try {
       const res = await this.fetch(
@@ -99,7 +98,7 @@ export default class VOTClient extends ExtVOTClient {
       }
 
       console.error("[FORK] request failed:", error);
-      return buildRequestErrorResult(error) as ClientResponse<T>;
+      return buildRequestErrorResult<T>(error);
     }
   }
 

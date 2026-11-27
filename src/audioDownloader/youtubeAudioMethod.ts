@@ -1,3 +1,4 @@
+import { localizationProvider } from "../localization/localizationProvider";
 export type YoutubeAudioMethod = "auto" | "player_mse_tap" | "hls" | "external";
 
 let currentMethod: YoutubeAudioMethod = "auto";
@@ -15,8 +16,12 @@ export function getYoutubeAudioMethod(): YoutubeAudioMethod {
 }
 
 export const YOUTUBE_AUDIO_METHOD_LABELS: Record<YoutubeAudioMethod, string> = {
-  auto: "Авто (Tap → HLS → External → Direct → MSE)",
+  get auto() {
+    return localizationProvider.get("VOTAudioAutoMethod");
+  },
   player_mse_tap: "Player/MSE tap",
   hls: "HLS (web_safari)",
-  external: "External provider",
+  get external() {
+    return localizationProvider.get("VOTAudioExternal");
+  },
 };

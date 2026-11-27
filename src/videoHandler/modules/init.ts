@@ -83,6 +83,7 @@ export async function init(this: VideoHandler) {
     subtitlesHotkey: null,
     m3u8ProxyHost,
     proxyWorkerHost,
+    proxyServerPreset: "builtin",
     translateProxyEnabled: 0,
     translateProxyEnabledDefault: true,
     audioBooster: false,

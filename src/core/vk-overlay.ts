@@ -9,7 +9,7 @@ function isVkLikeHost(): boolean {
 let vkOverlayPatchInstalled = false;
 
 export const VK_OVERLAY_BUTTON_SELECTOR =
-  "vot-block.vot-segmented-button, .vot-segmented-button, vot-block.vot-rail, .vot-rail";
+  "vot-block.vot-rail, .vot-rail, vot-block.vot-rail, .vot-rail";
 
 export const VK_OVERLAY_SUBTITLE_SELECTOR =
   ".vot-subtitles-widget, .vot-subtitles-layer";
@@ -19,7 +19,7 @@ function adaptStylesForShadowRoot(cssText: string): string {
 }
 
 export const VK_OVERLAY_PATCH_TEXT = `
-  .vot-segmented-button,
+  .vot-rail,
   .vot-rail {
     display: flex !important;
     opacity: 1 !important;
@@ -28,7 +28,7 @@ export const VK_OVERLAY_PATCH_TEXT = `
     visibility: visible !important;
   }
 
-  .vot-segmented-button.vot-segmented-button--hidden,
+  .vot-rail.vot-rail--hidden,
   .vot-rail.vot-rail--hidden {
     opacity: 1 !important;
     pointer-events: auto !important;
@@ -104,7 +104,7 @@ function refreshVkOverlayProbe(): number {
     button.hidden = false;
     button.removeAttribute("hidden");
     button.removeAttribute("inert");
-    button.classList.remove("vot-segmented-button--hidden");
+    button.classList.remove("vot-rail--hidden");
     button.classList.remove("vot-rail--hidden");
     button.style.setProperty("display", "flex", "important");
     button.style.setProperty("opacity", "1", "important");

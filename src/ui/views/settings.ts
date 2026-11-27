@@ -85,7 +85,7 @@ import type {
   LanguageSelectKey,
   SelectItem,
 } from "../../types/components/select";
-import { type Position, positions } from "../../types/components/votButton";
+import { type Position, positions } from "../../types/components/votRail";
 import type {
   Account,
   StorageData,
@@ -225,6 +225,7 @@ export class SettingsView {
   translateHotkeyButton?: HotkeyButton;
   subtitlesHotkeyButton?: HotkeyButton;
   proxyWorkerHostTextfield?: Textfield;
+  proxyServerSelect?: Select;
   proxyTranslationStatusSelectLabel?: Label;
   proxyTranslationStatusSelectTooltip?: Tooltip;
   proxyTranslationStatusSelect?: Select;
@@ -916,6 +917,41 @@ export class SettingsView {
       placeholder: proxyWorkerHost,
     });
 
+    // Proxy server selection is independent of the existing proxying mode (0/1/2).
+    const proxyServerOptions = [
+      { value: "builtin", label: localizationProvider.get("VOTBuiltinProxy") },
+      {
+        value: "ump-media",
+        label: "Universal Media Proxy — Media Proxy (Bilibili)",
+      },
+      {
+        value: "ump-protobuf",
+        label: "Universal Media Proxy — VOT API (Protobuf)",
+      },
+      { value: "custom", label: localizationProvider.get("VOTCustomProxy") },
+    ];
+    const currentHost = (this.data.proxyWorkerHost || proxyWorkerHost).trim();
+    const savedPreset = this.data.proxyServerPreset;
+    const currentPreset =
+      savedPreset &&
+      proxyServerOptions.some((item) => item.value === savedPreset)
+        ? savedPreset
+        : currentHost === proxyWorkerHost
+          ? "builtin"
+          : "custom";
+    this.proxyServerSelect = new Select({
+      selectTitle:
+        proxyServerOptions.find((item) => item.value === currentPreset)
+          ?.label ?? localizationProvider.get("VOTCustomProxy"),
+      dialogTitle: localizationProvider.get("VOTProxyServer"),
+      dialogParent: this.globalPortal,
+      items: proxyServerOptions.map((item) => ({
+        ...item,
+        selected: item.value === currentPreset,
+      })),
+    });
+    this.proxyWorkerHostTextfield.container.hidden =
+      currentPreset === "builtin";
     const proxyEnabledLabels = [
       localizationProvider.get("VOTTranslateProxyDisabled"),
       localizationProvider.get("VOTTranslateProxyEnabled"),
@@ -955,6 +991,7 @@ export class SettingsView {
     });
 
     proxySection.content.append(
+      this.proxyServerSelect.container,
       this.proxyWorkerHostTextfield.container,
       this.proxyTranslationStatusSelect.container,
     );
@@ -1210,63 +1247,76 @@ export class SettingsView {
     // Updates are offered for manual installation; never replace a running extension.
     const updateBox = document.createElement("div");
     const updateStatus = document.createElement("div");
-    updateStatus.textContent = "Проверка обновлений…";
-    const updateButton = ui.createOutlinedButton("Проверить обновления");
+    updateStatus.textContent = localizationProvider.get("VOTCheckingUpdates");
+    const updateButton = ui.createOutlinedButton(
+      localizationProvider.get("VOTCheckUpdates"),
+    );
     updateBox.append(updateStatus, updateButton);
     const platform = getUpdatePlatform();
     const installedVersion = envInfo.scriptVersion;
-    const checkUpdates = async () => {
+    let updateCheckRunning = false;
+    const checkUpdates = async (force = false) => {
+      if (updateCheckRunning) return;
+      updateCheckRunning = true;
       updateButton.setAttribute("disabled", "true");
-      updateStatus.textContent = "Проверка обновлений…";
+      updateStatus.textContent = localizationProvider.get("VOTCheckingUpdates");
       // Remove links from any previous check.
-      updateBox.querySelectorAll("a").forEach((node) => {
+      updateBox.querySelectorAll("a, small").forEach((node) => {
         node.remove();
       });
       try {
-        const result = await checkForUpdate(installedVersion, platform);
+        const result = await checkForUpdate(installedVersion, platform, force);
         if (!result) {
-          updateStatus.textContent = "Установлена последняя версия";
+          updateStatus.textContent =
+            localizationProvider.get("VOTLatestVersion");
           return;
         }
-        updateStatus.textContent = `Доступно обновление ${result.version}`;
+        updateStatus.textContent = localizationProvider
+          .get("VOTUpdateAvailable")
+          .replace("{0}", () => result.version);
         const downloads = result.complete ? result.assets : [];
         if (downloads.length) {
           for (const asset of downloads) {
             const link = document.createElement("a");
             link.href = asset.url;
-            link.textContent = "Скачать обновление";
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = localizationProvider.get("VOTDownloadUpdate");
             link.style.display = "block";
             updateBox.append(link);
           }
         } else {
           const link = document.createElement("a");
           link.href = result.releaseUrl || RELEASES_PAGE;
-          link.textContent = "Открыть релиз для скачивания";
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          link.textContent = localizationProvider.get("VOTOpenRelease");
           updateBox.append(link);
           if (platform === "safari")
-            updateStatus.textContent +=
-              " — ZIP для Safari отсутствует в релизе";
+            updateStatus.textContent += localizationProvider.get(
+              "VOTSafariZipMissing",
+            );
         }
         const instruction = document.createElement("small");
         instruction.textContent =
           platform === "chrome"
-            ? "Распакуйте архив в папку расширения и обновите его в chrome://extensions."
+            ? localizationProvider.get("VOTUpdateChrome")
             : platform === "firefox"
-              ? "Установите подписанный XPI или перезагрузите временное расширение через about:debugging."
+              ? localizationProvider.get("VOTUpdateFirefox")
               : platform === "safari"
-                ? "Распакуйте ZIP и обновите оба Safari-скрипта через менеджер userscript."
-                : "Установите скрипт через ваш менеджер userscript.";
+                ? localizationProvider.get("VOTUpdateSafari")
+                : localizationProvider.get("VOTUpdateUserscript");
         instruction.style.display = "block";
         updateBox.append(instruction);
       } catch {
-        updateStatus.textContent =
-          "Не удалось проверить обновления. Проверьте соединение с GitHub.";
+        updateStatus.textContent = localizationProvider.get("VOTUpdateFailed");
       } finally {
+        updateCheckRunning = false;
         updateButton.removeAttribute("disabled");
       }
     };
     updateButton.addEventListener("click", () => {
-      void checkUpdates();
+      void checkUpdates(true);
     });
     // Automatic check on opening settings; no automatic download or install.
     void checkUpdates();
@@ -1652,6 +1702,42 @@ export class SettingsView {
       logLabel: "subtitlesHotkey",
     });
 
+    this.proxyServerSelect.addEventListener("selectItem", async (value) => {
+      if (!this.proxyServerSelect || !this.proxyWorkerHostTextfield) return;
+      const labels: Record<string, string> = {
+        builtin: localizationProvider.get("VOTBuiltinProxy"),
+        "ump-media": "Universal Media Proxy — Media Proxy (Bilibili)",
+        "ump-protobuf": "Universal Media Proxy — VOT API (Protobuf)",
+        custom: localizationProvider.get("VOTCustomProxy"),
+      };
+      this.proxyServerSelect.selectTitle = labels[value] || labels.custom;
+      this.proxyWorkerHostTextfield.container.hidden = value === "builtin";
+      if (value === "builtin") {
+        this.data.proxyWorkerHost = proxyWorkerHost;
+        await votStorage.set("proxyWorkerHost", proxyWorkerHost);
+        this.events["change:proxyWorkerHost"].dispatch(proxyWorkerHost);
+      } else if (value === "ump-media" || value === "ump-protobuf") {
+        const host =
+          value === "ump-media"
+            ? "media-proxy.mooo.com"
+            : "media-proxy.mooo.com/vot";
+        this.data.proxyWorkerHost = host;
+        this.proxyWorkerHostTextfield.value = host;
+        await votStorage.set("proxyWorkerHost", host);
+        this.events["change:proxyWorkerHost"].dispatch(host);
+      } else {
+        const host = this.proxyWorkerHostTextfield.value.trim();
+        if (host && host !== proxyWorkerHost) {
+          this.data.proxyWorkerHost = host;
+          await votStorage.set("proxyWorkerHost", host);
+          this.events["change:proxyWorkerHost"].dispatch(host);
+        }
+      }
+      this.data.proxyServerPreset = value as typeof this.data.proxyServerPreset;
+      await votStorage.set("proxyServerPreset", value as any);
+      this.events["change:proxyWorkerHost"].dispatch(this.data.proxyWorkerHost);
+    });
+
     this.proxyWorkerHostTextfield.addEventListener("change", async (value) => {
       this.data.proxyWorkerHost = value || proxyWorkerHost;
       await votStorage.set("proxyWorkerHost", this.data.proxyWorkerHost);
@@ -1792,11 +1878,17 @@ export class SettingsView {
     });
 
     this.menuLanguageSelect.addEventListener("selectItem", async (item) => {
-      const result = await localizationProvider.changeLang(item);
-      if (!result) return;
-
-      this.data.localeUpdatedAt = await votStorage.get("localeUpdatedAt", 0);
-      this.events["select:menuLanguage"].dispatch(item);
+      if (this.menuLanguageSelect.disabled) return;
+      this.menuLanguageSelect.disabled = true;
+      try {
+        const result = await localizationProvider.changeLang(item);
+        if (!result || !this.isInitialized()) return;
+        this.events["select:menuLanguage"].dispatch(item);
+      } catch (err) {
+        debug.warn("[FORK] Failed to change menu language", err);
+      } finally {
+        if (this.isInitialized()) this.menuLanguageSelect.disabled = false;
+      }
     });
 
     this.bugReportButton.addEventListener("click", () =>

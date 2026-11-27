@@ -4,6 +4,10 @@ import {
   type ProgressiveQuality,
   pickByBitrate,
 } from "./internal/format-selection";
+import {
+  parseContentLengthFromContentRange,
+  parsePositiveInteger,
+} from "./internal/http-headers";
 
 export type AudioDownloadQuality = ProgressiveQuality;
 export type AudioDownloadClient =
@@ -367,30 +371,6 @@ function makeCPN(length = 16): string {
     output += alphabet[Math.floor(Math.random() * alphabet.length)] ?? "a";
   }
   return output;
-}
-
-function parsePositiveInteger(value: string | null | undefined): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function parseContentLengthFromContentRange(
-  contentRange: string | null,
-): number | null {
-  if (!contentRange) {
-    return null;
-  }
-
-  const matched = /\/(\d+)\s*$/i.exec(contentRange);
-  return parsePositiveInteger(matched?.[1]);
 }
 
 function parseContentRangeHeader(

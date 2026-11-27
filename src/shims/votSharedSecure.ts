@@ -1,9 +1,9 @@
+import Logger from "@vot.js/shared/utils/logger";
 import config, {
   chromiumFullVersion,
   chromiumMajorVersion,
   yandexBrowserMajorMinorVersion,
-} from "@vot.js/shared/config";
-import Logger from "@vot.js/shared/utils/logger";
+} from "./votSharedConfig";
 
 const { componentVersion } = config;
 const utf8Encoder = new TextEncoder();

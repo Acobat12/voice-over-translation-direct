@@ -3,7 +3,6 @@ import { initAuth } from "../core/auth";
 import { installGoogleDriveOverlayPatch } from "../core/google-drive-overlay";
 import { installGoogleDriveTopFramePatch } from "../core/google-drive-top-frame";
 import { installVkOverlayPatch } from "../core/vk-overlay";
-import { installYandexDiskOverlayPatch } from "../core/yandex-disk-overlay";
 import {
   ensureLocalizationProviderReady,
   localizationProvider,
@@ -59,10 +58,6 @@ export async function ensureRuntimeActivated(
       iframeInteractorBound = true;
       initIframeInteractor();
     }
-    function isYandexDiskHost(): boolean {
-      const host = globalThis.location.hostname.toLowerCase();
-      return host === "disk.yandex.ru" || host === "disk.yandex.com";
-    }
     function isGoogleDriveEmbedHost(): boolean {
       const host = globalThis.location.hostname.toLowerCase();
       return (
@@ -76,9 +71,6 @@ export async function ensureRuntimeActivated(
         !isIframe() &&
         (host === "drive.google.com" || host === "docs.google.com")
       );
-    }
-    if (isYandexDiskHost()) {
-      installYandexDiskOverlayPatch();
     }
     if (isGoogleDriveEmbedHost()) {
       installGoogleDriveOverlayPatch();

@@ -6,7 +6,15 @@
     "useIgnoreFile": false
   },
   "files": {
-    "includes": ["**", "!**/dist/**/*.js", "!**/*.d.ts"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/dist-ext",
+      "!**/*.d.ts",
+      "!**/download_audio_track",
+      "!**/*копия*.ts",
+      "!**/*#U2014*.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

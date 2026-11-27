@@ -1,4 +1,4 @@
-import type { ServiceConf } from "@vot.js/ext/types/service";
+import { type ServiceConf, VideoService } from "@vot.js/ext/types/service";
 import { getService as baseGetService } from "@vot.js/ext/utils/videoData";
 
 type ExtraServiceConf = ServiceConf & {
@@ -8,7 +8,7 @@ type ExtraServiceConf = ServiceConf & {
 
 const customSites: ExtraServiceConf[] = [
   {
-    host: "custom",
+    host: VideoService.custom,
     url: "stub",
     match: /^odysee\.com$/,
     selector:

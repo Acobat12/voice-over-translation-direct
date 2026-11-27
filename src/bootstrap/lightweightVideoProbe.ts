@@ -1,3 +1,5 @@
+import { isMobileYouTubePage } from "../utils/pageContext";
+
 type StartLightweightVideoProbeOptions = {
   onVideoDetected: (reason: string, video?: HTMLVideoElement) => void;
   onProbeExhausted?: (reason: string) => void;
@@ -99,9 +101,7 @@ export function startLightweightVideoProbe(
     Math.trunc(options.pollTimeoutMs ?? 4000),
   );
   const pollDeadlineAt = Date.now() + pollTimeoutMs;
-  const shouldLogMobileOverlay = /^(m|music)\.youtube\.com$/i.test(
-    String(globalThis.location.hostname || ""),
-  );
+  const shouldLogMobileOverlay = isMobileYouTubePage();
 
   const cleanup = () => {
     if (!active) {

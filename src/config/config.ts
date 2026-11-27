@@ -12,7 +12,7 @@ export const m3u8ProxyHost = "media-proxy.toil.cc/v1/proxy/m3u8";
  */
 export const proxyWorkerHost = "vot-worker.kload.workers.dev";
 
-export const votBackendUrl = "https://vot.toil.cc/v1";
+export const votBackendUrl = "https://media-proxy.mooo.com/vot";
 
 /**
  * @see https://github.com/FOSWLY/translate-backend

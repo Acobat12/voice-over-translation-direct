@@ -1,5 +1,3 @@
-import type { BaseProviderType } from "@toil/translate/types";
-
 import {
   defaultDetectService,
   defaultTranslationService,
@@ -16,43 +14,30 @@ const SETTINGS_CACHE_TTL_MS = 5_000;
 // Immutable translation/detection results are safe to cache "forever".
 const IMMUTABLE_API_CACHE_TTL_MS = Number.MAX_SAFE_INTEGER;
 
-let cachedTranslationService: string | null = null;
-let cachedTranslationServiceAt = 0;
-let cachedDetectService: string | null = null;
-let cachedDetectServiceAt = 0;
-
-async function getTranslationServiceCached(): Promise<string> {
-  const now = Date.now();
-  if (
-    cachedTranslationService &&
-    now - cachedTranslationServiceAt < SETTINGS_CACHE_TTL_MS
-  ) {
-    return cachedTranslationService;
-  }
-
-  const service = await votStorage.get(
-    "translationService",
-    defaultTranslationService,
-  );
-  cachedTranslationService = String(service);
-  cachedTranslationServiceAt = now;
-  return cachedTranslationService;
+function createServiceReader(
+  key: "translationService" | "detectService",
+  fallback: string,
+) {
+  let cachedValue: string | null = null;
+  let cachedAt = 0;
+  return async (): Promise<string> => {
+    const now = Date.now();
+    if (!cachedValue || now - cachedAt >= SETTINGS_CACHE_TTL_MS) {
+      cachedValue = String(await votStorage.get(key, fallback));
+      cachedAt = now;
+    }
+    return cachedValue;
+  };
 }
 
-async function getDetectServiceCached(): Promise<string> {
-  const now = Date.now();
-  if (
-    cachedDetectService &&
-    now - cachedDetectServiceAt < SETTINGS_CACHE_TTL_MS
-  ) {
-    return cachedDetectService;
-  }
-
-  const service = await votStorage.get("detectService", defaultDetectService);
-  cachedDetectService = String(service);
-  cachedDetectServiceAt = now;
-  return cachedDetectService;
-}
+const getTranslationServiceCached = createServiceReader(
+  "translationService",
+  defaultTranslationService,
+);
+const getDetectServiceCached = createServiceReader(
+  "detectService",
+  defaultDetectService,
+);
 
 type FOSWLYErrorResponse = {
   error: string;
@@ -109,7 +94,7 @@ const FOSWLYTranslateAPI = new (class {
     lang: string,
     service: FoswlyService,
   ) {
-    const result = await this.request<BaseProviderType.TranslationResponse>(
+    const result = await this.request<{ translations: string[] }>(
       "/translate",
       {
         method: "POST",
@@ -128,7 +113,7 @@ const FOSWLYTranslateAPI = new (class {
   }
 
   async translate(text: string, lang: string, service: FoswlyService) {
-    const result = await this.request<BaseProviderType.TranslationResponse>(
+    const result = await this.request<{ translations: string[] }>(
       `/translate?${new URLSearchParams({
         text,
         lang,
@@ -140,7 +125,7 @@ const FOSWLYTranslateAPI = new (class {
   }
 
   async detect(text: string, service: FoswlyService) {
-    const result = await this.request<BaseProviderType.DetectResponse>(
+    const result = await this.request<{ lang: string }>(
       `/detect?${new URLSearchParams({
         text,
         service,

@@ -263,10 +263,12 @@ function installPassiveHooks(): void {
   } as typeof XMLHttpRequest.prototype.send;
 
   // MSE: count the exact BufferSource bytes passed to appendBuffer.
-  const mediaSourceProto = (globalThis as any).MediaSource?.prototype;
-  if (mediaSourceProto?.addSourceBuffer) {
-    const nativeAddSourceBuffer = mediaSourceProto.addSourceBuffer;
-    mediaSourceProto.addSourceBuffer = function (mime: string) {
+  function instrumentMediaSourcePrototype(
+    proto: MediaSource | undefined,
+  ): void {
+    if (!proto?.addSourceBuffer) return;
+    const nativeAddSourceBuffer = proto.addSourceBuffer;
+    proto.addSourceBuffer = function (mime: string) {
       const sb = nativeAddSourceBuffer.call(this, mime) as SourceBuffer;
       const lower = String(mime || "").toLowerCase();
       const kind: MimeKind = lower.startsWith("audio/")
@@ -289,32 +291,12 @@ function installPassiveHooks(): void {
     };
   }
 
-  if ((globalThis as any).ManagedMediaSource?.prototype?.addSourceBuffer) {
-    const proto = (globalThis as any).ManagedMediaSource.prototype;
-    if (proto !== mediaSourceProto) {
-      const nativeAddSourceBuffer = proto.addSourceBuffer;
-      proto.addSourceBuffer = function (mime: string) {
-        const sb = nativeAddSourceBuffer.call(this, mime) as SourceBuffer;
-        const lower = String(mime || "").toLowerCase();
-        const kind: MimeKind = lower.startsWith("audio/")
-          ? "audio"
-          : lower.startsWith("video/")
-            ? "video"
-            : "unknown";
-        sourceBufferKinds.set(sb, kind);
-        const nativeAppend = sb.appendBuffer;
-        sb.appendBuffer = function (buffer: BufferSource) {
-          const bytes = byteLengthOf(buffer);
-          add(counters.mseTotal, bytes);
-          const mapped = sourceBufferKinds.get(this) ?? "unknown";
-          if (mapped === "audio") add(counters.mseAudio, bytes);
-          else if (mapped === "video") add(counters.mseVideo, bytes);
-          else add(counters.mseUnknown, bytes);
-          return nativeAppend.call(this, buffer);
-        };
-        return sb;
-      };
-    }
+  const mediaSourceProto = (globalThis as any).MediaSource?.prototype;
+  const managedMediaSourceProto = (globalThis as any).ManagedMediaSource
+    ?.prototype;
+  instrumentMediaSourcePrototype(mediaSourceProto);
+  if (managedMediaSourceProto !== mediaSourceProto) {
+    instrumentMediaSourcePrototype(managedMediaSourceProto);
   }
 
   anyGlobal[INSTALL_KEY] = {
@@ -669,26 +651,29 @@ async function runRace(durationSec = 10): Promise<RaceRow[]> {
   return rows;
 }
 
-function escapeHtml(value: string): string {
-  return value.replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ] || c,
-  );
-}
-
 function renderRows(tbody: HTMLTableSectionElement, rows: RaceRow[]): void {
-  tbody.innerHTML = rows
-    .map(
-      (row) => `<tr>
-    <td>${escapeHtml(row.layer)}</td><td>${escapeHtml(row.method)}</td><td>${escapeHtml(row.media)}</td>
-    <td>${escapeHtml(row.status)}</td><td>${row.sec.toFixed(2)}</td><td>${row.mb.toFixed(2)}</td>
-    <td>${row.mbps.toFixed(2)}</td><td>${row.count}</td><td>${escapeHtml(row.info)}</td>
-  </tr>`,
-    )
-    .join("");
+  const fragment = document.createDocumentFragment();
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const values = [
+      row.layer,
+      row.method,
+      row.media,
+      row.status,
+      row.sec.toFixed(2),
+      row.mb.toFixed(2),
+      row.mbps.toFixed(2),
+      String(row.count),
+      row.info,
+    ];
+    for (const value of values) {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    }
+    fragment.appendChild(tr);
+  }
+  tbody.replaceChildren(fragment);
 }
 
 function createPanel(): HTMLElement {
@@ -697,15 +682,57 @@ function createPanel(): HTMLElement {
   panel.id = PANEL_ID;
   panel.style.cssText =
     "position:fixed;inset:12px;z-index:2147483647;background:#111;color:#eee;border:1px solid #555;border-radius:8px;padding:10px;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;overflow:auto;box-shadow:0 8px 40px #000b";
-  panel.innerHTML = `<div style="display:flex;align-items:center;gap:8px;position:sticky;top:0;background:#111;padding-bottom:8px">
-    <strong style="font-size:14px">VOT Transport Race v4</strong>
-    <button data-run>Run 10s test</button><button data-export>Export JSON</button>
-    <span data-summary style="margin-left:8px"></span>
-    <button data-close style="margin-left:auto">×</button>
-  </div>
-  <table style="width:100%;border-collapse:collapse"><thead><tr>
-    <th>Layer</th><th>Method</th><th>Media</th><th>Status</th><th>sec</th><th>MB</th><th>Mbps</th><th>Count</th><th>Info</th>
-  </tr></thead><tbody data-body></tbody></table>`;
+  const toolbar = document.createElement("div");
+  toolbar.style.cssText =
+    "display:flex;align-items:center;gap:8px;position:sticky;top:0;background:#111;padding-bottom:8px";
+
+  const heading = document.createElement("strong");
+  heading.style.fontSize = "14px";
+  heading.textContent = "VOT Transport Race v4";
+
+  const runButton = document.createElement("button");
+  runButton.dataset.run = "";
+  runButton.textContent = "Run 10s test";
+
+  const exportBtn = document.createElement("button");
+  exportBtn.dataset.export = "";
+  exportBtn.textContent = "Export JSON";
+
+  const summaryText = document.createElement("span");
+  summaryText.dataset.summary = "";
+  summaryText.style.marginLeft = "8px";
+
+  const closeBtn = document.createElement("button");
+  closeBtn.dataset.close = "";
+  closeBtn.style.marginLeft = "auto";
+  closeBtn.textContent = "×";
+
+  toolbar.append(heading, runButton, exportBtn, summaryText, closeBtn);
+
+  const table = document.createElement("table");
+  table.style.cssText = "width:100%;border-collapse:collapse";
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const label of [
+    "Layer",
+    "Method",
+    "Media",
+    "Status",
+    "sec",
+    "MB",
+    "Mbps",
+    "Count",
+    "Info",
+  ]) {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+  const body = document.createElement("tbody");
+  body.dataset.body = "";
+  table.append(thead, body);
+  panel.append(toolbar, table);
   const style = document.createElement("style");
   style.textContent = `#${PANEL_ID} button{background:#2d2d2d;color:#fff;border:1px solid #666;border-radius:5px;padding:5px 8px;cursor:pointer}#${PANEL_ID} th,#${PANEL_ID} td{text-align:left;border-bottom:1px solid #333;padding:4px 6px;white-space:nowrap}#${PANEL_ID} td:last-child{white-space:normal}`;
   panel.appendChild(style);

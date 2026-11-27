@@ -9,7 +9,8 @@ var e$1 = Object.defineProperty,
         get: t[i],
         enumerable: !0,
       });
-    return n || e$1(r, Symbol.toStringTag, { value: "Module" }), r;
+    n || e$1(r, Symbol.toStringTag, { value: "Module" });
+    return r;
   },
   n$1 = /* @__PURE__ */ t$1({
     EXPRESSIONS_PRECEDENCE: () => a$1,
@@ -88,12 +89,14 @@ var a$1 = {
 };
 function o$1(e, t) {
   const { generator: n } = e;
-  if ((e.write("("), t != null && t.length > 0)) {
+  e.write("(");
+  if (t != null && t.length > 0) {
     n[t[0].type](t[0], e);
     const { length: r } = t;
     for (let i = 1; i < r; i++) {
       const r = t[i];
-      e.write(", "), n[r.type](r, e);
+      e.write(", ");
+      n[r.type](r, e);
     }
   }
   e.write(")");
@@ -116,14 +119,19 @@ function s$1(e, t, n, r) {
 }
 function c$1(e, t, n, r) {
   const { generator: i } = e;
-  s$1(e, t, n, r)
-    ? (e.write("("), i[t.type](t, e), e.write(")"))
-    : i[t.type](t, e);
+  if (s$1(e, t, n, r)) {
+    e.write("(");
+    i[t.type](t, e);
+    e.write(")");
+  } else {
+    i[t.type](t, e);
+  }
 }
 function l$1(e, t, n, r) {
   const i = t.split("\n"),
     a = i.length - 1;
-  if ((e.write(i[0].trim()), a > 0)) {
+  e.write(i[0].trim());
+  if (a > 0) {
     e.write(r);
     for (let t = 1; t < a; t++) e.write(n + i[t].trim() + r);
     e.write(n + i[a].trim());
@@ -133,10 +141,14 @@ function u$1(e, t, n, r) {
   const { length: i } = t;
   for (let a = 0; a < i; a++) {
     const i = t[a];
-    e.write(n),
-      i.type[0] === "L"
-        ? e.write(`// ${i.value.trim()}\n`, i)
-        : (e.write("/*"), l$1(e, i.value, n, r), e.write(`*/${r}`));
+    e.write(n);
+    if (i.type[0] === "L") {
+      e.write(`// ${i.value.trim()}\n`, i);
+    } else {
+      e.write("/*");
+      l$1(e, i.value, n, r);
+      e.write(`*/${r}`);
+    }
   }
 }
 function d$1(e) {
@@ -155,15 +167,18 @@ function f$1(e, t) {
   const { length: i } = r;
   if (i > 0) {
     n.VariableDeclarator(r[0], e);
-    for (let t = 1; t < i; t++) e.write(", "), n.VariableDeclarator(r[t], e);
+    for (let t = 1; t < i; t++) {
+      e.write(", ");
+      n.VariableDeclarator(r[t], e);
+    }
   }
 }
-var p$1;
-var m$1;
-var h$1;
-var g$1;
-var ee;
-var te;
+var p$1: any;
+var m$1: any;
+var h$1: any;
+var g$1: any;
+var ee: any;
+var te: any;
 var ne = {
   Program(e, t) {
     const n = t.indent.repeat(t.indentLevel),
@@ -173,78 +188,101 @@ var ne = {
       { length: o } = a;
     for (let e = 0; e < o; e++) {
       const o = a[e];
-      i && o.comments != null && u$1(t, o.comments, n, r),
-        t.write(n),
-        this[o.type](o, t),
-        t.write(r);
+      i && o.comments != null && u$1(t, o.comments, n, r);
+      t.write(n);
+      this[o.type](o, t);
+      t.write(r);
     }
     i && e.trailingComments != null && u$1(t, e.trailingComments, n, r);
   },
-  BlockStatement: (te = function (e, t) {
-    const n = t.indent.repeat(t.indentLevel++),
-      { lineEnd: r, writeComments: i } = t,
-      a = n + t.indent;
-    t.write("{");
-    const o = e.body;
-    if (o != null && o.length > 0) {
-      t.write(r), i && e.comments != null && u$1(t, e.comments, a, r);
-      const { length: s } = o;
-      for (let e = 0; e < s; e++) {
-        const n = o[e];
-        i && n.comments != null && u$1(t, n.comments, a, r),
-          t.write(a),
-          this[n.type](n, t),
+  BlockStatement: (() => {
+    const assignedValue = function (e, t) {
+      const n = t.indent.repeat(t.indentLevel++),
+        { lineEnd: r, writeComments: i } = t,
+        a = n + t.indent;
+      t.write("{");
+      const o = e.body;
+      if (o != null && o.length > 0) {
+        t.write(r);
+        i && e.comments != null && u$1(t, e.comments, a, r);
+        const { length: s } = o;
+        for (let e = 0; e < s; e++) {
+          const n = o[e];
+          i && n.comments != null && u$1(t, n.comments, a, r);
+          t.write(a);
+          this[n.type](n, t);
           t.write(r);
+        }
+        t.write(n);
+      } else {
+        if (i && e.comments != null) {
+          t.write(r);
+          u$1(t, e.comments, a, r);
+          t.write(n);
+        }
       }
-      t.write(n);
-    } else
-      i &&
-        e.comments != null &&
-        (t.write(r), u$1(t, e.comments, a, r), t.write(n));
-    i && e.trailingComments != null && u$1(t, e.trailingComments, a, r),
-      t.write("}"),
+      i && e.trailingComments != null && u$1(t, e.trailingComments, a, r);
+      t.write("}");
       t.indentLevel--;
-  }),
+    };
+    te = assignedValue;
+    return assignedValue;
+  })(),
   ClassBody: te,
   StaticBlock(e, t) {
-    t.write("static "), this.BlockStatement(e, t);
+    t.write("static ");
+    this.BlockStatement(e, t);
   },
   EmptyStatement(_e, t) {
     t.write(";");
   },
   ExpressionStatement(e, t) {
     const n = t.expressionsPrecedence[e.expression.type];
-    n === 17 || (n === 3 && e.expression.left.type[0] === "O")
-      ? (t.write("("), this[e.expression.type](e.expression, t), t.write(")"))
-      : this[e.expression.type](e.expression, t),
-      t.write(";");
+    if (n === 17 || (n === 3 && e.expression.left.type[0] === "O")) {
+      t.write("(");
+      this[e.expression.type](e.expression, t);
+      t.write(")");
+    } else {
+      this[e.expression.type](e.expression, t);
+    }
+    t.write(";");
   },
   IfStatement(e, t) {
-    t.write("if ("),
-      this[e.test.type](e.test, t),
-      t.write(") "),
-      this[e.consequent.type](e.consequent, t),
-      e.alternate != null &&
-        (t.write(" else "), this[e.alternate.type](e.alternate, t));
+    t.write("if (");
+    this[e.test.type](e.test, t);
+    t.write(") ");
+    this[e.consequent.type](e.consequent, t);
+    if (e.alternate != null) {
+      t.write(" else ");
+      this[e.alternate.type](e.alternate, t);
+    }
   },
   LabeledStatement(e, t) {
-    this[e.label.type](e.label, t), t.write(": "), this[e.body.type](e.body, t);
+    this[e.label.type](e.label, t);
+    t.write(": ");
+    this[e.body.type](e.body, t);
   },
   BreakStatement(e, t) {
-    t.write("break"),
-      e.label != null && (t.write(" "), this[e.label.type](e.label, t)),
-      t.write(";");
+    t.write("break");
+    if (e.label != null) {
+      t.write(" ");
+      this[e.label.type](e.label, t);
+    }
+    t.write(";");
   },
   ContinueStatement(e, t) {
-    t.write("continue"),
-      e.label != null && (t.write(" "), this[e.label.type](e.label, t)),
-      t.write(";");
+    t.write("continue");
+    if (e.label != null) {
+      t.write(" ");
+      this[e.label.type](e.label, t);
+    }
+    t.write(";");
   },
   WithStatement(e, t) {
-    t.write("with ("),
-      this[e.object.type](e.object, t),
-      t.write(") "),
-      this[e.body.type](e.body, t);
+    t.write("with (");
+    this[e.object.type](e.object, t);
+    t.write(") ");
+    this[e.body.type](e.body, t);
   },
   SwitchStatement(e, t) {
     const n = t.indent.repeat(t.indentLevel++),
@@ -252,118 +290,154 @@ var ne = {
     t.indentLevel++;
     const a = n + t.indent,
       o = a + t.indent;
-    t.write("switch ("),
-      this[e.discriminant.type](e.discriminant, t),
-      t.write(`) {${r}`);
+    t.write("switch (");
+    this[e.discriminant.type](e.discriminant, t);
+    t.write(`) {${r}`);
     const { cases: s } = e,
       { length: c } = s;
     for (let e = 0; e < c; e++) {
       const n = s[e];
-      i && n.comments != null && u$1(t, n.comments, a, r),
-        n.test
-          ? (t.write(`${a}case `),
-            this[n.test.type](n.test, t),
-            t.write(`:${r}`))
-          : t.write(`${a}default:${r}`);
+      i && n.comments != null && u$1(t, n.comments, a, r);
+      if (n.test) {
+        t.write(`${a}case `);
+        this[n.test.type](n.test, t);
+        t.write(`:${r}`);
+      } else {
+        t.write(`${a}default:${r}`);
+      }
       const { consequent: c } = n,
         { length: l } = c;
       for (let e = 0; e < l; e++) {
         const n = c[e];
-        i && n.comments != null && u$1(t, n.comments, o, r),
-          t.write(o),
-          this[n.type](n, t),
-          t.write(r);
+        i && n.comments != null && u$1(t, n.comments, o, r);
+        t.write(o);
+        this[n.type](n, t);
+        t.write(r);
       }
     }
-    (t.indentLevel -= 2), t.write(`${n}}`);
+    t.indentLevel -= 2;
+    t.write(`${n}}`);
   },
   ReturnStatement(e, t) {
-    t.write("return"),
-      e.argument && (t.write(" "), this[e.argument.type](e.argument, t)),
-      t.write(";");
+    t.write("return");
+    if (e.argument) {
+      t.write(" ");
+      this[e.argument.type](e.argument, t);
+    }
+    t.write(";");
   },
   ThrowStatement(e, t) {
-    t.write("throw "), this[e.argument.type](e.argument, t), t.write(";");
+    t.write("throw ");
+    this[e.argument.type](e.argument, t);
+    t.write(";");
   },
   TryStatement(e, t) {
-    if ((t.write("try "), this[e.block.type](e.block, t), e.handler)) {
+    t.write("try ");
+    this[e.block.type](e.block, t);
+    if (e.handler) {
       const { handler: n } = e;
-      n.param == null
-        ? t.write(" catch ")
-        : (t.write(" catch ("), this[n.param.type](n.param, t), t.write(") ")),
-        this[n.body.type](n.body, t);
+      if (n.param == null) {
+        t.write(" catch ");
+      } else {
+        t.write(" catch (");
+        this[n.param.type](n.param, t);
+        t.write(") ");
+      }
+      this[n.body.type](n.body, t);
     }
-    e.finalizer &&
-      (t.write(" finally "), this[e.finalizer.type](e.finalizer, t));
+    if (e.finalizer) {
+      t.write(" finally ");
+      this[e.finalizer.type](e.finalizer, t);
+    }
   },
   WhileStatement(e, t) {
-    t.write("while ("),
-      this[e.test.type](e.test, t),
-      t.write(") "),
-      this[e.body.type](e.body, t);
+    t.write("while (");
+    this[e.test.type](e.test, t);
+    t.write(") ");
+    this[e.body.type](e.body, t);
   },
   DoWhileStatement(e, t) {
-    t.write("do "),
-      this[e.body.type](e.body, t),
-      t.write(" while ("),
-      this[e.test.type](e.test, t),
-      t.write(");");
+    t.write("do ");
+    this[e.body.type](e.body, t);
+    t.write(" while (");
+    this[e.test.type](e.test, t);
+    t.write(");");
   },
   ForStatement(e, t) {
-    if ((t.write("for ("), e.init != null)) {
+    t.write("for (");
+    if (e.init != null) {
       const { init: n } = e;
       n.type[0] === "V" ? f$1(t, n) : this[n.type](n, t);
     }
-    t.write("; "),
-      e.test && this[e.test.type](e.test, t),
-      t.write("; "),
-      e.update && this[e.update.type](e.update, t),
-      t.write(") "),
-      this[e.body.type](e.body, t);
+    t.write("; ");
+    e.test && this[e.test.type](e.test, t);
+    t.write("; ");
+    e.update && this[e.update.type](e.update, t);
+    t.write(") ");
+    this[e.body.type](e.body, t);
   },
-  ForInStatement: (p$1 = function (e, t) {
-    t.write(`for ${e.await ? "await " : ""}(`);
-    const { left: n } = e;
-    n.type[0] === "V" ? f$1(t, n) : this[n.type](n, t),
-      t.write(e.type[3] === "I" ? " in " : " of "),
-      this[e.right.type](e.right, t),
-      t.write(") "),
+  ForInStatement: (() => {
+    const assignedValue = function (e, t) {
+      t.write(`for ${e.await ? "await " : ""}(`);
+      const { left: n } = e;
+      n.type[0] === "V" ? f$1(t, n) : this[n.type](n, t);
+      t.write(e.type[3] === "I" ? " in " : " of ");
+      this[e.right.type](e.right, t);
+      t.write(") ");
       this[e.body.type](e.body, t);
-  }),
+    };
+    p$1 = assignedValue;
+    return assignedValue;
+  })(),
   ForOfStatement: p$1,
   DebuggerStatement(e, t) {
     t.write("debugger;", e);
   },
-  FunctionDeclaration: (m$1 = function (e, t) {
-    t.write(
-      (e.async ? "async " : "") +
-        (e.generator ? "function* " : "function ") +
-        (e.id ? e.id.name : ""),
-      e,
-    ),
-      o$1(t, e.params),
-      t.write(" "),
+  FunctionDeclaration: (() => {
+    const assignedValue = function (e, t) {
+      t.write(
+        (e.async ? "async " : "") +
+          (e.generator ? "function* " : "function ") +
+          (e.id ? e.id.name : ""),
+        e,
+      );
+      o$1(t, e.params);
+      t.write(" ");
       this[e.body.type](e.body, t);
-  }),
+    };
+    m$1 = assignedValue;
+    return assignedValue;
+  })(),
   FunctionExpression: m$1,
   VariableDeclaration(e, t) {
-    f$1(t, e), t.write(";");
+    f$1(t, e);
+    t.write(";");
   },
   VariableDeclarator(e, t) {
-    this[e.id.type](e.id, t),
-      e.init != null && (t.write(" = "), this[e.init.type](e.init, t));
+    this[e.id.type](e.id, t);
+    if (e.init != null) {
+      t.write(" = ");
+      this[e.init.type](e.init, t);
+    }
   },
   ClassDeclaration(e, t) {
-    if ((t.write(`class ${e.id ? `${e.id.name} ` : ""}`, e), e.superClass)) {
+    t.write(`class ${e.id ? `${e.id.name} ` : ""}`, e);
+    if (e.superClass) {
       t.write("extends ");
       const { superClass: n } = e,
         { type: r } = n,
         i = t.expressionsPrecedence[r];
-      (r[0] !== "C" || r[1] !== "l" || r[5] !== "E") &&
-      (i === 17 || i < t.expressionsPrecedence.ClassExpression)
-        ? (t.write("("), this[e.superClass.type](n, t), t.write(")"))
-        : this[n.type](n, t),
-        t.write(" ");
+      if (
+        (r[0] !== "C" || r[1] !== "l" || r[5] !== "E") &&
+        (i === 17 || i < t.expressionsPrecedence.ClassExpression)
+      ) {
+        t.write("(");
+        this[e.superClass.type](n, t);
+        t.write(")");
+      } else {
+        this[n.type](n, t);
+      }
+      t.write(" ");
     }
     this.ClassBody(e.body, t);
   },
@@ -377,50 +451,58 @@ var ne = {
         a > 0 && t.write(", ");
         const e = n[a],
           r = e.type[6];
-        if (r === "D") t.write(e.local.name, e), a++;
-        else if (r === "N") t.write(`* as ${e.local.name}`, e), a++;
-        else break;
+        if (r === "D") {
+          t.write(e.local.name, e);
+          a++;
+        } else if (r === "N") {
+          t.write(`* as ${e.local.name}`, e);
+          a++;
+        } else break;
       }
       if (a < i) {
         for (t.write("{"); ; ) {
           const e = n[a],
             { name: r } = e.imported;
-          if (
-            (t.write(r, e),
-            r !== e.local.name && t.write(` as ${e.local.name}`),
-            ++a < i)
-          )
-            t.write(", ");
+          t.write(r, e);
+          r !== e.local.name && t.write(` as ${e.local.name}`);
+          if (++a < i) t.write(", ");
           else break;
         }
         t.write("}");
       }
       t.write(" from ");
     }
-    if ((this.Literal(e.source, t), r && r.length > 0)) {
+    this.Literal(e.source, t);
+    if (r && r.length > 0) {
       t.write(" with { ");
-      for (let e = 0; e < r.length; e++)
-        this.ImportAttribute(r[e], t), e < r.length - 1 && t.write(", ");
+      for (let e = 0; e < r.length; e++) {
+        this.ImportAttribute(r[e], t);
+        e < r.length - 1 && t.write(", ");
+      }
       t.write(" }");
     }
     t.write(";");
   },
   ImportAttribute(e, t) {
-    this.Identifier(e.key, t), t.write(": "), this.Literal(e.value, t);
+    this.Identifier(e.key, t);
+    t.write(": ");
+    this.Literal(e.value, t);
   },
   ImportExpression(e, t) {
-    t.write("import("), this[e.source.type](e.source, t), t.write(")");
+    t.write("import(");
+    this[e.source.type](e.source, t);
+    t.write(")");
   },
   ExportDefaultDeclaration(e, t) {
-    t.write("export default "),
-      this[e.declaration.type](e.declaration, t),
-      t.expressionsPrecedence[e.declaration.type] != null &&
-        e.declaration.type[0] !== "F" &&
-        t.write(";");
+    t.write("export default ");
+    this[e.declaration.type](e.declaration, t);
+    t.expressionsPrecedence[e.declaration.type] != null &&
+      e.declaration.type[0] !== "F" &&
+      t.write(";");
   },
   ExportNamedDeclaration(e, t) {
-    if ((t.write("export "), e.declaration))
-      this[e.declaration.type](e.declaration, t);
+    t.write("export ");
+    if (e.declaration) this[e.declaration.type](e.declaration, t);
     else {
       t.write("{");
       const { specifiers: n } = e,
@@ -429,40 +511,38 @@ var ne = {
         for (let e = 0; ; ) {
           const i = n[e],
             { name: a } = i.local;
-          if (
-            (t.write(a, i),
-            a !== i.exported.name && t.write(` as ${i.exported.name}`),
-            ++e < r)
-          )
-            t.write(", ");
+          t.write(a, i);
+          a !== i.exported.name && t.write(` as ${i.exported.name}`);
+          if (++e < r) t.write(", ");
           else break;
         }
-      if (
-        (t.write("}"),
-        e.source && (t.write(" from "), this.Literal(e.source, t)),
-        e.attributes && e.attributes.length > 0)
-      ) {
+      t.write("}");
+      if (e.source) {
+        t.write(" from ");
+        this.Literal(e.source, t);
+      }
+      if (e.attributes && e.attributes.length > 0) {
         t.write(" with { ");
-        for (let n = 0; n < e.attributes.length; n++)
-          this.ImportAttribute(e.attributes[n], t),
-            n < e.attributes.length - 1 && t.write(", ");
+        for (let n = 0; n < e.attributes.length; n++) {
+          this.ImportAttribute(e.attributes[n], t);
+          n < e.attributes.length - 1 && t.write(", ");
+        }
         t.write(" }");
       }
       t.write(";");
     }
   },
   ExportAllDeclaration(e, t) {
-    if (
-      (e.exported == null
-        ? t.write("export * from ")
-        : t.write(`export * as ${e.exported.name} from `),
-      this.Literal(e.source, t),
-      e.attributes && e.attributes.length > 0)
-    ) {
+    e.exported == null
+      ? t.write("export * from ")
+      : t.write(`export * as ${e.exported.name} from `);
+    this.Literal(e.source, t);
+    if (e.attributes && e.attributes.length > 0) {
       t.write(" with { ");
-      for (let n = 0; n < e.attributes.length; n++)
-        this.ImportAttribute(e.attributes[n], t),
-          n < e.attributes.length - 1 && t.write(", ");
+      for (let n = 0; n < e.attributes.length; n++) {
+        this.ImportAttribute(e.attributes[n], t);
+        n < e.attributes.length - 1 && t.write(", ");
+      }
       t.write(" }");
     }
     t.write(";");
@@ -470,15 +550,19 @@ var ne = {
   MethodDefinition(e, t) {
     e.static && t.write("static ");
     const n = e.kind[0];
-    (n === "g" || n === "s") && t.write(`${e.kind} `),
-      e.value.async && t.write("async "),
-      e.value.generator && t.write("*"),
-      e.computed
-        ? (t.write("["), this[e.key.type](e.key, t), t.write("]"))
-        : this[e.key.type](e.key, t),
-      o$1(t, e.value.params),
-      t.write(" "),
-      this[e.value.body.type](e.value.body, t);
+    (n === "g" || n === "s") && t.write(`${e.kind} `);
+    e.value.async && t.write("async ");
+    e.value.generator && t.write("*");
+    if (e.computed) {
+      t.write("[");
+      this[e.key.type](e.key, t);
+      t.write("]");
+    } else {
+      this[e.key.type](e.key, t);
+    }
+    o$1(t, e.value.params);
+    t.write(" ");
+    this[e.value.body.type](e.value.body, t);
   },
   ClassExpression(e, t) {
     this.ClassDeclaration(e, t);
@@ -489,11 +573,15 @@ var ne = {
     n != null &&
       (n.length === 1 && n[0].type[0] === "I"
         ? t.write(n[0].name, n[0])
-        : o$1(t, e.params)),
-      t.write(" => "),
-      e.body.type[0] === "O"
-        ? (t.write("("), this.ObjectExpression(e.body, t), t.write(")"))
-        : this[e.body.type](e.body, t);
+        : o$1(t, e.params));
+    t.write(" => ");
+    if (e.body.type[0] === "O") {
+      t.write("(");
+      this.ObjectExpression(e.body, t);
+      t.write(")");
+    } else {
+      this[e.body.type](e.body, t);
+    }
   },
   ThisExpression(e, t) {
     t.write("this", e);
@@ -501,16 +589,25 @@ var ne = {
   Super(e, t) {
     t.write("super", e);
   },
-  RestElement: (h$1 = function (e, t) {
-    t.write("..."), this[e.argument.type](e.argument, t);
-  }),
+  RestElement: (() => {
+    const assignedValue = function (e, t) {
+      t.write("...");
+      this[e.argument.type](e.argument, t);
+    };
+    h$1 = assignedValue;
+    return assignedValue;
+  })(),
   SpreadElement: h$1,
   YieldExpression(e, t) {
-    t.write(e.delegate ? "yield*" : "yield"),
-      e.argument && (t.write(" "), this[e.argument.type](e.argument, t));
+    t.write(e.delegate ? "yield*" : "yield");
+    if (e.argument) {
+      t.write(" ");
+      this[e.argument.type](e.argument, t);
+    }
   },
   AwaitExpression(e, t) {
-    t.write("await ", e), c$1(t, e.argument, e);
+    t.write("await ", e);
+    c$1(t, e.argument, e);
   },
   TemplateLiteral(e, t) {
     const { quasis: n, expressions: r } = e;
@@ -519,97 +616,133 @@ var ne = {
     for (let e = 0; e < i; e++) {
       const i = r[e],
         a = n[e];
-      t.write(a.value.raw, a), t.write("${"), this[i.type](i, t), t.write("}");
+      t.write(a.value.raw, a);
+      t.write("${");
+      this[i.type](i, t);
+      t.write("}");
     }
     const a = n[n.length - 1];
-    t.write(a.value.raw, a), t.write("`");
+    t.write(a.value.raw, a);
+    t.write("`");
   },
   TemplateElement(e, t) {
     t.write(e.value.raw, e);
   },
   TaggedTemplateExpression(e, t) {
-    c$1(t, e.tag, e), this[e.quasi.type](e.quasi, t);
+    c$1(t, e.tag, e);
+    this[e.quasi.type](e.quasi, t);
   },
-  ArrayExpression: (ee = function (e, t) {
-    if ((t.write("["), e.elements.length > 0)) {
-      const { elements: n } = e,
-        { length: r } = n;
-      for (let e = 0; ; ) {
-        const i = n[e];
-        if ((i != null && this[i.type](i, t), ++e < r)) t.write(", ");
-        else {
-          i ?? t.write(", ");
-          break;
+  ArrayExpression: (() => {
+    const assignedValue = function (e, t) {
+      t.write("[");
+      if (e.elements.length > 0) {
+        const { elements: n } = e,
+          { length: r } = n;
+        for (let e = 0; ; ) {
+          const i = n[e];
+          i != null && this[i.type](i, t);
+          if (++e < r) t.write(", ");
+          else {
+            i ?? t.write(", ");
+            break;
+          }
         }
       }
-    }
-    t.write("]");
-  }),
+      t.write("]");
+    };
+    ee = assignedValue;
+    return assignedValue;
+  })(),
   ArrayPattern: ee,
   ObjectExpression(e, t) {
     const n = t.indent.repeat(t.indentLevel++),
       { lineEnd: r, writeComments: i } = t,
       a = n + t.indent;
-    if ((t.write("{"), e.properties.length > 0)) {
-      t.write(r), i && e.comments != null && u$1(t, e.comments, a, r);
+    t.write("{");
+    if (e.properties.length > 0) {
+      t.write(r);
+      i && e.comments != null && u$1(t, e.comments, a, r);
       const o = `,${r}`,
         { properties: s } = e,
         { length: c } = s;
       for (let e = 0; ; ) {
         const n = s[e];
-        if (
-          (i && n.comments != null && u$1(t, n.comments, a, r),
-          t.write(a),
-          this[n.type](n, t),
-          ++e < c)
-        )
-          t.write(o);
+        i && n.comments != null && u$1(t, n.comments, a, r);
+        t.write(a);
+        this[n.type](n, t);
+        if (++e < c) t.write(o);
         else break;
       }
-      t.write(r),
-        i && e.trailingComments != null && u$1(t, e.trailingComments, a, r),
-        t.write(`${n}}`);
-    } else
-      i
-        ? e.comments == null
-          ? e.trailingComments == null
-            ? t.write("}")
-            : (t.write(r), u$1(t, e.trailingComments, a, r), t.write(`${n}}`))
-          : (t.write(r),
-            u$1(t, e.comments, a, r),
-            e.trailingComments != null && u$1(t, e.trailingComments, a, r),
-            t.write(`${n}}`))
-        : t.write("}");
+      t.write(r);
+      i && e.trailingComments != null && u$1(t, e.trailingComments, a, r);
+      t.write(`${n}}`);
+    } else {
+      if (i) {
+        if (e.comments == null) {
+          if (e.trailingComments == null) {
+            t.write("}");
+          } else {
+            t.write(r);
+            u$1(t, e.trailingComments, a, r);
+            t.write(`${n}}`);
+          }
+        } else {
+          t.write(r);
+          u$1(t, e.comments, a, r);
+          if (e.trailingComments != null) {
+            u$1(t, e.trailingComments, a, r);
+          }
+          t.write(`${n}}`);
+        }
+      } else {
+        t.write("}");
+      }
+    }
     t.indentLevel--;
   },
   Property(e, t) {
-    e.method || e.kind[0] !== "i"
-      ? this.MethodDefinition(e, t)
-      : (e.shorthand ||
-          (e.computed
-            ? (t.write("["), this[e.key.type](e.key, t), t.write("]"))
-            : this[e.key.type](e.key, t),
-          t.write(": ")),
-        this[e.value.type](e.value, t));
+    if (e.method || e.kind[0] !== "i") {
+      this.MethodDefinition(e, t);
+    } else {
+      if (!e.shorthand) {
+        if (e.computed) {
+          t.write("[");
+          this[e.key.type](e.key, t);
+          t.write("]");
+        } else {
+          this[e.key.type](e.key, t);
+        }
+        t.write(": ");
+      }
+      this[e.value.type](e.value, t);
+    }
   },
   PropertyDefinition(e, t) {
-    if (
-      (e.static && t.write("static "),
-      e.computed && t.write("["),
-      this[e.key.type](e.key, t),
-      e.computed && t.write("]"),
-      e.value == null)
-    ) {
+    e.static && t.write("static ");
+    e.computed && t.write("[");
+    this[e.key.type](e.key, t);
+    e.computed && t.write("]");
+    if (e.value == null) {
       e.key.type[0] !== "F" && t.write(";");
       return;
     }
-    t.write(" = "), this[e.value.type](e.value, t), t.write(";");
+    t.write(" = ");
+    this[e.value.type](e.value, t);
+    t.write(";");
   },
   ObjectPattern(e, t) {
-    if ((t.write("{"), e.properties.length > 0)) {
+    t.write("{");
+    if (e.properties.length > 0) {
       const { properties: n } = e,
         { length: r } = n;
-      for (let e = 0; this[n[e].type](n[e], t), ++e < r; ) t.write(", ");
+      for (
+        let e = 0;
+        (() => {
+          this[n[e].type](n[e], t);
+          return ++e < r;
+        })();
+      )
+        t.write(", ");
     }
     t.write("}");
   },
@@ -632,78 +765,121 @@ var ne = {
             r.prefix &&
             r.operator[0] === n &&
             (n === "+" || n === "-"))) &&
-        t.write(" "),
-        a
-          ? (t.write(n.length > 1 ? " (" : "("), this[i](r, t), t.write(")"))
-          : this[i](r, t);
-    } else this[e.argument.type](e.argument, t), t.write(e.operator);
+        t.write(" ");
+      if (a) {
+        t.write(n.length > 1 ? " (" : "(");
+        this[i](r, t);
+        t.write(")");
+      } else {
+        this[i](r, t);
+      }
+    } else {
+      this[e.argument.type](e.argument, t);
+      t.write(e.operator);
+    }
   },
   UpdateExpression(e, t) {
-    e.prefix
-      ? (t.write(e.operator), this[e.argument.type](e.argument, t))
-      : (this[e.argument.type](e.argument, t), t.write(e.operator));
+    if (e.prefix) {
+      t.write(e.operator);
+      this[e.argument.type](e.argument, t);
+    } else {
+      this[e.argument.type](e.argument, t);
+      t.write(e.operator);
+    }
   },
   AssignmentExpression(e, t) {
-    this[e.left.type](e.left, t),
-      t.write(` ${e.operator} `),
-      this[e.right.type](e.right, t);
+    this[e.left.type](e.left, t);
+    t.write(` ${e.operator} `);
+    this[e.right.type](e.right, t);
   },
   AssignmentPattern(e, t) {
-    this[e.left.type](e.left, t),
-      t.write(" = "),
-      this[e.right.type](e.right, t);
+    this[e.left.type](e.left, t);
+    t.write(" = ");
+    this[e.right.type](e.right, t);
   },
-  BinaryExpression: (g$1 = (e, t) => {
-    const n = e.operator === "in";
-    n && t.write("("),
-      c$1(t, e.left, e, !1),
-      t.write(` ${e.operator} `),
-      c$1(t, e.right, e, !0),
+  BinaryExpression: (() => {
+    const assignedValue = (e, t) => {
+      const n = e.operator === "in";
+      n && t.write("(");
+      c$1(t, e.left, e, !1);
+      t.write(` ${e.operator} `);
+      c$1(t, e.right, e, !0);
       n && t.write(")");
-  }),
+    };
+    g$1 = assignedValue;
+    return assignedValue;
+  })(),
   LogicalExpression: g$1,
   ConditionalExpression(e, t) {
     const { test: n } = e,
       r = t.expressionsPrecedence[n.type];
-    r === 17 || r <= t.expressionsPrecedence.ConditionalExpression
-      ? (t.write("("), this[n.type](n, t), t.write(")"))
-      : this[n.type](n, t),
-      t.write(" ? "),
-      this[e.consequent.type](e.consequent, t),
-      t.write(" : "),
-      this[e.alternate.type](e.alternate, t);
+    if (r === 17 || r <= t.expressionsPrecedence.ConditionalExpression) {
+      t.write("(");
+      this[n.type](n, t);
+      t.write(")");
+    } else {
+      this[n.type](n, t);
+    }
+    t.write(" ? ");
+    this[e.consequent.type](e.consequent, t);
+    t.write(" : ");
+    this[e.alternate.type](e.alternate, t);
   },
   NewExpression(e, t) {
     t.write("new ");
     const n = t.expressionsPrecedence[e.callee.type];
-    n === 17 || n < t.expressionsPrecedence.CallExpression || d$1(e.callee)
-      ? (t.write("("), this[e.callee.type](e.callee, t), t.write(")"))
-      : this[e.callee.type](e.callee, t),
-      o$1(t, e.arguments);
+    if (
+      n === 17 ||
+      n < t.expressionsPrecedence.CallExpression ||
+      d$1(e.callee)
+    ) {
+      t.write("(");
+      this[e.callee.type](e.callee, t);
+      t.write(")");
+    } else {
+      this[e.callee.type](e.callee, t);
+    }
+    o$1(t, e.arguments);
   },
   CallExpression(e, t) {
     const n = t.expressionsPrecedence[e.callee.type];
-    n === 17 || n < t.expressionsPrecedence.CallExpression
-      ? (t.write("("), this[e.callee.type](e.callee, t), t.write(")"))
-      : this[e.callee.type](e.callee, t),
-      e.optional && t.write("?."),
-      o$1(t, e.arguments);
+    if (n === 17 || n < t.expressionsPrecedence.CallExpression) {
+      t.write("(");
+      this[e.callee.type](e.callee, t);
+      t.write(")");
+    } else {
+      this[e.callee.type](e.callee, t);
+    }
+    e.optional && t.write("?.");
+    o$1(t, e.arguments);
   },
   ChainExpression(e, t) {
     this[e.expression.type](e.expression, t);
   },
   MemberExpression(e, t) {
     const n = t.expressionsPrecedence[e.object.type];
-    n === 17 || n < t.expressionsPrecedence.MemberExpression
-      ? (t.write("("), this[e.object.type](e.object, t), t.write(")"))
-      : this[e.object.type](e.object, t),
-      e.computed
-        ? (e.optional && t.write("?."),
-          t.write("["),
-          this[e.property.type](e.property, t),
-          t.write("]"))
-        : (e.optional ? t.write("?.") : t.write("."),
-          this[e.property.type](e.property, t));
+    if (n === 17 || n < t.expressionsPrecedence.MemberExpression) {
+      t.write("(");
+      this[e.object.type](e.object, t);
+      t.write(")");
+    } else {
+      this[e.object.type](e.object, t);
+    }
+    if (e.computed) {
+      if (e.optional) {
+        t.write("?.");
+      }
+      t.write("[");
+      this[e.property.type](e.property, t);
+      t.write("]");
+    } else {
+      if (e.optional) {
+        t.write("?.");
+      } else {
+        t.write(".");
+      }
+      this[e.property.type](e.property, t);
+    }
   },
   MetaProperty(e, t) {
     t.write(`${e.meta.name}.${e.property.name}`, e);
@@ -733,31 +909,35 @@ var ie = ne;
 var ae = class {
   constructor(e) {
     const t = e ?? re;
-    (this.output = ""),
-      t.output == null
-        ? (this.output = "")
-        : ((this.output = t.output), (this.write = this.writeToStream)),
-      (this.generator = t.generator == null ? ne : t.generator),
-      (this.expressionsPrecedence =
-        t.expressionsPrecedence == null ? a$1 : t.expressionsPrecedence),
-      (this.indent = t.indent == null ? "  " : t.indent),
-      (this.lineEnd = t.lineEnd == null ? "\n" : t.lineEnd),
-      (this.indentLevel =
-        t.startingIndentLevel == null ? 0 : t.startingIndentLevel),
-      (this.writeComments = t.comments ? t.comments : !1),
-      t.sourceMap != null &&
-        ((this.write =
-          t.output == null ? this.writeAndMap : this.writeToStreamAndMap),
-        (this.sourceMap = t.sourceMap),
-        (this.line = 1),
-        (this.column = 0),
-        (this.lineEndSize = this.lineEnd.split("\n").length - 1),
-        (this.mapping = {
-          original: null,
-          generated: this,
-          name: void 0,
-          source: t.sourceMap.file || t.sourceMap._file,
-        }));
+    this.output = "";
+    if (t.output == null) {
+      this.output = "";
+    } else {
+      this.output = t.output;
+      this.write = this.writeToStream;
+    }
+    this.generator = t.generator == null ? ne : t.generator;
+    this.expressionsPrecedence =
+      t.expressionsPrecedence == null ? a$1 : t.expressionsPrecedence;
+    this.indent = t.indent == null ? "  " : t.indent;
+    this.lineEnd = t.lineEnd == null ? "\n" : t.lineEnd;
+    this.indentLevel =
+      t.startingIndentLevel == null ? 0 : t.startingIndentLevel;
+    this.writeComments = t.comments ? t.comments : !1;
+    if (t.sourceMap != null) {
+      this.write =
+        t.output == null ? this.writeAndMap : this.writeToStreamAndMap;
+      this.sourceMap = t.sourceMap;
+      this.line = 1;
+      this.column = 0;
+      this.lineEndSize = this.lineEnd.split("\n").length - 1;
+      this.mapping = {
+        original: null,
+        generated: this,
+        name: void 0,
+        source: t.sourceMap.file || t.sourceMap._file,
+      };
+    }
   }
   write(e) {
     this.output += e;
@@ -766,23 +946,26 @@ var ae = class {
     this.output.write(e);
   }
   writeAndMap(e, t) {
-    (this.output += e), this.map(e, t);
+    this.output += e;
+    this.map(e, t);
   }
   writeToStreamAndMap(e, t) {
-    this.output.write(e), this.map(e, t);
+    this.output.write(e);
+    this.map(e, t);
   }
   map(e, t) {
     if (t != null) {
       const { type: n } = t;
       if (n[0] === "L" && n[2] === "n") {
-        (this.column = 0), this.line++;
+        this.column = 0;
+        this.line++;
         return;
       }
       if (t.loc != null) {
         const { mapping: e } = this;
-        (e.original = t.loc.start),
-          (e.name = t.name),
-          this.sourceMap.addMapping(e);
+        e.original = t.loc.start;
+        e.name = t.name;
+        this.sourceMap.addMapping(e);
       }
       if (
         (n[0] === "T" && n[8] === "E") ||
@@ -790,17 +973,32 @@ var ae = class {
       ) {
         let { length: t } = e,
           { column: n, line: r } = this;
-        for (let i = 0; i < t; i++) e[i] === "\n" ? ((n = 0), r++) : n++;
-        (this.column = n), (this.line = r);
+        for (let i = 0; i < t; i++) {
+          if (e[i] === "\n") {
+            n = 0;
+            r++;
+          } else {
+            n++;
+          }
+        }
+        this.column = n;
+        this.line = r;
         return;
       }
     }
     const { length: n } = e,
       { lineEnd: r } = this;
-    n > 0 &&
-      (this.lineEndSize > 0 && (r.length === 1 ? e[n - 1] === r : e.endsWith(r))
-        ? ((this.line += this.lineEndSize), (this.column = 0))
-        : (this.column += n));
+    if (n > 0) {
+      if (
+        this.lineEndSize > 0 &&
+        (r.length === 1 ? e[n - 1] === r : e.endsWith(r))
+      ) {
+        this.line += this.lineEndSize;
+        this.column = 0;
+      } else {
+        this.column += n;
+      }
+    }
   }
   toString() {
     return this.output;
@@ -808,7 +1006,8 @@ var ae = class {
 };
 function oe(e, t) {
   const n = new ae(t);
-  return n.generator[e.type](e, n), n.output;
+  n.generator[e.type](e, n);
+  return n.output;
 }
 var se = /* @__PURE__ */ t$1({
   parse: () => Sr,
@@ -825,7 +1024,21 @@ var ce = ((e, t) => {
     if (a < 0) i -= a;
     else {
       let o = e[r++];
-      a & 2 && (o = t[o]), a & 1 ? n.fill(o, i, (i += e[r++])) : (n[i++] = o);
+      if (a & 2) {
+        o = t[o];
+      }
+      if (a & 1) {
+        n.fill(
+          o,
+          i,
+          (() => {
+            i += e[r++];
+            return i;
+          })(),
+        );
+      } else {
+        n[i++] = o;
+      }
     }
   }
   return n;
@@ -1003,7 +1216,12 @@ var ce = ((e, t) => {
 var le = (e) => !!((ce[(e >>> 5) + 0] >>> e) & 1);
 var ue = (e) => !!((ce[(e >>> 5) + 34816] >>> e) & 1);
 function _$1(e) {
-  return e.column++, (e.currentChar = e.source.charCodeAt(++e.index));
+  e.column++;
+  return (() => {
+    const assignedValue = e.source.charCodeAt(++e.index);
+    e.currentChar = assignedValue;
+    return assignedValue;
+  })();
 }
 function de(e) {
   const t = e.currentChar;
@@ -1012,15 +1230,18 @@ function de(e) {
   return (n & 64512) === 56320 ? 65536 + ((t & 1023) << 10) + (n & 1023) : 0;
 }
 function fe(e, t) {
-  (e.currentChar = e.source.charCodeAt(++e.index)),
-    (e.flags |= 1),
-    t & 4 || ((e.column = 0), e.line++);
+  e.currentChar = e.source.charCodeAt(++e.index);
+  e.flags |= 1;
+  if (!(t & 4)) {
+    e.column = 0;
+    e.line++;
+  }
 }
 function v$1(e) {
-  (e.flags |= 1),
-    (e.currentChar = e.source.charCodeAt(++e.index)),
-    (e.column = 0),
-    e.line++;
+  e.flags |= 1;
+  e.currentChar = e.source.charCodeAt(++e.index);
+  e.column = 0;
+  e.line++;
 }
 function pe(e) {
   return (
@@ -1101,36 +1322,42 @@ var ye = [
 ];
 function be(e) {
   const { source: t } = e;
-  e.currentChar === 35 &&
-    t.charCodeAt(e.index + 1) === 33 &&
-    (_$1(e), _$1(e), Se(e, t, 0, 4, e.tokenStart));
+  if (e.currentChar === 35 && t.charCodeAt(e.index + 1) === 33) {
+    _$1(e);
+    _$1(e);
+    Se(e, t, 0, 4, e.tokenStart);
+  }
 }
 function xe(e, t, n, r, i, a) {
-  return r & 2 && e.report(0), Se(e, t, n, i, a);
+  r & 2 && e.report(0);
+  return Se(e, t, n, i, a);
 }
 function Se(e, t, n, r, i) {
   const { index: a } = e;
   for (
-    e.tokenIndex = e.index, e.tokenLine = e.line, e.tokenColumn = e.column;
+    (() => {
+      e.tokenIndex = e.index;
+      e.tokenLine = e.line;
+      e.tokenColumn = e.column;
+    })();
     e.index < e.end;
   ) {
     if (b$1[e.currentChar] & 8) {
       const n = e.currentChar === 13;
-      v$1(e),
-        n &&
-          e.index < e.end &&
-          e.currentChar === 10 &&
-          (e.currentChar = t.charCodeAt(++e.index));
+      v$1(e);
+      if (n && e.index < e.end && e.currentChar === 10) {
+        e.currentChar = t.charCodeAt(++e.index);
+      }
       break;
     }
     if ((e.currentChar ^ 8232) <= 1) {
       v$1(e);
       break;
     }
-    _$1(e),
-      (e.tokenIndex = e.index),
-      (e.tokenLine = e.line),
-      (e.tokenColumn = e.column);
+    _$1(e);
+    e.tokenIndex = e.index;
+    e.tokenLine = e.line;
+    e.tokenColumn = e.column;
   }
   if (e.options.onComment) {
     const n = {
@@ -1158,9 +1385,17 @@ function Ce(e, t, n) {
   for (; e.index < e.end; )
     if (e.currentChar < 43) {
       let i = !1;
-      for (; e.currentChar === 42; )
-        if (((i ||= ((n &= -5), !0)), _$1(e) === 47)) {
-          if ((_$1(e), e.options.onComment)) {
+      for (; e.currentChar === 42; ) {
+        i ||= (() => {
+          (() => {
+            n &= -5;
+            return n;
+          })();
+          return !0;
+        })();
+        if (_$1(e) === 47) {
+          _$1(e);
+          if (e.options.onComment) {
             const n = {
               start: {
                 line: e.tokenLine,
@@ -1179,49 +1414,82 @@ function Ce(e, t, n) {
               n,
             );
           }
-          return (
-            (e.tokenIndex = e.index),
-            (e.tokenLine = e.line),
-            (e.tokenColumn = e.column),
-            n
-          );
+          e.tokenIndex = e.index;
+          e.tokenLine = e.line;
+          e.tokenColumn = e.column;
+          return n;
         }
+      }
       if (i) continue;
-      b$1[e.currentChar] & 8
-        ? e.currentChar === 13
-          ? ((n |= 5), v$1(e))
-          : (fe(e, n), (n = (n & -5) | 1))
-        : _$1(e);
-    } else
-      (e.currentChar ^ 8232) <= 1
-        ? ((n = (n & -5) | 1), v$1(e))
-        : ((n &= -5), _$1(e));
+      if (b$1[e.currentChar] & 8) {
+        if (e.currentChar === 13) {
+          n |= 5;
+          v$1(e);
+        } else {
+          fe(e, n);
+          n = (n & -5) | 1;
+        }
+      } else {
+        _$1(e);
+      }
+    } else {
+      if ((e.currentChar ^ 8232) <= 1) {
+        n = (n & -5) | 1;
+        v$1(e);
+      } else {
+        n &= -5;
+        _$1(e);
+      }
+    }
   e.report(18);
 }
-var x$1;
+var x$1: any;
 ((e) => {
-  (e[(e.Empty = 0)] = "Empty"),
-    (e[(e.Escape = 1)] = "Escape"),
-    (e[(e.Class = 2)] = "Class");
-})((x$1 ||= {}));
-var S$1;
+  e.Empty = 0;
+  e[0] = "Empty";
+  e.Escape = 1;
+  e[1] = "Escape";
+  e.Class = 2;
+  e[2] = "Class";
+})(
+  (() => {
+    x$1 ||= {};
+    return x$1;
+  })(),
+);
+var S$1: any;
 ((e) => {
-  (e[(e.Empty = 0)] = "Empty"),
-    (e[(e.IgnoreCase = 1)] = "IgnoreCase"),
-    (e[(e.Global = 2)] = "Global"),
-    (e[(e.Multiline = 4)] = "Multiline"),
-    (e[(e.Unicode = 16)] = "Unicode"),
-    (e[(e.Sticky = 8)] = "Sticky"),
-    (e[(e.DotAll = 32)] = "DotAll"),
-    (e[(e.Indices = 64)] = "Indices"),
-    (e[(e.UnicodeSets = 128)] = "UnicodeSets");
-})((S$1 ||= {}));
+  e.Empty = 0;
+  e[0] = "Empty";
+  e.IgnoreCase = 1;
+  e[1] = "IgnoreCase";
+  e.Global = 2;
+  e[2] = "Global";
+  e.Multiline = 4;
+  e[4] = "Multiline";
+  e.Unicode = 16;
+  e[16] = "Unicode";
+  e.Sticky = 8;
+  e[8] = "Sticky";
+  e.DotAll = 32;
+  e[32] = "DotAll";
+  e.Indices = 64;
+  e[64] = "Indices";
+  e.UnicodeSets = 128;
+  e[128] = "UnicodeSets";
+})(
+  (() => {
+    S$1 ||= {};
+    return S$1;
+  })(),
+);
 function we(e) {
   let t = e.index,
     n = x$1.Empty;
   loop: for (;;) {
     const t = e.currentChar;
-    if ((_$1(e), n & x$1.Escape)) n &= ~x$1.Escape;
+    _$1(e);
+    if (n & x$1.Escape) n &= ~x$1.Escape;
     else
       switch (t) {
         case 47:
@@ -1236,11 +1504,8 @@ function we(e) {
         case 93:
           n &= x$1.Escape;
       }
-    if (
-      ((t === 13 || t === 10 || t === 8232 || t === 8233) && e.report(34),
-      e.index >= e.source.length)
-    )
-      return e.report(34);
+    (t === 13 || t === 10 || t === 8232 || t === 8233) && e.report(34);
+    if (e.index >= e.source.length) return e.report(34);
   }
   let r = e.index - 1,
     i = S$1.Empty,
@@ -1249,32 +1514,38 @@ function we(e) {
   for (; ve(a); ) {
     switch (a) {
       case 103:
-        i & S$1.Global && e.report(36, "g"), (i |= S$1.Global);
+        i & S$1.Global && e.report(36, "g");
+        i |= S$1.Global;
         break;
       case 105:
-        i & S$1.IgnoreCase && e.report(36, "i"), (i |= S$1.IgnoreCase);
+        i & S$1.IgnoreCase && e.report(36, "i");
+        i |= S$1.IgnoreCase;
         break;
       case 109:
-        i & S$1.Multiline && e.report(36, "m"), (i |= S$1.Multiline);
+        i & S$1.Multiline && e.report(36, "m");
+        i |= S$1.Multiline;
         break;
       case 117:
-        i & S$1.Unicode && e.report(36, "u"),
-          i & S$1.UnicodeSets && e.report(36, "vu"),
-          (i |= S$1.Unicode);
+        i & S$1.Unicode && e.report(36, "u");
+        i & S$1.UnicodeSets && e.report(36, "vu");
+        i |= S$1.Unicode;
         break;
       case 118:
-        i & S$1.Unicode && e.report(36, "uv"),
-          i & S$1.UnicodeSets && e.report(36, "v"),
-          (i |= S$1.UnicodeSets);
+        i & S$1.Unicode && e.report(36, "uv");
+        i & S$1.UnicodeSets && e.report(36, "v");
+        i |= S$1.UnicodeSets;
         break;
       case 121:
-        i & S$1.Sticky && e.report(36, "y"), (i |= S$1.Sticky);
+        i & S$1.Sticky && e.report(36, "y");
+        i |= S$1.Sticky;
         break;
       case 115:
-        i & S$1.DotAll && e.report(36, "s"), (i |= S$1.DotAll);
+        i & S$1.DotAll && e.report(36, "s");
+        i |= S$1.DotAll;
         break;
       case 100:
-        i & S$1.Indices && e.report(36, "d"), (i |= S$1.Indices);
+        i & S$1.Indices && e.report(36, "d");
+        i |= S$1.Indices;
         break;
       default:
         e.report(35);
@@ -1283,22 +1554,23 @@ function we(e) {
   }
   const s = e.source.slice(o, e.index),
     c = e.source.slice(t, r);
-  return (
-    (e.tokenRegExp = {
-      pattern: c,
-      flags: s,
-    }),
-    e.options.raw && (e.tokenRaw = e.source.slice(e.tokenIndex, e.index)),
-    (e.tokenValue = Te(e, c, s)),
-    65540
-  );
+  e.tokenRegExp = {
+    pattern: c,
+    flags: s,
+  };
+  if (e.options.raw) {
+    e.tokenRaw = e.source.slice(e.tokenIndex, e.index);
+  }
+  e.tokenValue = Te(e, c, s);
+  return 65540;
 }
 function Te(e, t, n) {
   try {
     return new RegExp(t, n);
   } catch {
     try {
-      return new RegExp(t, n), null;
+      new RegExp(t, n);
+      return null;
     } catch {
       e.report(34);
     }
@@ -1310,26 +1582,35 @@ function Ee(e, t, n) {
     a = _$1(e),
     o = e.index;
   for (; !(b$1[a] & 8); ) {
-    if (a === n)
-      return (
-        (i += e.source.slice(o, e.index)),
-        _$1(e),
-        e.options.raw && (e.tokenRaw = e.source.slice(r, e.index)),
-        (e.tokenValue = i),
-        134283267
-      );
+    if (a === n) {
+      i += e.source.slice(o, e.index);
+      _$1(e);
+      if (e.options.raw) {
+        e.tokenRaw = e.source.slice(r, e.index);
+      }
+      e.tokenValue = i;
+      return 134283267;
+    }
     if ((a & 8) === 8 && a === 92) {
-      if (
-        ((i += e.source.slice(o, e.index)),
-        (a = _$1(e)),
-        a < 127 || a === 8232 || a === 8233)
-      ) {
+      i += e.source.slice(o, e.index);
+      a = _$1(e);
+      if (a < 127 || a === 8232 || a === 8233) {
         const n = De(e, t, a);
-        n >= 0 ? (i += String.fromCodePoint(n)) : Oe(e, n, 0);
+        if (n >= 0) {
+          i += String.fromCodePoint(n);
+        } else {
+          Oe(e, n, 0);
+        }
       } else i += String.fromCodePoint(a);
       o = e.index + 1;
-    } else (a === 8232 || a === 8233) && ((e.column = -1), e.line++);
-    e.index >= e.end && e.report(16), (a = _$1(e));
+    } else {
+      if (a === 8232 || a === 8233) {
+        e.column = -1;
+        e.line++;
+      }
+    }
+    e.index >= e.end && e.report(16);
+    a = _$1(e);
   }
   e.report(16);
 }
@@ -1350,12 +1631,20 @@ function De(e, t, n, r = 0) {
     case 13:
       if (e.index < e.end) {
         const t = e.source.charCodeAt(e.index + 1);
-        t === 10 && ((e.index += 1), (e.currentChar = t));
+        if (t === 10) {
+          e.index += 1;
+          e.currentChar = t;
+        }
       }
+      e.column = -1;
+      e.line++;
+      return -1;
     case 10:
     case 8232:
     case 8233:
-      return (e.column = -1), e.line++, -1;
+      e.column = -1;
+      e.line++;
+      return -1;
     case 48:
     case 49:
     case 50:
@@ -1372,20 +1661,23 @@ function De(e, t, n, r = 0) {
           }
         } else if (t & 1 || r) return -2;
         else {
-          if (
-            ((e.currentChar = n),
-            (i = (i << 3) | (n - 48)),
-            a++,
-            o++,
-            a < e.end)
-          ) {
+          e.currentChar = n;
+          i = (i << 3) | (n - 48);
+          a++;
+          o++;
+          if (a < e.end) {
             const t = e.source.charCodeAt(a);
-            b$1[t] & 32 &&
-              ((e.currentChar = t), (i = (i << 3) | (t - 48)), a++, o++);
+            if (b$1[t] & 32) {
+              e.currentChar = t;
+              i = (i << 3) | (t - 48);
+              a++;
+              o++;
+            }
           }
           e.flags |= 64;
         }
-        (e.index = a - 1), (e.column = o - 1);
+        e.index = a - 1;
+        e.column = o - 1;
       }
       return i;
     }
@@ -1399,13 +1691,15 @@ function De(e, t, n, r = 0) {
         o = e.column + 1;
       if (a < e.end) {
         const t = e.source.charCodeAt(a);
-        b$1[t] & 32 &&
-          ((i = (i << 3) | (t - 48)),
-          (e.currentChar = t),
-          (e.index = a),
-          (e.column = o));
+        if (b$1[t] & 32) {
+          i = (i << 3) | (t - 48);
+          e.currentChar = t;
+          e.index = a;
+          e.column = o;
+        }
       }
-      return (e.flags |= 64), i;
+      e.flags |= 64;
+      return i;
     }
     case 120: {
       const t = _$1(e);
@@ -1420,8 +1714,10 @@ function De(e, t, n, r = 0) {
       const t = _$1(e);
       if (e.currentChar === 123) {
         let t = 0;
-        for (; b$1[_$1(e)] & 64; )
-          if (((t = (t << 4) | y$1(e.currentChar)), t > 1114111)) return -5;
+        for (; b$1[_$1(e)] & 64; ) {
+          t = (t << 4) | y$1(e.currentChar);
+          if (t > 1114111) return -5;
+        }
         return e.currentChar < 1 || e.currentChar !== 125 ? -4 : t;
       }
       {
@@ -1431,18 +1727,21 @@ function De(e, t, n, r = 0) {
         const r = e.source.charCodeAt(e.index + 2);
         if (!(b$1[r] & 64)) return -4;
         const i = e.source.charCodeAt(e.index + 3);
-        return b$1[i] & 64
-          ? ((e.index += 3),
-            (e.column += 3),
-            (e.currentChar = e.source.charCodeAt(e.index)),
-            (y$1(t) << 12) | (y$1(n) << 8) | (y$1(r) << 4) | y$1(i))
-          : -4;
+        if (b$1[i] & 64) {
+          e.index += 3;
+          e.column += 3;
+          e.currentChar = e.source.charCodeAt(e.index);
+          return (y$1(t) << 12) | (y$1(n) << 8) | (y$1(r) << 4) | y$1(i);
+        } else {
+          return -4;
+        }
       }
     }
     case 56:
     case 57:
       if (r || !e.options.webcompat || t & 1) return -3;
       e.flags |= 4096;
+      return n;
     default:
       return n;
   }
@@ -1453,10 +1752,19 @@ function Oe(e, t, n) {
       return;
     case -2:
       e.report(n ? 2 : 1);
+      e.report(n ? 3 : 14);
+      e.report(7);
+      e.report(104);
+      break;
     case -3:
       e.report(n ? 3 : 14);
+      e.report(7);
+      e.report(104);
+      break;
     case -4:
       e.report(7);
+      e.report(104);
+      break;
     case -5:
       e.report(104);
   }
@@ -1468,63 +1776,78 @@ function ke(e, t) {
     a = _$1(e);
   for (; a !== 96; ) {
     if (a === 36 && e.source.charCodeAt(e.index + 1) === 123) {
-      _$1(e), (r = 67174408);
+      _$1(e);
+      r = 67174408;
       break;
     }
-    if (a === 92)
-      if (((a = _$1(e)), a > 126)) i += String.fromCodePoint(a);
+    if (a === 92) {
+      a = _$1(e);
+      if (a > 126) i += String.fromCodePoint(a);
       else {
         const { index: n, line: o, column: s } = e,
           c = De(e, t | 1, a, 1);
         if (c >= 0) i += String.fromCodePoint(c);
         else if (c !== -1 && t & 64) {
-          (e.index = n),
-            (e.line = o),
-            (e.column = s),
-            (i = null),
-            (a = Ae(e, a)),
-            a < 0 && (r = 67174408);
+          e.index = n;
+          e.line = o;
+          e.column = s;
+          i = null;
+          a = Ae(e, a);
+          if (a < 0) {
+            r = 67174408;
+          }
           break;
         } else Oe(e, c, 1);
       }
-    else
-      e.index < e.end &&
-        (a === 13 &&
-          e.source.charCodeAt(e.index) === 10 &&
-          ((i += String.fromCodePoint(a)),
-          (e.currentChar = e.source.charCodeAt(++e.index))),
-        (((a & 83) < 3 && a === 10) || (a ^ 8232) <= 1) &&
-          ((e.column = -1), e.line++),
-        (i += String.fromCodePoint(a)));
-    e.index >= e.end && e.report(17), (a = _$1(e));
+    } else {
+      if (e.index < e.end) {
+        if (a === 13 && e.source.charCodeAt(e.index) === 10) {
+          i += String.fromCodePoint(a);
+          e.currentChar = e.source.charCodeAt(++e.index);
+        }
+        if (((a & 83) < 3 && a === 10) || (a ^ 8232) <= 1) {
+          e.column = -1;
+          e.line++;
+        }
+        i += String.fromCodePoint(a);
+      }
+    }
+    e.index >= e.end && e.report(17);
+    a = _$1(e);
   }
-  return (
-    _$1(e),
-    (e.tokenValue = i),
-    (e.tokenRaw = e.source.slice(n + 1, e.index - (r === 67174409 ? 1 : 2))),
-    r
-  );
+  _$1(e);
+  e.tokenValue = i;
+  e.tokenRaw = e.source.slice(n + 1, e.index - (r === 67174409 ? 1 : 2));
+  return r;
 }
 function Ae(e, t) {
   for (; t !== 96; ) {
     switch (t) {
       case 36: {
         const n = e.index + 1;
-        if (n < e.end && e.source.charCodeAt(n) === 123)
-          return (e.index = n), e.column++, -t;
+        if (n < e.end && e.source.charCodeAt(n) === 123) {
+          e.index = n;
+          e.column++;
+          return -t;
+        }
         break;
       }
       case 10:
       case 8232:
       case 8233:
-        (e.column = -1), e.line++;
+        e.column = -1;
+        e.line++;
     }
-    e.index >= e.end && e.report(17), (t = _$1(e));
+    e.index >= e.end && e.report(17);
+    t = _$1(e);
   }
   return t;
 }
 function je(e, t) {
-  return e.index >= e.end && e.report(0), e.index--, e.column--, ke(e, t);
+  e.index >= e.end && e.report(0);
+  e.index--;
+  e.column--;
+  return ke(e, t);
 }
 var Me = {
   0: "Unexpected token",
@@ -1724,21 +2047,21 @@ var C$1 = class extends SyntaxError {
         t.column +
         "]: " +
         i;
-    super(a),
-      (this.start = e.index),
-      (this.end = t.index),
-      (this.range = [e.index, t.index]),
-      (this.loc = {
-        start: {
-          line: e.line,
-          column: e.column,
-        },
-        end: {
-          line: t.line,
-          column: t.column,
-        },
-      }),
-      (this.description = i);
+    super(a);
+    this.start = e.index;
+    this.end = t.index;
+    this.range = [e.index, t.index];
+    this.loc = {
+      start: {
+        line: e.line,
+        column: e.column,
+      },
+      end: {
+        line: t.line,
+        column: t.column,
+      },
+    };
+    this.description = i;
   }
 };
 function Ne(e, t, n) {
@@ -1748,54 +2071,109 @@ function Ne(e, t, n) {
     o = n & 64 ? 0 : 1,
     s = 0,
     c = 0;
-  if (n & 64)
-    (i = `.${Pe(e, r)}`), (r = e.currentChar), r === 110 && e.report(12);
-  else {
-    if (r === 48)
-      if (((r = _$1(e)), (r | 32) === 120)) {
-        for (n = 136, r = _$1(e); b$1[r] & 4160; ) {
+  if (n & 64) {
+    i = `.${Pe(e, r)}`;
+    r = e.currentChar;
+    r === 110 && e.report(12);
+  } else {
+    if (r === 48) {
+      r = _$1(e);
+      if ((r | 32) === 120) {
+        for (
+          (() => {
+            n = 136;
+            r = _$1(e);
+          })();
+          b$1[r] & 4160;
+        ) {
           if (r === 95) {
-            c || e.report(152), (c = 0), (r = _$1(e));
+            c || e.report(152);
+            c = 0;
+            r = _$1(e);
             continue;
           }
-          (c = 1), (i = i * 16 + y$1(r)), s++, (r = _$1(e));
+          c = 1;
+          i = i * 16 + y$1(r);
+          s++;
+          r = _$1(e);
         }
         (s === 0 || !c) && e.report(s === 0 ? 21 : 153);
       } else if ((r | 32) === 111) {
-        for (n = 132, r = _$1(e); b$1[r] & 4128; ) {
+        for (
+          (() => {
+            n = 132;
+            r = _$1(e);
+          })();
+          b$1[r] & 4128;
+        ) {
           if (r === 95) {
-            c || e.report(152), (c = 0), (r = _$1(e));
+            c || e.report(152);
+            c = 0;
+            r = _$1(e);
             continue;
           }
-          (c = 1), (i = i * 8 + (r - 48)), s++, (r = _$1(e));
+          c = 1;
+          i = i * 8 + (r - 48);
+          s++;
+          r = _$1(e);
         }
         (s === 0 || !c) && e.report(s === 0 ? 0 : 153);
       } else if ((r | 32) === 98) {
-        for (n = 130, r = _$1(e); b$1[r] & 4224; ) {
+        for (
+          (() => {
+            n = 130;
+            r = _$1(e);
+          })();
+          b$1[r] & 4224;
+        ) {
           if (r === 95) {
-            c || e.report(152), (c = 0), (r = _$1(e));
+            c || e.report(152);
+            c = 0;
+            r = _$1(e);
             continue;
           }
-          (c = 1), (i = i * 2 + (r - 48)), s++, (r = _$1(e));
+          c = 1;
+          i = i * 2 + (r - 48);
+          s++;
+          r = _$1(e);
         }
         (s === 0 || !c) && e.report(s === 0 ? 0 : 153);
       } else if (b$1[r] & 32)
-        for (t & 1 && e.report(1), n = 1; b$1[r] & 16; ) {
+        for (
+          (() => {
+            t & 1 && e.report(1);
+            n = 1;
+          })();
+          b$1[r] & 16;
+        ) {
           if (b$1[r] & 512) {
-            (n = 32), (o = 0);
+            n = 32;
+            o = 0;
             break;
           }
-          (i = i * 8 + (r - 48)), (r = _$1(e));
+          i = i * 8 + (r - 48);
+          r = _$1(e);
         }
-      else
-        b$1[r] & 512
-          ? (t & 1 && e.report(1), (e.flags |= 64), (n = 32))
-          : r === 95 && e.report(0);
+      else {
+        if (b$1[r] & 512) {
+          if (t & 1) {
+            e.report(1);
+          }
+          e.flags |= 64;
+          n = 32;
+        } else {
+          if (r === 95) {
+            e.report(0);
+          }
+        }
+      }
+    }
     if (n & 48) {
       if (o) {
         for (; a >= 0 && b$1[r] & 4112; ) {
           if (r === 95) {
-            if (((r = _$1(e)), r === 95 || n & 32))
+            r = _$1(e);
+            if (r === 95 || n & 32)
               throw new C$1(
                 e.currentLocation,
                 {
@@ -1808,7 +2186,10 @@ function Ne(e, t, n) {
             c = 1;
             continue;
           }
-          (c = 0), (i = 10 * i + (r - 48)), (r = _$1(e)), --a;
+          c = 0;
+          i = 10 * i + (r - 48);
+          r = _$1(e);
+          --a;
         }
         if (c)
           throw new C$1(
@@ -1820,48 +2201,58 @@ function Ne(e, t, n) {
             },
             153,
           );
-        if (a >= 0 && !_e(r) && r !== 46)
-          return (
-            (e.tokenValue = i),
-            e.options.raw &&
-              (e.tokenRaw = e.source.slice(e.tokenIndex, e.index)),
-            134283266
-          );
+        if (a >= 0 && !_e(r) && r !== 46) {
+          e.tokenValue = i;
+          if (e.options.raw) {
+            e.tokenRaw = e.source.slice(e.tokenIndex, e.index);
+          }
+          return 134283266;
+        }
       }
-      (i += Pe(e, r)),
-        (r = e.currentChar),
-        r === 46 &&
-          (_$1(e) === 95 && e.report(0),
-          (n = 64),
-          (i += `.${Pe(e, e.currentChar)}`),
-          (r = e.currentChar));
+      i += Pe(e, r);
+      r = e.currentChar;
+      if (r === 46) {
+        if (_$1(e) === 95) {
+          e.report(0);
+        }
+        n = 64;
+        i += `.${Pe(e, e.currentChar)}`;
+        r = e.currentChar;
+      }
     }
   }
   let l = e.index,
     u = 0;
-  if (r === 110 && n & 128) (u = 1), (r = _$1(e));
-  else if ((r | 32) === 101) {
-    (r = _$1(e)), b$1[r] & 256 && (r = _$1(e));
+  if (r === 110 && n & 128) {
+    u = 1;
+    r = _$1(e);
+  } else if ((r | 32) === 101) {
+    r = _$1(e);
+    if (b$1[r] & 256) {
+      r = _$1(e);
+    }
     const { index: t } = e;
-    b$1[r] & 16 || e.report(11),
-      (i += e.source.substring(l, t) + Pe(e, r)),
-      (r = e.currentChar);
+    b$1[r] & 16 || e.report(11);
+    i += e.source.substring(l, t) + Pe(e, r);
+    r = e.currentChar;
   }
-  return (
-    ((e.index < e.end && b$1[r] & 16) || _e(r)) && e.report(13),
-    u
-      ? ((e.tokenRaw = e.source.slice(e.tokenIndex, e.index)),
-        (e.tokenValue = BigInt(e.tokenRaw.slice(0, -1).replaceAll("_", ""))),
-        134283388)
-      : ((e.tokenValue =
-          n & 15
-            ? i
-            : n & 32
-              ? parseFloat(e.source.substring(e.tokenIndex, e.index))
-              : +i),
-        e.options.raw && (e.tokenRaw = e.source.slice(e.tokenIndex, e.index)),
-        134283266)
-  );
+  ((e.index < e.end && b$1[r] & 16) || _e(r)) && e.report(13);
+  if (u) {
+    e.tokenRaw = e.source.slice(e.tokenIndex, e.index);
+    e.tokenValue = BigInt(e.tokenRaw.slice(0, -1).replaceAll("_", ""));
+    return 134283388;
+  } else {
+    e.tokenValue =
+      n & 15
+        ? i
+        : n & 32
+          ? parseFloat(e.source.substring(e.tokenIndex, e.index))
+          : +i;
+    if (e.options.raw) {
+      e.tokenRaw = e.source.slice(e.tokenIndex, e.index);
+    }
+    return 134283266;
+  }
 }
 function Pe(e, t) {
   let n = 0,
@@ -1870,7 +2261,8 @@ function Pe(e, t) {
   for (; b$1[t] & 4112; ) {
     if (t === 95) {
       const { index: a } = e;
-      if (((t = _$1(e)), t === 95))
+      t = _$1(e);
+      if (t === 95)
         throw new C$1(
           e.currentLocation,
           {
@@ -1880,10 +2272,13 @@ function Pe(e, t) {
           },
           152,
         );
-      (n = 1), (i += e.source.substring(r, a)), (r = e.index);
+      n = 1;
+      i += e.source.substring(r, a);
+      r = e.index;
       continue;
     }
-    (n = 0), (t = _$1(e));
+    n = 0;
+    t = _$1(e);
   }
   if (n)
     throw new C$1(
@@ -2100,8 +2495,8 @@ var Fe = {
 function T$1(e, t) {
   !(e.flags & 1) &&
     (e.getToken() & 1048576) !== 1048576 &&
-    e.report(30, w$1[e.getToken() & 255]),
-    E$1(e, t, 1074790417) || e.options.onInsertedSemicolon?.(e.startIndex);
+    e.report(30, w$1[e.getToken() & 255]);
+  E$1(e, t, 1074790417) || e.options.onInsertedSemicolon?.(e.startIndex);
 }
 function Ie(e, t, n, r) {
   return t - n < 13 &&
@@ -2111,13 +2506,25 @@ function Ie(e, t, n, r) {
     : 0;
 }
 function Le(e, t, n) {
-  return e.getToken() === n ? (A$1(e, t), 1) : 0;
+  if (e.getToken() === n) {
+    A$1(e, t);
+    return 1;
+  } else {
+    return 0;
+  }
 }
 function E$1(e, t, n) {
-  return e.getToken() === n && (A$1(e, t), !0);
+  return (
+    e.getToken() === n &&
+    (() => {
+      A$1(e, t);
+      return !0;
+    })()
+  );
 }
 function D$1(e, t, n) {
-  e.getToken() !== n && e.report(25, w$1[n & 255]), A$1(e, t);
+  e.getToken() !== n && e.report(25, w$1[n & 255]);
+  A$1(e, t);
 }
 function O(e, t) {
   switch (t.type) {
@@ -2137,57 +2544,84 @@ function O(e, t) {
       return;
     }
     case "AssignmentExpression":
-      (t.type = "AssignmentPattern"),
-        t.operator !== "=" && e.report(71),
-        delete t.operator,
-        O(e, t.left);
+      t.type = "AssignmentPattern";
+      t.operator !== "=" && e.report(71);
+      delete t.operator;
+      O(e, t.left);
       return;
     case "Property":
       O(e, t.value);
       return;
     case "SpreadElement":
-      (t.type = "RestElement"), O(e, t.argument);
+      t.type = "RestElement";
+      O(e, t.argument);
   }
 }
 function Re(e, t, n, r, i) {
-  t & 1 &&
-    ((r & 36864) === 36864 && e.report(118),
-    !i && (r & 537079808) === 537079808 && e.report(119)),
-    ((r & 20480) === 20480 || r === -2147483528) && e.report(102),
-    n & 24 && (r & 255) === 73 && e.report(100),
-    t & 2050 && r === 209006 && e.report(110),
-    t & 1025 && r === 241771 && e.report(97, "yield");
+  if (t & 1) {
+    if ((r & 36864) === 36864) {
+      e.report(118);
+    }
+    if (!i && (r & 537079808) === 537079808) {
+      e.report(119);
+    }
+  }
+  ((r & 20480) === 20480 || r === -2147483528) && e.report(102);
+  n & 24 && (r & 255) === 73 && e.report(100);
+  t & 2050 && r === 209006 && e.report(110);
+  t & 1025 && r === 241771 && e.report(97, "yield");
 }
 function ze(e, t, n) {
-  t & 1 &&
-    ((n & 36864) === 36864 && e.report(118),
-    (n & 537079808) === 537079808 && e.report(119),
-    n === -2147483527 && e.report(95),
-    n === -2147483528 && e.report(95)),
-    (n & 20480) === 20480 && e.report(102),
-    t & 2050 && n === 209006 && e.report(110),
-    t & 1025 && n === 241771 && e.report(97, "yield");
+  if (t & 1) {
+    if ((n & 36864) === 36864) {
+      e.report(118);
+    }
+    if ((n & 537079808) === 537079808) {
+      e.report(119);
+    }
+    if (n === -2147483527) {
+      e.report(95);
+    }
+    if (n === -2147483528) {
+      e.report(95);
+    }
+  }
+  (n & 20480) === 20480 && e.report(102);
+  t & 2050 && n === 209006 && e.report(110);
+  t & 1025 && n === 241771 && e.report(97, "yield");
 }
 function Be(e, t, n) {
-  return (
-    n === 209006 && (t & 2050 && e.report(110), (e.destructible |= 128)),
-    n === 241771 && t & 1024 && e.report(97, "yield"),
-    (n & 20480) === 20480 || (n & 36864) === 36864 || n === -2147483527
-  );
+  if (n === 209006) {
+    if (t & 2050) {
+      e.report(110);
+    }
+    e.destructible |= 128;
+  }
+  n === 241771 && t & 1024 && e.report(97, "yield");
+  return (n & 20480) === 20480 || (n & 36864) === 36864 || n === -2147483527;
 }
 function Ve(e) {
   return e.property ? e.property.type === "PrivateIdentifier" : !1;
 }
 function He(e, t, n, r) {
   for (; t; ) {
-    if (t[`$${n}`]) return r && e.report(137), 1;
-    r && t.loop && (r = 0), (t = t.$);
+    if (t[`$${n}`]) {
+      r && e.report(137);
+      return 1;
+    }
+    if (r && t.loop) {
+      r = 0;
+    }
+    t = t.$;
   }
   return 0;
 }
 function Ue(e, t, n) {
   let r = t;
-  for (; r; ) r[`$${n}`] && e.report(136, n), (r = r.$);
+  for (; r; ) {
+    r[`$${n}`] && e.report(136, n);
+    r = r.$;
+  }
   t[`$${n}`] = 1;
 }
 function We(e) {
@@ -2208,50 +2642,54 @@ function k$1(e, t) {
     : (t & 12288) === 12288 || (t & 36864) === 36864;
 }
 function Ge(e, t, n) {
-  (n & 537079808) === 537079808 && (t & 1 && e.report(119), (e.flags |= 512)),
-    k$1(t, n) || e.report(0);
+  if ((n & 537079808) === 537079808) {
+    if (t & 1) {
+      e.report(119);
+    }
+    e.flags |= 512;
+  }
+  k$1(t, n) || e.report(0);
 }
 function Ke(e, t) {
   return Object.hasOwn(e, t) ? e[t] : void 0;
 }
 function qe(e, t, n) {
   for (; ge[_$1(e)]; );
-  return (
-    (e.tokenValue = e.source.slice(e.tokenIndex, e.index)),
-    e.currentChar !== 92 && e.currentChar <= 126
-      ? (Ke(Fe, e.tokenValue) ?? 208897)
-      : Ye(e, t, 0, n)
-  );
+  e.tokenValue = e.source.slice(e.tokenIndex, e.index);
+  return e.currentChar !== 92 && e.currentChar <= 126
+    ? (Ke(Fe, e.tokenValue) ?? 208897)
+    : Ye(e, t, 0, n);
 }
 function Je(e, t) {
   const n = Ze(e);
-  return (
-    _e(n) || e.report(5),
-    (e.tokenValue = String.fromCodePoint(n)),
-    Ye(e, t, 1, b$1[n] & 4)
-  );
+  _e(n) || e.report(5);
+  e.tokenValue = String.fromCodePoint(n);
+  return Ye(e, t, 1, b$1[n] & 4);
 }
 function Ye(e, t, n, r) {
   let i = e.index;
   for (; e.index < e.end; )
     if (e.currentChar === 92) {
-      (e.tokenValue += e.source.slice(i, e.index)), (n = 1);
+      e.tokenValue += e.source.slice(i, e.index);
+      n = 1;
       const t = Ze(e);
-      ve(t) || e.report(5),
-        (r &&= b$1[t] & 4),
-        (e.tokenValue += String.fromCodePoint(t)),
-        (i = e.index);
+      ve(t) || e.report(5);
+      r &&= b$1[t] & 4;
+      e.tokenValue += String.fromCodePoint(t);
+      i = e.index;
     } else {
       const t = de(e);
-      if (t > 0)
-        ve(t) || e.report(20, String.fromCodePoint(t)),
-          (e.currentChar = t),
-          e.index++,
-          e.column++;
-      else if (!ve(e.currentChar)) break;
+      if (t > 0) {
+        ve(t) || e.report(20, String.fromCodePoint(t));
+        e.currentChar = t;
+        e.index++;
+        e.column++;
+      } else if (!ve(e.currentChar)) break;
       _$1(e);
     }
-  e.index <= e.end && (e.tokenValue += e.source.slice(i, e.index));
+  if (e.index <= e.end) {
+    e.tokenValue += e.source.slice(i, e.index);
+  }
   const { length: a } = e.tokenValue;
   if (r && a >= 2 && a <= 11) {
     const r = Ke(Fe, e.tokenValue);
@@ -2291,23 +2729,31 @@ function Xe(e) {
   let t = _$1(e);
   if (t === 92) return 130;
   const n = de(e);
-  return n && (t = n), _e(t) || e.report(96), 130;
+  if (n) {
+    t = n;
+  }
+  _e(t) || e.report(96);
+  return 130;
 }
 function Ze(e) {
-  return (
-    e.source.charCodeAt(e.index + 1) !== 117 && e.report(5),
-    (e.currentChar = e.source.charCodeAt((e.index += 2))),
-    (e.column += 2),
-    Qe(e)
+  e.source.charCodeAt(e.index + 1) !== 117 && e.report(5);
+  e.currentChar = e.source.charCodeAt(
+    (() => {
+      e.index += 2;
+      return e.index;
+    })(),
   );
+  e.column += 2;
+  return Qe(e);
 }
 function Qe(e) {
   let t = 0,
     n = e.currentChar;
   if (n === 123) {
     const n = e.index - 2;
-    for (; b$1[_$1(e)] & 64; )
-      if (((t = (t << 4) | y$1(e.currentChar)), t > 1114111))
+    for (; b$1[_$1(e)] & 64; ) {
+      t = (t << 4) | y$1(e.currentChar);
+      if (t > 1114111)
         throw new C$1(
           {
             index: n,
@@ -2317,6 +2763,7 @@ function Qe(e) {
           e.currentLocation,
           104,
         );
+    }
     if (e.currentChar !== 125)
       throw new C$1(
         {
@@ -2327,7 +2774,8 @@ function Qe(e) {
         e.currentLocation,
         7,
       );
-    return _$1(e), t;
+    _$1(e);
+    return t;
   }
   b$1[n] & 64 || e.report(7);
   const r = e.source.charCodeAt(e.index + 1);
@@ -2335,13 +2783,16 @@ function Qe(e) {
   const i = e.source.charCodeAt(e.index + 2);
   b$1[i] & 64 || e.report(7);
   const a = e.source.charCodeAt(e.index + 3);
-  return (
-    b$1[a] & 64 || e.report(7),
-    (t = (y$1(n) << 12) | (y$1(r) << 8) | (y$1(i) << 4) | y$1(a)),
-    (e.currentChar = e.source.charCodeAt((e.index += 4))),
-    (e.column += 4),
-    t
+  b$1[a] & 64 || e.report(7);
+  t = (y$1(n) << 12) | (y$1(r) << 8) | (y$1(i) << 4) | y$1(a);
+  e.currentChar = e.source.charCodeAt(
+    (() => {
+      e.index += 4;
+      return e.index;
+    })(),
   );
+  e.column += 4;
+  return t;
 }
 var $e = [
   128, 128, 128, 128, 128, 128, 128, 128, 128, 127, 135, 127, 127, 129, 128,
@@ -2359,20 +2810,20 @@ var $e = [
   16842799, 128,
 ];
 function A$1(e, t) {
-  (e.flags = (e.flags | 1) ^ 1),
-    (e.startIndex = e.index),
-    (e.startColumn = e.column),
-    (e.startLine = e.line),
-    e.setToken(et(e, t, 0));
+  e.flags = (e.flags | 1) ^ 1;
+  e.startIndex = e.index;
+  e.startColumn = e.column;
+  e.startLine = e.line;
+  e.setToken(et(e, t, 0));
 }
 function et(e, t, n) {
   let r = e.index === 0,
     { source: i } = e,
     a = e.currentLocation;
   for (; e.index < e.end; ) {
-    (e.tokenIndex = e.index),
-      (e.tokenColumn = e.column),
-      (e.tokenLine = e.line);
+    e.tokenIndex = e.index;
+    e.tokenColumn = e.column;
+    e.tokenLine = e.line;
     let o = e.currentChar;
     if (o <= 126) {
       const s = $e[o];
@@ -2389,7 +2840,8 @@ function et(e, t, n) {
         case 16842799:
         case 132:
         case 128:
-          return _$1(e), s;
+          _$1(e);
+          return s;
         case 208897:
           return qe(e, t, 0);
         case 4096:
@@ -2408,19 +2860,28 @@ function et(e, t, n) {
           _$1(e);
           break;
         case 129:
-          (n |= 5), v$1(e);
+          n |= 5;
+          v$1(e);
           break;
         case 135:
-          fe(e, n), (n = (n & -5) | 1);
+          fe(e, n);
+          n = (n & -5) | 1;
           break;
         case 8456256: {
           const r = _$1(e);
           if (e.index < e.end) {
-            if (r === 60)
-              return e.index < e.end && _$1(e) === 61
-                ? (_$1(e), 4194332)
-                : 8390978;
-            if (r === 61) return _$1(e), 8390718;
+            if (r === 60) {
+              if (e.index < e.end && _$1(e) === 61) {
+                _$1(e);
+                return 4194332;
+              } else {
+                return 8390978;
+              }
+            }
+            if (r === 61) {
+              _$1(e);
+              return 8390718;
+            }
             if (r === 33) {
               const r = e.index + 1;
               if (
@@ -2428,10 +2889,15 @@ function et(e, t, n) {
                 i.charCodeAt(r) === 45 &&
                 i.charCodeAt(r + 1) === 45
               ) {
-                (e.column += 3),
-                  (e.currentChar = i.charCodeAt((e.index += 3))),
-                  (n = xe(e, i, n, t, 2, e.tokenStart)),
-                  (a = e.tokenStart);
+                e.column += 3;
+                e.currentChar = i.charCodeAt(
+                  (() => {
+                    e.index += 3;
+                    return e.index;
+                  })(),
+                );
+                n = xe(e, i, n, t, 2, e.tokenStart);
+                a = e.tokenStart;
                 continue;
               }
               return 8456256;
@@ -2442,72 +2908,124 @@ function et(e, t, n) {
         case 1077936155: {
           _$1(e);
           const t = e.currentChar;
-          return t === 61
-            ? _$1(e) === 61
-              ? (_$1(e), 8390458)
-              : 8390460
-            : t === 62
-              ? (_$1(e), 10)
-              : 1077936155;
+          if (t === 61) {
+            if (_$1(e) === 61) {
+              _$1(e);
+              return 8390458;
+            } else {
+              return 8390460;
+            }
+          } else {
+            if (t === 62) {
+              _$1(e);
+              return 10;
+            } else {
+              return 1077936155;
+            }
+          }
         }
         case 16842798:
-          return _$1(e) === 61
-            ? _$1(e) === 61
-              ? (_$1(e), 8390459)
-              : 8390461
-            : 16842798;
+          if (_$1(e) === 61) {
+            if (_$1(e) === 61) {
+              _$1(e);
+              return 8390459;
+            } else {
+              return 8390461;
+            }
+          } else {
+            return 16842798;
+          }
         case 8391477:
-          return _$1(e) === 61 ? (_$1(e), 4194340) : 8391477;
+          if (_$1(e) === 61) {
+            _$1(e);
+            return 4194340;
+          } else {
+            return 8391477;
+          }
         case 8391476: {
-          if ((_$1(e), e.index >= e.end)) return 8391476;
+          _$1(e);
+          if (e.index >= e.end) return 8391476;
           const t = e.currentChar;
-          return t === 61
-            ? (_$1(e), 4194338)
-            : t === 42
-              ? _$1(e) === 61
-                ? (_$1(e), 4194335)
-                : 8391735
-              : 8391476;
+          if (t === 61) {
+            _$1(e);
+            return 4194338;
+          } else {
+            if (t === 42) {
+              if (_$1(e) === 61) {
+                _$1(e);
+                return 4194335;
+              } else {
+                return 8391735;
+              }
+            } else {
+              return 8391476;
+            }
+          }
         }
         case 8389959:
-          return _$1(e) === 61 ? (_$1(e), 4194341) : 8389959;
+          if (_$1(e) === 61) {
+            _$1(e);
+            return 4194341;
+          } else {
+            return 8389959;
+          }
         case 25233968: {
           _$1(e);
           const t = e.currentChar;
-          return t === 43
-            ? (_$1(e), 33619993)
-            : t === 61
-              ? (_$1(e), 4194336)
-              : 25233968;
+          if (t === 43) {
+            _$1(e);
+            return 33619993;
+          } else {
+            if (t === 61) {
+              _$1(e);
+              return 4194336;
+            } else {
+              return 25233968;
+            }
+          }
         }
         case 25233969: {
           _$1(e);
           const o = e.currentChar;
           if (o === 45) {
-            if ((_$1(e), (n & 1 || r) && e.currentChar === 62)) {
-              e.options.webcompat || e.report(112),
-                _$1(e),
-                (n = xe(e, i, n, t, 3, a)),
-                (a = e.tokenStart);
+            _$1(e);
+            if ((n & 1 || r) && e.currentChar === 62) {
+              e.options.webcompat || e.report(112);
+              _$1(e);
+              n = xe(e, i, n, t, 3, a);
+              a = e.tokenStart;
               continue;
             }
             return 33619994;
           }
-          return o === 61 ? (_$1(e), 4194337) : 25233969;
+          if (o === 61) {
+            _$1(e);
+            return 4194337;
+          } else {
+            return 25233969;
+          }
         }
         case 8457014:
-          if ((_$1(e), e.index < e.end)) {
+          _$1(e);
+          if (e.index < e.end) {
             const r = e.currentChar;
             if (r === 47) {
-              _$1(e), (n = Se(e, i, n, 0, e.tokenStart)), (a = e.tokenStart);
+              _$1(e);
+              n = Se(e, i, n, 0, e.tokenStart);
+              a = e.tokenStart;
               continue;
             }
             if (r === 42) {
-              _$1(e), (n = Ce(e, i, n)), (a = e.tokenStart);
+              _$1(e);
+              n = Ce(e, i, n);
+              a = e.tokenStart;
               continue;
             }
             if (t & 32) return we(e);
-            if (r === 61) return _$1(e), 4259875;
+            if (r === 61) {
+              _$1(e);
+              return 4259875;
+            }
           }
           return 8457014;
         case 67108877: {
@@ -2515,64 +3033,130 @@ function et(e, t, n) {
           if (n >= 48 && n <= 57) return Ne(e, t, 80);
           if (n === 46) {
             const t = e.index + 1;
-            if (t < e.end && i.charCodeAt(t) === 46)
-              return (
-                (e.column += 2),
-                (e.currentChar = i.charCodeAt((e.index += 2))),
-                14
+            if (t < e.end && i.charCodeAt(t) === 46) {
+              e.column += 2;
+              e.currentChar = i.charCodeAt(
+                (() => {
+                  e.index += 2;
+                  return e.index;
+                })(),
               );
+              return 14;
+            }
           }
           return 67108877;
         }
         case 8389702: {
           _$1(e);
           const t = e.currentChar;
-          return t === 124
-            ? (_$1(e), e.currentChar === 61 ? (_$1(e), 4194344) : 8913465)
-            : t === 61
-              ? (_$1(e), 4194342)
-              : 8389702;
+          if (t === 124) {
+            _$1(e);
+            if (e.currentChar === 61) {
+              _$1(e);
+              return 4194344;
+            } else {
+              return 8913465;
+            }
+          } else {
+            if (t === 61) {
+              _$1(e);
+              return 4194342;
+            } else {
+              return 8389702;
+            }
+          }
         }
         case 8390721: {
           _$1(e);
           const t = e.currentChar;
-          if (t === 61) return _$1(e), 8390719;
+          if (t === 61) {
+            _$1(e);
+            return 8390719;
+          }
           if (t !== 62) return 8390721;
-          if ((_$1(e), e.index < e.end)) {
+          _$1(e);
+          if (e.index < e.end) {
             const t = e.currentChar;
-            if (t === 62) return _$1(e) === 61 ? (_$1(e), 4194334) : 8390980;
-            if (t === 61) return _$1(e), 4194333;
+            if (t === 62) {
+              if (_$1(e) === 61) {
+                _$1(e);
+                return 4194334;
+              } else {
+                return 8390980;
+              }
+            }
+            if (t === 61) {
+              _$1(e);
+              return 4194333;
+            }
           }
           return 8390979;
         }
         case 8390213: {
           _$1(e);
           const t = e.currentChar;
-          return t === 38
-            ? (_$1(e), e.currentChar === 61 ? (_$1(e), 4194345) : 8913720)
-            : t === 61
-              ? (_$1(e), 4194343)
-              : 8390213;
+          if (t === 38) {
+            _$1(e);
+            if (e.currentChar === 61) {
+              _$1(e);
+              return 4194345;
+            } else {
+              return 8913720;
+            }
+          } else {
+            if (t === 61) {
+              _$1(e);
+              return 4194343;
+            } else {
+              return 8390213;
+            }
+          }
         }
         case 22: {
           let t = _$1(e);
-          if (t === 63)
-            return _$1(e), e.currentChar === 61 ? (_$1(e), 4194346) : 276824445;
+          if (t === 63) {
+            _$1(e);
+            if (e.currentChar === 61) {
+              _$1(e);
+              return 4194346;
+            } else {
+              return 276824445;
+            }
+          }
           if (t === 46) {
             const n = e.index + 1;
-            if (n < e.end && ((t = i.charCodeAt(n)), !(t >= 48 && t <= 57)))
-              return _$1(e), 67108990;
+            if (
+              n < e.end &&
+              (() => {
+                (() => {
+                  const assignedValue = i.charCodeAt(n);
+                  t = assignedValue;
+                  return assignedValue;
+                })();
+                return !(t >= 48 && t <= 57);
+              })()
+            ) {
+              _$1(e);
+              return 67108990;
+            }
           }
           return 22;
         }
       }
     } else {
       if ((o ^ 8232) <= 1) {
-        (n = (n & -5) | 1), v$1(e);
+        n = (n & -5) | 1;
+        v$1(e);
         continue;
       }
       const r = de(e);
-      if ((r > 0 && (o = r), ue(o))) return (e.tokenValue = ""), Ye(e, t, 0, 0);
+      if (r > 0) {
+        o = r;
+      }
+      if (ue(o)) {
+        e.tokenValue = "";
+        return Ye(e, t, 0, 0);
+      }
       if (pe(o)) {
         _$1(e);
         continue;
@@ -4758,68 +5342,77 @@ function it(e) {
     : String.fromCodePoint(Ke(nt, e) ?? e);
 }
 function at(e, t) {
-  return (
-    (e.startIndex = e.tokenIndex = e.index),
-    (e.startColumn = e.tokenColumn = e.column),
-    (e.startLine = e.tokenLine = e.line),
-    e.setToken(b$1[e.currentChar] & 8192 ? ot(e) : et(e, t, 0)),
-    e.getToken()
-  );
+  e.startIndex = e.tokenIndex = e.index;
+  e.startColumn = e.tokenColumn = e.column;
+  e.startLine = e.tokenLine = e.line;
+  e.setToken(b$1[e.currentChar] & 8192 ? ot(e) : et(e, t, 0));
+  return e.getToken();
 }
 function ot(e) {
   let t = e.currentChar,
     n = _$1(e),
     r = e.index;
-  for (; n !== t; ) e.index >= e.end && e.report(16), (n = _$1(e));
-  return (
-    n !== t && e.report(16),
-    (e.tokenValue = e.source.slice(r, e.index)),
-    _$1(e),
-    e.options.raw && (e.tokenRaw = e.source.slice(e.tokenIndex, e.index)),
-    134283267
-  );
+  for (; n !== t; ) {
+    e.index >= e.end && e.report(16);
+    n = _$1(e);
+  }
+  n !== t && e.report(16);
+  e.tokenValue = e.source.slice(r, e.index);
+  _$1(e);
+  if (e.options.raw) {
+    e.tokenRaw = e.source.slice(e.tokenIndex, e.index);
+  }
+  return 134283267;
 }
 function j(e) {
-  if (
-    ((e.startIndex = e.tokenIndex = e.index),
-    (e.startColumn = e.tokenColumn = e.column),
-    (e.startLine = e.tokenLine = e.line),
-    e.index >= e.end)
-  ) {
+  e.startIndex = e.tokenIndex = e.index;
+  e.startColumn = e.tokenColumn = e.column;
+  e.startLine = e.tokenLine = e.line;
+  if (e.index >= e.end) {
     e.setToken(1048576);
     return;
   }
   if (e.currentChar === 60) {
-    _$1(e), e.setToken(8456256);
+    _$1(e);
+    e.setToken(8456256);
     return;
   }
   if (e.currentChar === 123) {
-    _$1(e), e.setToken(2162700);
+    _$1(e);
+    e.setToken(2162700);
     return;
   }
   let t = 0;
   for (; e.index < e.end; ) {
     const n = b$1[e.source.charCodeAt(e.index)];
-    if (
-      (n & 1024
-        ? ((t |= 5), v$1(e))
-        : n & 2048
-          ? (fe(e, t), (t = (t & -5) | 1))
-          : _$1(e),
-      b$1[e.currentChar] & 16384)
-    )
-      break;
+    if (n & 1024) {
+      t |= 5;
+      v$1(e);
+    } else {
+      if (n & 2048) {
+        fe(e, t);
+        t = (t & -5) | 1;
+      } else {
+        _$1(e);
+      }
+    }
+    if (b$1[e.currentChar] & 16384) break;
   }
   e.tokenIndex === e.index && e.report(0);
   const n = e.source.slice(e.tokenIndex, e.index);
-  e.options.raw && (e.tokenRaw = n), (e.tokenValue = rt(n)), e.setToken(137);
+  if (e.options.raw) {
+    e.tokenRaw = n;
+  }
+  e.tokenValue = rt(n);
+  e.setToken(137);
 }
 function st(e) {
   if ((e.getToken() & 143360) === 143360) {
     let { index: t } = e,
       n = e.currentChar;
     for (; b$1[n] & 32770; ) n = _$1(e);
-    (e.tokenValue += e.source.slice(t, e.index)), e.setToken(208897, !0);
+    e.tokenValue += e.source.slice(t, e.index);
+    e.setToken(208897, !0);
   }
   return e.getToken();
 }
@@ -4830,14 +5423,16 @@ var ct = class e {
   scopeError;
   variableBindings = /* @__PURE__ */ new Map();
   constructor(e, t = 2, n) {
-    (this.parser = e), (this.type = t), (this.parent = n);
+    this.parser = e;
+    this.type = t;
+    this.parent = n;
   }
   createChildScope(t) {
     return new e(this.parser, t, this);
   }
   addVarOrBlock(e, t, n, r) {
-    n & 4 ? this.addVarName(e, t, n) : this.addBlockName(e, t, n, r),
-      r & 64 && this.parser.declareUnboundVariable(t);
+    n & 4 ? this.addVarName(e, t, n) : this.addBlockName(e, t, n, r);
+    r & 64 && this.parser.declareUnboundVariable(t);
   }
   addVarName(e, t, n) {
     let { parser: r } = this,
@@ -4850,11 +5445,11 @@ var ct = class e {
         ((r.options.webcompat &&
           !(e & 1) &&
           ((n & 128 && o & 68) || (o & 128 && n & 68))) ||
-          r.report(145, t)),
-        i === this && o && o & 1 && n & 1 && i.recordScopeError(145, t),
-        o && (o & 256 || (o & 512 && !r.options.webcompat)) && r.report(145, t),
-        i.variableBindings.set(t, n),
-        (i = i.parent);
+          r.report(145, t));
+      i === this && o && o & 1 && n & 1 && i.recordScopeError(145, t);
+      o && (o & 256 || (o & 512 && !r.options.webcompat)) && r.report(145, t);
+      i.variableBindings.set(t, n);
+      i = i.parent;
     }
   }
   hasVariable(e) {
@@ -4868,20 +5463,16 @@ var ct = class e {
       (n & 1
         ? this.recordScopeError(145, t)
         : (i.options.webcompat && !(e & 1) && r & 2 && a === 64 && n === 64) ||
-          i.report(145, t)),
-      this.type & 64 &&
-        this.parent?.hasVariable(t) &&
-        !(this.parent.variableBindings.get(t) & 2) &&
-        i.report(145, t),
-      this.type & 512 &&
-        a &&
-        !(a & 2) &&
-        n & 1 &&
-        this.recordScopeError(145, t),
-      this.type & 32 &&
-        this.parent.variableBindings.get(t) & 768 &&
-        i.report(159, t),
-      this.variableBindings.set(t, n);
+          i.report(145, t));
+    this.type & 64 &&
+      this.parent?.hasVariable(t) &&
+      !(this.parent.variableBindings.get(t) & 2) &&
+      i.report(145, t);
+    this.type & 512 && a && !(a & 2) && n & 1 && this.recordScopeError(145, t);
+    this.type & 32 &&
+      this.parent.variableBindings.get(t) & 768 &&
+      i.report(159, t);
+    this.variableBindings.set(t, n);
   }
   recordScopeError(e, ...t) {
     this.scopeError = {
@@ -4898,7 +5489,8 @@ var ct = class e {
 };
 function lt(e, t, n) {
   const r = e.createScope().createChildScope(512);
-  return r.addBlockName(t, n, 1, 0), r;
+  r.addBlockName(t, n, 1, 0);
+  return r;
 }
 var ut = class {
   parser;
@@ -4906,20 +5498,24 @@ var ut = class {
   refs = Object.create(null);
   privateIdentifiers = /* @__PURE__ */ new Map();
   constructor(e, t) {
-    (this.parser = e), (this.parent = t);
+    this.parser = e;
+    this.parent = t;
   }
   addPrivateIdentifier(e, t) {
     let { privateIdentifiers: n } = this,
       r = t & 800;
-    r & 768 || (r |= 768);
+    if (!(r & 768)) {
+      r |= 768;
+    }
     const i = n.get(e);
     this.hasPrivateIdentifier(e) &&
       ((i & 32) !== (r & 32) || i & r & 768) &&
-      this.parser.report(146, e),
-      n.set(e, this.hasPrivateIdentifier(e) ? i | r : r);
+      this.parser.report(146, e);
+    n.set(e, this.hasPrivateIdentifier(e) ? i | r : r);
   }
   addPrivateIdentifierRef(e) {
-    (this.refs[e] ??= []), this.refs[e].push(this.parser.tokenStart);
+    this.refs[e] ??= [];
+    this.refs[e].push(this.parser.tokenStart);
   }
   isPrivateIdentifierDefined(e) {
     return (
@@ -4977,10 +5573,10 @@ var dt = class {
   destructible = 0;
   leadingDecorators = { decorators: [] };
   constructor(e, t = {}) {
-    (this.source = e),
-      (this.options = t),
-      (this.end = e.length),
-      (this.currentChar = e.charCodeAt(0));
+    this.source = e;
+    this.options = t;
+    this.end = e.length;
+    this.currentChar = e.charCodeAt(0);
   }
   getToken() {
     return this.token;
@@ -5000,9 +5596,13 @@ var dt = class {
             column: this.column,
           },
         };
-        !t && this.lastOnToken && n(...this.lastOnToken),
-          (this.lastOnToken = [me(e), this.tokenIndex, this.index, r]);
-      } else this.lastOnToken &&= (n(...this.lastOnToken), null);
+        !t && this.lastOnToken && n(...this.lastOnToken);
+        this.lastOnToken = [me(e), this.tokenIndex, this.index, r];
+      } else
+        this.lastOnToken &&= (() => {
+          n(...this.lastOnToken);
+          return null;
+        })();
     return e;
   }
   get tokenStart() {
@@ -5023,35 +5623,38 @@ var dt = class {
     if (this.options.ranges) {
       e.start = t.index;
       const r = n ? n.index : this.startIndex;
-      (e.end = r), (e.range = [t.index, r]);
+      e.end = r;
+      e.range = [t.index, r];
     }
-    return (
-      this.options.loc &&
-        ((e.loc = {
-          start: {
-            line: t.line,
-            column: t.column,
-          },
-          end: n
-            ? {
-                line: n.line,
-                column: n.column,
-              }
-            : {
-                line: this.startLine,
-                column: this.startColumn,
-              },
-        }),
-        this.options.source && (e.loc.source = this.options.source)),
-      e
-    );
+    if (this.options.loc) {
+      e.loc = {
+        start: {
+          line: t.line,
+          column: t.column,
+        },
+        end: n
+          ? {
+              line: n.line,
+              column: n.column,
+            }
+          : {
+              line: this.startLine,
+              column: this.startColumn,
+            },
+      };
+      if (this.options.source) {
+        e.loc.source = this.options.source;
+      }
+    }
+    return e;
   }
   addBindingToExports(e) {
     this.exportedBindings.add(e);
   }
   declareUnboundVariable(e) {
     const { exportedNames: t } = this;
-    t.has(e) && this.report(147, e), t.add(e);
+    t.has(e) && this.report(147, e);
+    t.add(e);
   }
   report(e, ...t) {
     throw new C$1(this.tokenStart, this.currentLocation, e, ...t);
@@ -5072,41 +5675,57 @@ function ft(e, t) {
       type: n,
       value: r,
     };
-    t.ranges && ((s.start = i), (s.end = a), (s.range = [i, a])),
-      t.loc && (s.loc = o),
-      e.push(s);
+    if (t.ranges) {
+      s.start = i;
+      s.end = a;
+      s.range = [i, a];
+    }
+    if (t.loc) {
+      s.loc = o;
+    }
+    e.push(s);
   };
 }
 function pt(e, t) {
   return (n, r, i, a) => {
     const o = { token: n };
-    t.ranges && ((o.start = r), (o.end = i), (o.range = [r, i])),
-      t.loc && (o.loc = a),
-      e.push(o);
+    if (t.ranges) {
+      o.start = r;
+      o.end = i;
+      o.range = [r, i];
+    }
+    if (t.loc) {
+      o.loc = a;
+    }
+    e.push(o);
   };
 }
 function mt(e) {
   const t = { ...e };
-  return (
-    (t.onComment &&= Array.isArray(t.onComment)
-      ? ft(t.onComment, t)
-      : t.onComment),
-    (t.onToken &&= Array.isArray(t.onToken) ? pt(t.onToken, t) : t.onToken),
-    t
-  );
+  t.onComment &&= Array.isArray(t.onComment) ? ft(t.onComment, t) : t.onComment;
+  t.onToken &&= Array.isArray(t.onToken) ? pt(t.onToken, t) : t.onToken;
+  return t;
 }
 function ht(e, t = {}, n = 0) {
   const r = mt(t);
-  r.module && (n |= 3),
-    r.globalReturn && (n |= 4096),
-    r.impliedStrict && (n |= 1);
+  if (r.module) {
+    n |= 3;
+  }
+  if (r.globalReturn) {
+    n |= 4096;
+  }
+  if (r.impliedStrict) {
+    n |= 1;
+  }
   const i = new dt(e, r);
   be(i);
   let a = i.createScopeIfLexical(),
     o = [],
     s = "script";
   if (n & 2) {
-    if (((s = "module"), (o = _t(i, n | 8, a)), a))
+    s = "module";
+    o = _t(i, n | 8, a);
+    if (a)
       for (const e of i.exportedBindings) a.hasVariable(e) || i.report(148, e);
   } else o = gt(i, n | 8, a);
   return i.finishNode(
@@ -5131,8 +5750,8 @@ function gt(e, t, n) {
       s = e.getToken(),
       c = q(e, t);
     if (Ie(e, n, o, i)) {
-      if (((t |= 1), e.flags & 64))
-        throw new C$1(e.tokenStart, e.currentLocation, 9);
+      t |= 1;
+      if (e.flags & 64) throw new C$1(e.tokenStart, e.currentLocation, 9);
       if (e.flags & 4096) throw new C$1(e.tokenStart, e.currentLocation, 15);
     }
     r.push(wt(e, t, c, s, a));
@@ -5157,7 +5776,7 @@ function vt(e, t, n) {
       start: e.tokenStart,
       decorators: Gn(e, t, void 0),
     });
-  let r;
+  let r: any;
   switch (e.getToken()) {
     case 20564:
       r = Zt(e, t, n);
@@ -5168,7 +5787,8 @@ function vt(e, t, n) {
     default:
       r = M$1(e, t, n, void 0, 4, {});
   }
-  return e.leadingDecorators?.decorators.length && e.report(170), r;
+  e.leadingDecorators?.decorators.length && e.report(170);
+  return r;
 }
 function M$1(e, t, n, r, i, a) {
   const o = e.tokenStart;
@@ -5184,8 +5804,12 @@ function M$1(e, t, n, r, i, a) {
       return zt(e, t, n, r, i);
     case 20564:
       e.report(103, "export");
-    case 86106:
-      switch ((A$1(e, t), e.getToken())) {
+      switch (
+        (() => {
+          A$1(e, t);
+          return e.getToken();
+        })()
+      ) {
         case 67174411:
           return Xt(e, t, r, o);
         case 67108877:
@@ -5193,6 +5817,22 @@ function M$1(e, t, n, r, i, a) {
         default:
           e.report(103, "import");
       }
+      return Ct(e, t, n, r, i, a, 1);
+    case 86106:
+      switch (
+        (() => {
+          A$1(e, t);
+          return e.getToken();
+        })()
+      ) {
+        case 67174411:
+          return Xt(e, t, r, o);
+        case 67108877:
+          return Yt(e, t, o);
+        default:
+          e.report(103, "import");
+      }
+      return Ct(e, t, n, r, i, a, 1);
     case 209005:
       return Ct(e, t, n, r, i, a, 1);
     default:
@@ -5235,12 +5875,22 @@ function N$1(e, t, n, r, i, a, o) {
       return Ct(e, t, n, r, i, a, 0);
     case 20557:
       e.report(162);
+      e.report(163);
+      e.report(t & 1 ? 76 : e.options.webcompat ? 77 : 78);
+      e.report(79);
+      return yt$1(e, t, n, r, i, a, o);
     case 20566:
       e.report(163);
+      e.report(t & 1 ? 76 : e.options.webcompat ? 77 : 78);
+      e.report(79);
+      return yt$1(e, t, n, r, i, a, o);
     case 86104:
       e.report(t & 1 ? 76 : e.options.webcompat ? 77 : 78);
+      e.report(79);
+      return yt$1(e, t, n, r, i, a, o);
     case 86094:
       e.report(79);
+      return yt$1(e, t, n, r, i, a, o);
     default:
       return yt$1(e, t, n, r, i, a, o);
   }
@@ -5248,36 +5898,38 @@ function N$1(e, t, n, r, i, a, o) {
 function yt$1(e, t, n, r, i, a, o) {
   let { tokenValue: s, tokenStart: c } = e,
     l = e.getToken(),
-    u;
+    u: any;
   switch (l) {
     case 241737:
-      (u = K(e, t)),
-        t & 1 && e.report(85),
-        e.getToken() === 69271571 && e.report(84);
+      u = K(e, t);
+      t & 1 && e.report(85);
+      e.getToken() === 69271571 && e.report(84);
       break;
     default:
       u = G(e, t, r, 2, 0, 1, 0, 1, e.tokenStart);
   }
-  return l & 143360 && e.getToken() === 21
-    ? St(e, t, n, r, i, a, s, u, l, o, c)
-    : ((u = W(e, t, r, u, 0, 0, c)),
-      (u = B$1(e, t, r, 0, 0, c, u)),
-      e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)),
-      P$1(e, t, u, c));
+  if (l & 143360 && e.getToken() === 21) {
+    return St(e, t, n, r, i, a, s, u, l, o, c);
+  } else {
+    u = W(e, t, r, u, 0, 0, c);
+    u = B$1(e, t, r, 0, 0, c, u);
+    if (e.getToken() === 18) {
+      u = R$1(e, t, r, 0, c, u);
+    }
+    return P$1(e, t, u, c);
+  }
 }
 function bt(e, t, n, r, i, a = e.tokenStart, o = "BlockStatement") {
   const s = [];
   for (D$1(e, t | 32, 2162700); e.getToken() !== 1074790415; )
     s.push(M$1(e, t, n, r, 2, { $: i }));
-  return (
-    D$1(e, t | 32, 1074790415),
-    e.finishNode(
-      {
-        type: o,
-        body: s,
-      },
-      a,
-    )
+  D$1(e, t | 32, 1074790415);
+  return e.finishNode(
+    {
+      type: o,
+      body: s,
+    },
+    a,
   );
 }
 function xt(e, t, n) {
@@ -5288,31 +5940,29 @@ function xt(e, t, n) {
     e.flags & 1 || e.getToken() & 1048576
       ? null
       : z$1(e, t, n, 0, 1, e.tokenStart);
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "ReturnStatement",
-        argument: i,
-      },
-      r,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "ReturnStatement",
+      argument: i,
+    },
+    r,
   );
 }
 function P$1(e, t, n, r) {
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "ExpressionStatement",
-        expression: n,
-      },
-      r,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "ExpressionStatement",
+      expression: n,
+    },
+    r,
   );
 }
 function St(e, t, n, r, i, a, o, s, c, l, u) {
-  Re(e, t, 0, c, 1), Ue(e, a, o), A$1(e, t | 32);
+  Re(e, t, 0, c, 1);
+  Ue(e, a, o);
+  A$1(e, t | 32);
   const d =
     l && !(t & 1) && e.options.webcompat && e.getToken() === 86104
       ? J(e, t, n?.createChildScope(), r, i, 0, 0, 0, e.tokenStart)
@@ -5333,87 +5983,100 @@ function Ct(e, t, n, r, i, a, o) {
   if (e.getToken() === 21) return St(e, t, n, r, i, a, s, u, l, 1, c);
   const d = e.flags & 1;
   if (!d) {
-    if (e.getToken() === 86104)
-      return o || e.report(123), J(e, t, n, r, i, 1, 0, 1, c);
-    if (k$1(t, e.getToken()))
-      return (
-        (u = Bn(e, t, r, 1, c)),
-        e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)),
-        P$1(e, t, u, c)
-      );
+    if (e.getToken() === 86104) {
+      o || e.report(123);
+      return J(e, t, n, r, i, 1, 0, 1, c);
+    }
+    if (k$1(t, e.getToken())) {
+      u = Bn(e, t, r, 1, c);
+      if (e.getToken() === 18) {
+        u = R$1(e, t, r, 0, c, u);
+      }
+      return P$1(e, t, u, c);
+    }
   }
-  return (
-    e.getToken() === 67174411
-      ? (u = Vn(e, t, r, u, 1, 1, 0, d, c))
-      : (e.getToken() === 10 &&
-          (Ge(e, t, l),
-          (l & 36864) === 36864 && (e.flags |= 256),
-          (u = Nn(e, t | 2048, r, e.tokenValue, u, 0, 1, 0, c))),
-        (e.assignable = 1)),
-    (u = W(e, t, r, u, 0, 0, c)),
-    (u = B$1(e, t, r, 0, 0, c, u)),
-    (e.assignable = 1),
-    e.getToken() === 18 && (u = R$1(e, t, r, 0, c, u)),
-    P$1(e, t, u, c)
-  );
+  if (e.getToken() === 67174411) {
+    u = Vn(e, t, r, u, 1, 1, 0, d, c);
+  } else {
+    if (e.getToken() === 10) {
+      Ge(e, t, l);
+      if ((l & 36864) === 36864) {
+        e.flags |= 256;
+      }
+      u = Nn(e, t | 2048, r, e.tokenValue, u, 0, 1, 0, c);
+    }
+    e.assignable = 1;
+  }
+  u = W(e, t, r, u, 0, 0, c);
+  u = B$1(e, t, r, 0, 0, c, u);
+  e.assignable = 1;
+  if (e.getToken() === 18) {
+    u = R$1(e, t, r, 0, c, u);
+  }
+  return P$1(e, t, u, c);
 }
 function wt(e, t, n, r, i) {
   const a = e.startIndex;
-  r !== 1074790417 &&
-    ((e.assignable = 2),
-    (n = W(e, t, void 0, n, 0, 0, i)),
-    e.getToken() !== 1074790417 &&
-      ((n = B$1(e, t, void 0, 0, 0, i, n)),
-      e.getToken() === 18 && (n = R$1(e, t, void 0, 0, i, n))),
-    T$1(e, t | 32));
+  if (r !== 1074790417) {
+    e.assignable = 2;
+    n = W(e, t, void 0, n, 0, 0, i);
+    if (e.getToken() !== 1074790417) {
+      n = B$1(e, t, void 0, 0, 0, i, n);
+      if (e.getToken() === 18) {
+        n = R$1(e, t, void 0, 0, i, n);
+      }
+    }
+    T$1(e, t | 32);
+  }
   const o = {
     type: "ExpressionStatement",
     expression: n,
   };
-  return (
-    n.type === "Literal" &&
-      typeof n.value === "string" &&
-      (o.directive = e.source.slice(i.index + 1, a - 1)),
-    e.finishNode(o, i)
-  );
+  if (n.type === "Literal" && typeof n.value === "string") {
+    o.directive = e.source.slice(i.index + 1, a - 1);
+  }
+  return e.finishNode(o, i);
 }
 function Tt(e, t) {
   const n = e.tokenStart;
-  return A$1(e, t | 32), e.finishNode({ type: "EmptyStatement" }, n);
+  A$1(e, t | 32);
+  return e.finishNode({ type: "EmptyStatement" }, n);
 }
 function Et(e, t, n) {
   const r = e.tokenStart;
-  A$1(e, t | 32), e.flags & 1 && e.report(90);
+  A$1(e, t | 32);
+  e.flags & 1 && e.report(90);
   const i = z$1(e, t, n, 0, 1, e.tokenStart);
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "ThrowStatement",
-        argument: i,
-      },
-      r,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "ThrowStatement",
+      argument: i,
+    },
+    r,
   );
 }
 function Dt(e, t, n, r, i) {
   const a = e.tokenStart;
-  A$1(e, t), D$1(e, t | 32, 67174411), (e.assignable = 1);
+  A$1(e, t);
+  D$1(e, t | 32, 67174411);
+  e.assignable = 1;
   const o = z$1(e, t, r, 0, 1, e.tokenStart);
   D$1(e, t | 32, 16);
   let s = Ot(e, t, n, r, i),
     c = null;
-  return (
-    e.getToken() === 20563 && (A$1(e, t | 32), (c = Ot(e, t, n, r, i))),
-    e.finishNode(
-      {
-        type: "IfStatement",
-        test: o,
-        consequent: s,
-        alternate: c,
-      },
-      a,
-    )
+  if (e.getToken() === 20563) {
+    A$1(e, t | 32);
+    c = Ot(e, t, n, r, i);
+  }
+  return e.finishNode(
+    {
+      type: "IfStatement",
+      test: o,
+      consequent: s,
+      alternate: c,
+    },
+    a,
   );
 }
 function Ot(e, t, n, r, i) {
@@ -5424,9 +6087,11 @@ function Ot(e, t, n, r, i) {
 }
 function kt(e, t, n, r, i) {
   const a = e.tokenStart;
-  A$1(e, t), D$1(e, t | 32, 67174411);
+  A$1(e, t);
+  D$1(e, t | 32, 67174411);
   const o = z$1(e, t, r, 0, 1, e.tokenStart);
-  D$1(e, t, 16), D$1(e, t, 2162700);
+  D$1(e, t, 16);
+  D$1(e, t, 2162700);
   let s = [],
     c = 0;
   for (n = n?.createChildScope(8); e.getToken() !== 1074790415; ) {
@@ -5434,10 +6099,24 @@ function kt(e, t, n, r, i) {
       o = null,
       l = [];
     for (
-      E$1(e, t | 32, 20556)
-        ? (o = z$1(e, t, r, 0, 1, e.tokenStart))
-        : (D$1(e, t | 32, 20561), c && e.report(89), (c = 1)),
-        D$1(e, t | 32, 21);
+      (() => {
+        E$1(e, t | 32, 20556)
+          ? (() => {
+              const assignedValue = z$1(e, t, r, 0, 1, e.tokenStart);
+              o = assignedValue;
+              return assignedValue;
+            })()
+          : (() => {
+              D$1(e, t | 32, 20561);
+              c && e.report(89);
+              return (() => {
+                const assignedValue = 1;
+                c = assignedValue;
+                return assignedValue;
+              })();
+            })();
+        return D$1(e, t | 32, 21);
+      })();
       e.getToken() !== 20556 &&
       e.getToken() !== 1074790415 &&
       e.getToken() !== 20561;
@@ -5454,21 +6133,20 @@ function kt(e, t, n, r, i) {
       ),
     );
   }
-  return (
-    D$1(e, t | 32, 1074790415),
-    e.finishNode(
-      {
-        type: "SwitchStatement",
-        discriminant: o,
-        cases: s,
-      },
-      a,
-    )
+  D$1(e, t | 32, 1074790415);
+  return e.finishNode(
+    {
+      type: "SwitchStatement",
+      discriminant: o,
+      cases: s,
+    },
+    a,
   );
 }
 function At(e, t, n, r, i) {
   const a = e.tokenStart;
-  A$1(e, t), D$1(e, t | 32, 67174411);
+  A$1(e, t);
+  D$1(e, t | 32, 67174411);
   const o = z$1(e, t, r, 0, 1, e.tokenStart);
   D$1(e, t | 32, 16);
   const s = F(e, t, n, r, i);
@@ -5502,17 +6180,16 @@ function jt(e, t, n) {
   let i = null;
   if (!(e.flags & 1) && e.getToken() & 143360) {
     const { tokenValue: r } = e;
-    (i = K(e, t | 32)), He(e, n, r, 1) || e.report(138, r);
+    i = K(e, t | 32);
+    He(e, n, r, 1) || e.report(138, r);
   }
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "ContinueStatement",
-        label: i,
-      },
-      r,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "ContinueStatement",
+      label: i,
+    },
+    r,
   );
 }
 function Mt(e, t, n) {
@@ -5521,22 +6198,23 @@ function Mt(e, t, n) {
   let i = null;
   if (!(e.flags & 1) && e.getToken() & 143360) {
     const { tokenValue: r } = e;
-    (i = K(e, t | 32)), He(e, n, r, 0) || e.report(138, r);
+    i = K(e, t | 32);
+    He(e, n, r, 0) || e.report(138, r);
   } else t & 132 || e.report(69);
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "BreakStatement",
-        label: i,
-      },
-      r,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "BreakStatement",
+      label: i,
+    },
+    r,
   );
 }
 function Nt(e, t, n, r, i) {
   const a = e.tokenStart;
-  A$1(e, t), t & 1 && e.report(91), D$1(e, t | 32, 67174411);
+  A$1(e, t);
+  t & 1 && e.report(91);
+  D$1(e, t | 32, 67174411);
   const o = z$1(e, t, r, 0, 1, e.tokenStart);
   D$1(e, t | 32, 16);
   const s = N$1(e, t, n, r, 2, i, 0);
@@ -5551,11 +6229,9 @@ function Nt(e, t, n, r, i) {
 }
 function Pt(e, t) {
   const n = e.tokenStart;
-  return (
-    A$1(e, t | 32),
-    T$1(e, t | 32),
-    e.finishNode({ type: "DebuggerStatement" }, n)
-  );
+  A$1(e, t | 32);
+  T$1(e, t | 32);
+  return e.finishNode({ type: "DebuggerStatement" }, n);
 }
 function Ft(e, t, n, r, i) {
   const a = e.tokenStart;
@@ -5570,30 +6246,33 @@ function Ft(e, t, n, r, i) {
     const a = n?.createChildScope(4);
     u = bt(e, t, a, r, { $: i });
   }
-  return (
-    !l && !u && e.report(88),
-    e.finishNode(
-      {
-        type: "TryStatement",
-        block: s,
-        handler: l,
-        finalizer: u,
-      },
-      a,
-    )
+  !l && !u && e.report(88);
+  return e.finishNode(
+    {
+      type: "TryStatement",
+      block: s,
+      handler: l,
+      finalizer: u,
+    },
+    a,
   );
 }
 function It(e, t, n, r, i, a) {
   let o = null,
     s = n;
-  E$1(e, t, 67174411) &&
-    ((n = n?.createChildScope(4)),
-    (o = Zn(e, t, n, r, (e.getToken() & 2097152) === 2097152 ? 256 : 512, 0)),
-    e.getToken() === 18
-      ? e.report(86)
-      : e.getToken() === 1077936155 && e.report(87),
-    D$1(e, t | 32, 16)),
-    (s = n?.createChildScope(32));
+  if (E$1(e, t, 67174411)) {
+    n = n?.createChildScope(4);
+    o = Zn(e, t, n, r, (e.getToken() & 2097152) === 2097152 ? 256 : 512, 0);
+    if (e.getToken() === 18) {
+      e.report(86);
+    } else {
+      if (e.getToken() === 1077936155) {
+        e.report(87);
+      }
+    }
+    D$1(e, t | 32, 16);
+  }
+  s = n?.createChildScope(32);
   const c = bt(e, t, s, r, { $: i });
   return e.finishNode(
     {
@@ -5607,25 +6286,25 @@ function It(e, t, n, r, i, a) {
 function Lt(e, t, n, r, i) {
   n = n?.createChildScope();
   const a = 5764;
-  return (t = ((t | a) ^ a) | 592128), bt(e, t, n, r, {}, i, "StaticBlock");
+  t = ((t | a) ^ a) | 592128;
+  return bt(e, t, n, r, {}, i, "StaticBlock");
 }
 function Rt(e, t, n, r, i) {
   const a = e.tokenStart;
   A$1(e, t | 32);
   const o = F(e, t, n, r, i);
-  D$1(e, t, 20578), D$1(e, t | 32, 67174411);
+  D$1(e, t, 20578);
+  D$1(e, t | 32, 67174411);
   const s = z$1(e, t, r, 0, 1, e.tokenStart);
-  return (
-    D$1(e, t | 32, 16),
-    E$1(e, t | 32, 1074790417),
-    e.finishNode(
-      {
-        type: "DoWhileStatement",
-        body: o,
-        test: s,
-      },
-      a,
-    )
+  D$1(e, t | 32, 16);
+  E$1(e, t | 32, 1074790417);
+  return e.finishNode(
+    {
+      type: "DoWhileStatement",
+      body: o,
+      test: s,
+    },
+    a,
   );
 }
 function zt(e, t, n, r, i) {
@@ -5634,71 +6313,75 @@ function zt(e, t, n, r, i) {
     c = K(e, t);
   if (e.getToken() & 2240512) {
     const i = I$1(e, t, n, r, 8, 0);
-    return (
-      T$1(e, t | 32),
-      e.finishNode(
-        {
-          type: "VariableDeclaration",
-          kind: "let",
-          declarations: i,
-        },
-        o,
-      )
+    T$1(e, t | 32);
+    return e.finishNode(
+      {
+        type: "VariableDeclaration",
+        kind: "let",
+        declarations: i,
+      },
+      o,
     );
   }
-  if (((e.assignable = 1), t & 1 && e.report(85), e.getToken() === 21))
-    return St(e, t, n, r, i, {}, a, c, s, 0, o);
+  e.assignable = 1;
+  t & 1 && e.report(85);
+  if (e.getToken() === 21) return St(e, t, n, r, i, {}, a, c, s, 0, o);
   if (e.getToken() === 10) {
-    let n;
-    e.options.lexical && (n = lt(e, t, a)),
-      (e.flags = (e.flags | 128) ^ 128),
-      (c = Fn(e, t, n, r, [c], 0, o));
-  } else (c = W(e, t, r, c, 0, 0, o)), (c = B$1(e, t, r, 0, 0, o, c));
-  return e.getToken() === 18 && (c = R$1(e, t, r, 0, o, c)), P$1(e, t, c, o);
+    let n: any;
+    if (e.options.lexical) {
+      n = lt(e, t, a);
+    }
+    e.flags = (e.flags | 128) ^ 128;
+    c = Fn(e, t, n, r, [c], 0, o);
+  } else {
+    c = W(e, t, r, c, 0, 0, o);
+    c = B$1(e, t, r, 0, 0, o, c);
+  }
+  if (e.getToken() === 18) {
+    c = R$1(e, t, r, 0, o, c);
+  }
+  return P$1(e, t, c, o);
 }
 function Bt(e, t, n, r, i, a) {
   const o = e.tokenStart;
   A$1(e, t);
   const s = I$1(e, t, n, r, i, a);
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "VariableDeclaration",
-        kind: i & 8 ? "let" : "const",
-        declarations: s,
-      },
-      o,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "VariableDeclaration",
+      kind: i & 8 ? "let" : "const",
+      declarations: s,
+    },
+    o,
   );
 }
 function Vt(e, t, n, r, i) {
   const a = e.tokenStart;
   A$1(e, t);
   const o = I$1(e, t, n, r, 4, i);
-  return (
-    T$1(e, t | 32),
-    e.finishNode(
-      {
-        type: "VariableDeclaration",
-        kind: "var",
-        declarations: o,
-      },
-      a,
-    )
+  T$1(e, t | 32);
+  return e.finishNode(
+    {
+      type: "VariableDeclaration",
+      kind: "var",
+      declarations: o,
+    },
+    a,
   );
 }
 function I$1(e, t, n, r, i, a) {
   let o = 1,
     s = [Ht(e, t, n, r, i, a)];
-  for (; E$1(e, t, 18); ) o++, s.push(Ht(e, t, n, r, i, a));
-  return (
-    o > 1 &&
-      a & 32 &&
-      e.getToken() & 262144 &&
-      e.report(61, w$1[e.getToken() & 255]),
-    s
-  );
+  for (; E$1(e, t, 18); ) {
+    o++;
+    s.push(Ht(e, t, n, r, i, a));
+  }
+  o > 1 &&
+    a & 32 &&
+    e.getToken() & 262144 &&
+    e.report(61, w$1[e.getToken() & 255]);
+  return s;
 }
 function Ht(e, t, n, r, i, a) {
   let { tokenStart: o } = e,
@@ -5706,12 +6389,12 @@ function Ht(e, t, n, r, i, a) {
     c = null,
     l = Zn(e, t, n, r, i, a);
   if (e.getToken() === 1077936155) {
+    A$1(e, t | 32);
+    c = L$1(e, t, r, 1, 0, e.tokenStart);
     if (
-      (A$1(e, t | 32),
-      (c = L$1(e, t, r, 1, 0, e.tokenStart)),
       (a & 32 || !(s & 2097152)) &&
-        (e.getToken() === 471156 ||
-          (e.getToken() === 8673330 && (s & 2097152 || !(i & 4) || t & 1))))
+      (e.getToken() === 471156 ||
+        (e.getToken() === 8673330 && (s & 2097152 || !(i & 4) || t & 1)))
     )
       throw new C$1(
         o,
@@ -5737,7 +6420,8 @@ function Ut(e, t, n, r, i) {
   A$1(e, t);
   const o =
     ((t & 2048) > 0 || ((t & 2) > 0 && (t & 8) > 0)) && E$1(e, t, 209006);
-  D$1(e, t | 32, 67174411), (n = n?.createChildScope(1));
+  D$1(e, t | 32, 67174411);
+  n = n?.createChildScope(1);
   let s = null,
     c = null,
     l = 0,
@@ -5746,65 +6430,77 @@ function Ut(e, t, n, r, i) {
       e.getToken() === 86088 ||
       e.getToken() === 241737 ||
       e.getToken() === 86090,
-    f,
+    f: any,
     { tokenStart: p } = e,
     m = e.getToken();
-  if (d)
-    m === 241737
-      ? ((u = K(e, t)),
-        e.getToken() & 2240512
-          ? (e.getToken() === 8673330
-              ? t & 1 && e.report(67)
-              : (u = e.finishNode(
-                  {
-                    type: "VariableDeclaration",
-                    kind: "let",
-                    declarations: I$1(e, t | 131072, n, r, 8, 32),
-                  },
-                  p,
-                )),
-            (e.assignable = 1))
-          : t & 1
-            ? e.report(67)
-            : ((d = !1),
-              (e.assignable = 1),
-              (u = W(e, t, r, u, 0, 0, p)),
-              e.getToken() === 471156 && e.report(115)))
-      : (A$1(e, t),
-        (u = e.finishNode(
-          m === 86088
-            ? {
-                type: "VariableDeclaration",
-                kind: "var",
-                declarations: I$1(e, t | 131072, n, r, 4, 32),
-              }
-            : {
-                type: "VariableDeclaration",
-                kind: "const",
-                declarations: I$1(e, t | 131072, n, r, 16, 32),
-              },
-          p,
-        )),
-        (e.assignable = 1));
-  else if (m === 1074790417) o && e.report(82);
+  if (d) {
+    if (m === 241737) {
+      u = K(e, t);
+      if (e.getToken() & 2240512) {
+        if (e.getToken() === 8673330) {
+          if (t & 1) {
+            e.report(67);
+          }
+        } else {
+          u = e.finishNode(
+            {
+              type: "VariableDeclaration",
+              kind: "let",
+              declarations: I$1(e, t | 131072, n, r, 8, 32),
+            },
+            p,
+          );
+        }
+        e.assignable = 1;
+      } else {
+        if (t & 1) {
+          e.report(67);
+        } else {
+          d = !1;
+          e.assignable = 1;
+          u = W(e, t, r, u, 0, 0, p);
+          if (e.getToken() === 471156) {
+            e.report(115);
+          }
+        }
+      }
+    } else {
+      A$1(e, t);
+      u = e.finishNode(
+        m === 86088
+          ? {
+              type: "VariableDeclaration",
+              kind: "var",
+              declarations: I$1(e, t | 131072, n, r, 4, 32),
+            }
+          : {
+              type: "VariableDeclaration",
+              kind: "const",
+              declarations: I$1(e, t | 131072, n, r, 16, 32),
+            },
+        p,
+      );
+      e.assignable = 1;
+    }
+  } else if (m === 1074790417) o && e.report(82);
   else if ((m & 2097152) === 2097152) {
     const n = e.tokenStart;
-    (u =
+    u =
       m === 2162700
         ? Q(e, t, void 0, r, 1, 0, 0, 2, 32)
-        : Y(e, t, void 0, r, 1, 0, 0, 2, 32)),
-      (l = e.destructible),
-      l & 64 && e.report(63),
-      (e.assignable = l & 16 ? 2 : 1),
-      (u = W(e, t | 131072, r, u, 0, 0, n));
+        : Y(e, t, void 0, r, 1, 0, 0, 2, 32);
+    l = e.destructible;
+    l & 64 && e.report(63);
+    e.assignable = l & 16 ? 2 : 1;
+    u = W(e, t | 131072, r, u, 0, 0, n);
   } else u = U(e, t | 131072, r, 1, 0, 1);
   if ((e.getToken() & 262144) === 262144) {
     if (e.getToken() === 471156) {
-      e.assignable & 2 && e.report(80, o ? "await" : "of"),
-        O(e, u),
-        A$1(e, t | 32),
-        (f = L$1(e, t, r, 1, 0, e.tokenStart)),
-        D$1(e, t | 32, 16);
+      e.assignable & 2 && e.report(80, o ? "await" : "of");
+      O(e, u);
+      A$1(e, t | 32);
+      f = L$1(e, t, r, 1, 0, e.tokenStart);
+      D$1(e, t | 32, 16);
       const s = F(e, t, n, r, i);
       return e.finishNode(
         {
@@ -5817,12 +6513,12 @@ function Ut(e, t, n, r, i) {
         a,
       );
     }
-    e.assignable & 2 && e.report(80, "in"),
-      O(e, u),
-      A$1(e, t | 32),
-      o && e.report(82),
-      (f = z$1(e, t, r, 0, 1, e.tokenStart)),
-      D$1(e, t | 32, 16);
+    e.assignable & 2 && e.report(80, "in");
+    O(e, u);
+    A$1(e, t | 32);
+    o && e.report(82);
+    f = z$1(e, t, r, 0, 1, e.tokenStart);
+    D$1(e, t | 32, 16);
     const s = F(e, t, n, r, i);
     return e.finishNode(
       {
@@ -5834,16 +6530,25 @@ function Ut(e, t, n, r, i) {
       a,
     );
   }
-  o && e.report(82),
-    d ||
-      (l & 8 && e.getToken() !== 1077936155 && e.report(80, "loop"),
-      (u = B$1(e, t | 131072, r, 0, 0, p, u))),
-    e.getToken() === 18 && (u = R$1(e, t, r, 0, p, u)),
-    D$1(e, t | 32, 1074790417),
-    e.getToken() !== 1074790417 && (s = z$1(e, t, r, 0, 1, e.tokenStart)),
-    D$1(e, t | 32, 1074790417),
-    e.getToken() !== 16 && (c = z$1(e, t, r, 0, 1, e.tokenStart)),
-    D$1(e, t | 32, 16);
+  o && e.report(82);
+  if (!d) {
+    if (l & 8 && e.getToken() !== 1077936155) {
+      e.report(80, "loop");
+    }
+    u = B$1(e, t | 131072, r, 0, 0, p, u);
+  }
+  if (e.getToken() === 18) {
+    u = R$1(e, t, r, 0, p, u);
+  }
+  D$1(e, t | 32, 1074790417);
+  if (e.getToken() !== 1074790417) {
+    s = z$1(e, t, r, 0, 1, e.tokenStart);
+  }
+  D$1(e, t | 32, 1074790417);
+  if (e.getToken() !== 16) {
+    c = z$1(e, t, r, 0, 1, e.tokenStart);
+  }
+  D$1(e, t | 32, 16);
   const h = F(e, t, n, r, i);
   return e.finishNode(
     {
@@ -5857,12 +6562,10 @@ function Ut(e, t, n, r, i) {
   );
 }
 function Wt(e, t, n) {
-  return (
-    k$1(t, e.getToken()) || e.report(118),
-    (e.getToken() & 537079808) === 537079808 && e.report(119),
-    n?.addBlockName(t, e.tokenValue, 8, 0),
-    K(e, t)
-  );
+  k$1(t, e.getToken()) || e.report(118);
+  (e.getToken() & 537079808) === 537079808 && e.report(119);
+  n?.addBlockName(t, e.tokenValue, 8, 0);
+  return K(e, t);
 }
 function Gt(e, t, n) {
   const r = e.tokenStart;
@@ -5874,18 +6577,16 @@ function Gt(e, t, n) {
   else {
     if (e.getToken() & 143360) {
       const r = Wt(e, t, n);
-      if (
-        ((o = [
-          e.finishNode(
-            {
-              type: "ImportDefaultSpecifier",
-              local: r,
-            },
-            a,
-          ),
-        ]),
-        E$1(e, t, 18))
-      )
+      o = [
+        e.finishNode(
+          {
+            type: "ImportDefaultSpecifier",
+            local: r,
+          },
+          a,
+        ),
+      ];
+      if (E$1(e, t, 18))
         switch (e.getToken()) {
           case 8391476:
             o.push(Kt(e, t, n));
@@ -5920,11 +6621,14 @@ function Gt(e, t, n) {
       source: i,
       attributes: s,
     };
-  return T$1(e, t | 32), e.finishNode(c, r);
+  T$1(e, t | 32);
+  return e.finishNode(c, r);
 }
 function Kt(e, t, n) {
   const { tokenStart: r } = e;
-  if ((A$1(e, t), D$1(e, t, 77932), (e.getToken() & 134217728) === 134217728))
+  A$1(e, t);
+  D$1(e, t, 77932);
+  if ((e.getToken() & 134217728) === 134217728)
     throw new C$1(r, e.currentLocation, 30, w$1[e.getToken() & 255]);
   return e.finishNode(
     {
@@ -5935,41 +6639,47 @@ function Kt(e, t, n) {
   );
 }
 function qt(e, t) {
-  return (
-    D$1(e, t, 209011),
-    e.getToken() !== 134283267 && e.report(105, "Import"),
-    q(e, t)
-  );
+  D$1(e, t, 209011);
+  e.getToken() !== 134283267 && e.report(105, "Import");
+  return q(e, t);
 }
 function Jt(e, t, n, r) {
   for (A$1(e, t); e.getToken() & 143360 || e.getToken() === 134283267; ) {
     let { tokenValue: i, tokenStart: a } = e,
       o = e.getToken(),
       s = _n(e, t),
-      c;
-    E$1(e, t, 77932)
-      ? ((e.getToken() & 134217728) === 134217728 || e.getToken() === 18
-          ? e.report(106)
-          : Re(e, t, 16, e.getToken(), 0),
-        (i = e.tokenValue),
-        (c = K(e, t)))
-      : s.type === "Identifier"
-        ? (Re(e, t, 16, o, 0), (c = s))
-        : e.report(25, w$1[108]),
-      n?.addBlockName(t, i, 8, 0),
-      r.push(
-        e.finishNode(
-          {
-            type: "ImportSpecifier",
-            local: c,
-            imported: s,
-          },
-          a,
-        ),
+      c: any;
+    if (E$1(e, t, 77932)) {
+      if ((e.getToken() & 134217728) === 134217728 || e.getToken() === 18) {
+        e.report(106);
+      } else {
+        Re(e, t, 16, e.getToken(), 0);
+      }
+      i = e.tokenValue;
+      c = K(e, t);
+    } else {
+      if (s.type === "Identifier") {
+        Re(e, t, 16, o, 0);
+        c = s;
+      } else {
+        e.report(25, w$1[108]);
+      }
+    }
+    n?.addBlockName(t, i, 8, 0);
+    r.push(
+      e.finishNode(
+        {
+          type: "ImportSpecifier",
+          local: c,
+          imported: s,
+        },
+        a,
       ),
-      e.getToken() !== 1074790415 && D$1(e, t, 18);
+    );
+    e.getToken() !== 1074790415 && D$1(e, t, 18);
   }
-  return D$1(e, t, 1074790415), r;
+  D$1(e, t, 1074790415);
+  return r;
 }
 function Yt(e, t, n) {
   let r = dn(
@@ -5984,20 +6694,20 @@ function Yt(e, t, n) {
     ),
     n,
   );
-  return (
-    (r = W(e, t, void 0, r, 0, 0, n)),
-    (r = B$1(e, t, void 0, 0, 0, n, r)),
-    e.getToken() === 18 && (r = R$1(e, t, void 0, 0, n, r)),
-    P$1(e, t, r, n)
-  );
+  r = W(e, t, void 0, r, 0, 0, n);
+  r = B$1(e, t, void 0, 0, 0, n, r);
+  if (e.getToken() === 18) {
+    r = R$1(e, t, void 0, 0, n, r);
+  }
+  return P$1(e, t, r, n);
 }
 function Xt(e, t, n, r) {
   let i = fn(e, t, n, 0, r);
-  return (
-    (i = W(e, t, n, i, 0, 0, r)),
-    e.getToken() === 18 && (i = R$1(e, t, n, 0, r, i)),
-    P$1(e, t, i, r)
-  );
+  i = W(e, t, n, i, 0, 0, r);
+  if (e.getToken() === 18) {
+    i = R$1(e, t, n, 0, r, i);
+  }
+  return P$1(e, t, i, r);
 }
 function Zt(e, t, n) {
   const r = e.leadingDecorators.decorators.length
@@ -6021,42 +6731,51 @@ function Zt(e, t, n) {
         const { tokenStart: r } = e;
         a = K(e, t);
         const { flags: i } = e;
-        i & 1 ||
-          (e.getToken() === 86104
-            ? (a = J(e, t, n, void 0, 4, 1, 1, 1, r))
-            : e.getToken() === 67174411
-              ? ((a = Vn(e, t, void 0, a, 1, 1, 0, i, r)),
-                (a = W(e, t, void 0, a, 0, 0, r)),
-                (a = B$1(e, t, void 0, 0, 0, r, a)))
-              : e.getToken() & 143360 &&
-                ((n &&= lt(e, t, e.tokenValue)),
-                (a = K(e, t)),
-                (a = Fn(e, t, n, void 0, [a], 1, r))));
+        if (!(i & 1)) {
+          if (e.getToken() === 86104) {
+            a = J(e, t, n, void 0, 4, 1, 1, 1, r);
+          } else {
+            if (e.getToken() === 67174411) {
+              a = Vn(e, t, void 0, a, 1, 1, 0, i, r);
+              a = W(e, t, void 0, a, 0, 0, r);
+              a = B$1(e, t, void 0, 0, 0, r, a);
+            } else {
+              if (e.getToken() & 143360) {
+                n &&= lt(e, t, e.tokenValue);
+                a = K(e, t);
+                a = Fn(e, t, n, void 0, [a], 1, r);
+              }
+            }
+          }
+        }
         break;
       }
       default:
-        (a = L$1(e, t, void 0, 1, 0, e.tokenStart)), T$1(e, t | 32);
+        a = L$1(e, t, void 0, 1, 0, e.tokenStart);
+        T$1(e, t | 32);
     }
-    return (
-      n && e.declareUnboundVariable("default"),
-      e.finishNode(
-        {
-          type: "ExportDefaultDeclaration",
-          declaration: a,
-        },
-        r,
-      )
+    n && e.declareUnboundVariable("default");
+    return e.finishNode(
+      {
+        type: "ExportDefaultDeclaration",
+        declaration: a,
+      },
+      r,
     );
   }
   switch (e.getToken()) {
     case 8391476: {
       A$1(e, t);
       let i = null;
-      E$1(e, t, 77932) &&
-        (n && e.declareUnboundVariable(e.tokenValue), (i = _n(e, t))),
-        D$1(e, t, 209011),
-        e.getToken() !== 134283267 && e.report(105, "Export"),
-        (o = q(e, t));
+      if (E$1(e, t, 77932)) {
+        if (n) {
+          e.declareUnboundVariable(e.tokenValue);
+        }
+        i = _n(e, t);
+      }
+      D$1(e, t, 209011);
+      e.getToken() !== 134283267 && e.report(105, "Export");
+      o = q(e, t);
       const a = pn(e, t),
         s = {
           type: "ExportAllDeclaration",
@@ -6064,7 +6783,8 @@ function Zt(e, t, n) {
           exported: i,
           attributes: a,
         };
-      return T$1(e, t | 32), e.finishNode(s, r);
+      T$1(e, t | 32);
+      return e.finishNode(s, r);
     }
     case 2162700: {
       A$1(e, t);
@@ -6074,39 +6794,65 @@ function Zt(e, t, n) {
       for (; e.getToken() & 143360 || e.getToken() === 134283267; ) {
         const { tokenStart: o, tokenValue: s } = e,
           l = _n(e, t);
-        l.type === "Literal" && (c = 1);
-        let u;
-        e.getToken() === 77932
-          ? (A$1(e, t),
-            !(e.getToken() & 143360) &&
-              e.getToken() !== 134283267 &&
-              e.report(106),
-            n && (r.push(e.tokenValue), a.push(s)),
-            (u = _n(e, t)))
-          : (n && (r.push(e.tokenValue), a.push(e.tokenValue)), (u = l)),
-          i.push(
-            e.finishNode(
-              {
-                type: "ExportSpecifier",
-                local: l,
-                exported: u,
-              },
-              o,
-            ),
+        if (l.type === "Literal") {
+          c = 1;
+        }
+        let u: any;
+        if (e.getToken() === 77932) {
+          A$1(e, t);
+          if (!(e.getToken() & 143360) && e.getToken() !== 134283267) {
+            e.report(106);
+          }
+          if (n) {
+            r.push(e.tokenValue);
+            a.push(s);
+          }
+          u = _n(e, t);
+        } else {
+          if (n) {
+            r.push(e.tokenValue);
+            a.push(e.tokenValue);
+          }
+          u = l;
+        }
+        i.push(
+          e.finishNode(
+            {
+              type: "ExportSpecifier",
+              local: l,
+              exported: u,
+            },
+            o,
           ),
-          e.getToken() !== 1074790415 && D$1(e, t, 18);
+        );
+        e.getToken() !== 1074790415 && D$1(e, t, 18);
       }
-      D$1(e, t, 1074790415),
-        E$1(e, t, 209011)
-          ? (e.getToken() !== 134283267 && e.report(105, "Export"),
-            (o = q(e, t)),
-            (s = pn(e, t)),
-            n && r.forEach((t) => e.declareUnboundVariable(t)))
-          : (c && e.report(172),
-            n &&
-              (r.forEach((t) => e.declareUnboundVariable(t)),
-              a.forEach((t) => e.addBindingToExports(t)))),
-        T$1(e, t | 32);
+      D$1(e, t, 1074790415);
+      if (E$1(e, t, 209011)) {
+        if (e.getToken() !== 134283267) {
+          e.report(105, "Export");
+        }
+        o = q(e, t);
+        s = pn(e, t);
+        if (n) {
+          r.forEach((t) => {
+            e.declareUnboundVariable(t);
+          });
+        }
+      } else {
+        if (c) {
+          e.report(172);
+        }
+        if (n) {
+          r.forEach((t) => {
+            e.declareUnboundVariable(t);
+          });
+          a.forEach((t) => {
+            e.addBindingToExports(t);
+          });
+        }
+      }
+      T$1(e, t | 32);
       break;
     }
     case 132:
@@ -6125,13 +6871,17 @@ function Zt(e, t, n) {
     case 86088:
       a = Vt(e, t, n, void 0, 64);
       break;
-    case 209005: {
-      const { tokenStart: r } = e;
-      if ((A$1(e, t), !(e.flags & 1) && e.getToken() === 86104)) {
-        a = J(e, t, n, void 0, 4, 1, 2, 1, r);
-        break;
+    case 209005:
+      {
+        const { tokenStart: r } = e;
+        A$1(e, t);
+        if (!(e.flags & 1) && e.getToken() === 86104) {
+          a = J(e, t, n, void 0, 4, 1, 2, 1, r);
+          break;
+        }
       }
-    }
+      e.report(30, w$1[e.getToken() & 255]);
+      break;
     default:
       e.report(30, w$1[e.getToken() & 255]);
   }
@@ -6146,7 +6896,8 @@ function Zt(e, t, n) {
 }
 function L$1(e, t, n, r, i, a) {
   let o = G(e, t, n, 2, 0, r, i, 1, a);
-  return (o = W(e, t, n, o, i, 0, a)), B$1(e, t, n, i, 0, a, o);
+  o = W(e, t, n, o, i, 0, a);
+  return B$1(e, t, n, i, 0, a, o);
 }
 function R$1(e, t, n, r, i, a) {
   const o = [a];
@@ -6166,43 +6917,14 @@ function z$1(e, t, n, r, i, a) {
 function B$1(e, t, n, r, i, a, o) {
   const s = e.getToken();
   if ((s & 4194304) === 4194304) {
-    e.assignable & 2 && e.report(26),
-      ((!i && s === 1077936155 && o.type === "ArrayExpression") ||
-        o.type === "ObjectExpression") &&
-        O(e, o),
-      A$1(e, t | 32);
+    e.assignable & 2 && e.report(26);
+    ((!i && s === 1077936155 && o.type === "ArrayExpression") ||
+      o.type === "ObjectExpression") &&
+      O(e, o);
+    A$1(e, t | 32);
     const c = L$1(e, t, n, 1, r, e.tokenStart);
-    return (
-      (e.assignable = 2),
-      e.finishNode(
-        i
-          ? {
-              type: "AssignmentPattern",
-              left: o,
-              right: c,
-            }
-          : {
-              type: "AssignmentExpression",
-              left: o,
-              operator: w$1[s & 255],
-              right: c,
-            },
-        a,
-      )
-    );
-  }
-  return (
-    (s & 8388608) === 8388608 && (o = H$1(e, t, n, r, a, 4, s, o)),
-    E$1(e, t | 32, 22) && (o = V$1(e, t, n, o, a)),
-    o
-  );
-}
-function Qt(e, t, n, r, i, a, o) {
-  const s = e.getToken();
-  A$1(e, t | 32);
-  const c = L$1(e, t, n, 1, r, e.tokenStart);
-  return (
-    (o = e.finishNode(
+    e.assignable = 2;
+    return e.finishNode(
       i
         ? {
             type: "AssignmentPattern",
@@ -6216,55 +6938,93 @@ function Qt(e, t, n, r, i, a, o) {
             right: c,
           },
       a,
-    )),
-    (e.assignable = 2),
-    o
+    );
+  }
+  if ((s & 8388608) === 8388608) {
+    o = H$1(e, t, n, r, a, 4, s, o);
+  }
+  if (E$1(e, t | 32, 22)) {
+    o = V$1(e, t, n, o, a);
+  }
+  return o;
+}
+function Qt(e, t, n, r, i, a, o) {
+  const s = e.getToken();
+  A$1(e, t | 32);
+  const c = L$1(e, t, n, 1, r, e.tokenStart);
+  o = e.finishNode(
+    i
+      ? {
+          type: "AssignmentPattern",
+          left: o,
+          right: c,
+        }
+      : {
+          type: "AssignmentExpression",
+          left: o,
+          operator: w$1[s & 255],
+          right: c,
+        },
+    a,
   );
+  e.assignable = 2;
+  return o;
 }
 function V$1(e, t, n, r, i) {
   const a = L$1(e, (t | 131072) ^ 131072, n, 1, 0, e.tokenStart);
-  D$1(e, t | 32, 21), (e.assignable = 1);
+  D$1(e, t | 32, 21);
+  e.assignable = 1;
   const o = L$1(e, t, n, 1, 0, e.tokenStart);
-  return (
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "ConditionalExpression",
-        test: r,
-        consequent: a,
-        alternate: o,
-      },
-      i,
-    )
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "ConditionalExpression",
+      test: r,
+      consequent: a,
+      alternate: o,
+    },
+    i,
   );
 }
 function H$1(e, t, n, r, i, a, o, s) {
   let c = -((t & 131072) > 0) & 8673330,
-    l,
-    u;
+    l: any,
+    u: any;
   for (
     e.assignable = 2;
     e.getToken() & 8388608 &&
-    ((l = e.getToken()),
-    (u = l & 3840),
-    ((l & 524288 && o & 268435456) || (o & 524288 && l & 268435456)) &&
-      e.report(165),
-    !(u + ((l === 8391735) << 8) - ((c === l) << 12) <= a));
-  )
-    A$1(e, t | 32),
-      (s = e.finishNode(
-        {
-          type:
-            l & 524288 || l & 268435456
-              ? "LogicalExpression"
-              : "BinaryExpression",
-          left: s,
-          right: H$1(e, t, n, r, e.tokenStart, u, l, U(e, t, n, 0, r, 1)),
-          operator: w$1[l & 255],
-        },
-        i,
-      ));
-  return e.getToken() === 1077936155 && e.report(26), s;
+    (() => {
+      (() => {
+        const assignedValue = e.getToken();
+        l = assignedValue;
+        return assignedValue;
+      })();
+      (() => {
+        const assignedValue = l & 3840;
+        u = assignedValue;
+        return assignedValue;
+      })();
+      ((l & 524288 && o & 268435456) || (o & 524288 && l & 268435456)) &&
+        e.report(165);
+      return !(u + ((l === 8391735) << 8) - ((c === l) << 12) <= a);
+    })();
+  ) {
+    A$1(e, t | 32);
+    s = e.finishNode(
+      {
+        type:
+          l & 524288 || l & 268435456
+            ? "LogicalExpression"
+            : "BinaryExpression",
+        left: s,
+        right: H$1(e, t, n, r, e.tokenStart, u, l, U(e, t, n, 0, r, 1)),
+        operator: w$1[l & 255],
+      },
+      i,
+    );
+  }
+  e.getToken() === 1077936155 && e.report(26);
+  return s;
 }
 function $t(e, t, n, r, i) {
   r || e.report(0);
@@ -6272,21 +7032,19 @@ function $t(e, t, n, r, i) {
     o = e.getToken();
   A$1(e, t | 32);
   const s = U(e, t, n, 0, i, 1);
-  return (
-    e.getToken() === 8391735 && e.report(33),
-    t & 1 &&
-      o === 16863276 &&
-      (s.type === "Identifier" ? e.report(121) : Ve(s) && e.report(127)),
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "UnaryExpression",
-        operator: w$1[o & 255],
-        argument: s,
-        prefix: !0,
-      },
-      a,
-    )
+  e.getToken() === 8391735 && e.report(33);
+  t & 1 &&
+    o === 16863276 &&
+    (s.type === "Identifier" ? e.report(121) : Ve(s) && e.report(127));
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "UnaryExpression",
+      operator: w$1[o & 255],
+      argument: s,
+      prefix: !0,
+    },
+    a,
   );
 }
 function en(e, t, n, r, i, a, o, s) {
@@ -6295,51 +7053,71 @@ function en(e, t, n, r, i, a, o, s) {
     { flags: u } = e;
   if (!(u & 1)) {
     if (e.getToken() === 86104) return En(e, t, n, 1, r, s);
-    if (k$1(t, e.getToken()))
-      return (
-        i || e.report(0),
-        (e.getToken() & 36864) === 36864 && (e.flags |= 256),
-        Bn(e, t, n, a, s)
-      );
+    if (k$1(t, e.getToken())) {
+      i || e.report(0);
+      if ((e.getToken() & 36864) === 36864) {
+        e.flags |= 256;
+      }
+      return Bn(e, t, n, a, s);
+    }
   }
-  return !o && e.getToken() === 67174411
-    ? Vn(e, t, n, l, a, 1, 0, u, s)
-    : e.getToken() === 10
-      ? (Ge(e, t, c),
-        o && e.report(51),
-        (c & 36864) === 36864 && (e.flags |= 256),
-        Nn(e, t, n, e.tokenValue, l, o, a, 0, s))
-      : ((e.assignable = 1), l);
+  if (!o && e.getToken() === 67174411) {
+    return Vn(e, t, n, l, a, 1, 0, u, s);
+  } else {
+    if (e.getToken() === 10) {
+      Ge(e, t, c);
+      if (o) {
+        e.report(51);
+      }
+      if ((c & 36864) === 36864) {
+        e.flags |= 256;
+      }
+      return Nn(e, t, n, e.tokenValue, l, o, a, 0, s);
+    } else {
+      e.assignable = 1;
+      return l;
+    }
+  }
 }
 function tn(e, t, n, r, i, a) {
-  if ((r && (e.destructible |= 256), t & 1024)) {
-    A$1(e, t | 32),
-      t & 8192 && e.report(32),
-      i || e.report(26),
-      e.getToken() === 22 && e.report(124);
+  if (r) {
+    e.destructible |= 256;
+  }
+  if (t & 1024) {
+    A$1(e, t | 32);
+    t & 8192 && e.report(32);
+    i || e.report(26);
+    e.getToken() === 22 && e.report(124);
     let r = null,
       o = !1;
-    return (
-      e.flags & 1
-        ? e.getToken() === 8391476 && e.report(30, w$1[e.getToken() & 255])
-        : ((o = E$1(e, t | 32, 8391476)),
-          (e.getToken() & 77824 || o) &&
-            (r = L$1(e, t, n, 1, 0, e.tokenStart))),
-      (e.assignable = 2),
-      e.finishNode(
-        {
-          type: "YieldExpression",
-          argument: r,
-          delegate: o,
-        },
-        a,
-      )
+    if (e.flags & 1) {
+      if (e.getToken() === 8391476) {
+        e.report(30, w$1[e.getToken() & 255]);
+      }
+    } else {
+      o = E$1(e, t | 32, 8391476);
+      if (e.getToken() & 77824 || o) {
+        r = L$1(e, t, n, 1, 0, e.tokenStart);
+      }
+    }
+    e.assignable = 2;
+    return e.finishNode(
+      {
+        type: "YieldExpression",
+        argument: r,
+        delegate: o,
+      },
+      a,
     );
   }
-  return t & 1 && e.report(97, "yield"), Mn(e, t, n);
+  t & 1 && e.report(97, "yield");
+  return Mn(e, t, n);
 }
 function nn(e, t, n, r, i, a) {
-  i && (e.destructible |= 128), t & 524288 && e.report(177);
+  if (i) {
+    e.destructible |= 128;
+  }
+  t & 524288 && e.report(177);
   const o = Mn(e, t, n);
   if (o.type === "ArrowFunctionExpression" || !(e.getToken() & 65536)) {
     if (t & 2048)
@@ -6386,16 +7164,14 @@ function nn(e, t, n, r, i, a) {
         0,
       );
     const i = U(e, t, n, 0, 0, 1);
-    return (
-      e.getToken() === 8391735 && e.report(33),
-      (e.assignable = 2),
-      e.finishNode(
-        {
-          type: "AwaitExpression",
-          argument: i,
-        },
-        a,
-      )
+    e.getToken() === 8391735 && e.report(33);
+    e.assignable = 2;
+    return e.finishNode(
+      {
+        type: "AwaitExpression",
+        argument: i,
+      },
+      a,
     );
   }
   if (t & 2)
@@ -6420,50 +7196,71 @@ function rn(e, t, n, r, i, a, o) {
         s = e.getToken(),
         l = q(e, t);
       if (Ie(e, n, i, a)) {
-        if (((t |= 1), e.flags & 128)) throw new C$1(r, e.currentLocation, 66);
+        t |= 1;
+        if (e.flags & 128) throw new C$1(r, e.currentLocation, 66);
         if (e.flags & 64) throw new C$1(r, e.currentLocation, 9);
         if (e.flags & 4096) throw new C$1(r, e.currentLocation, 15);
         o?.reportScopeError();
       }
       c.push(wt(e, t, l, s, r));
     }
-    t & 1 &&
-      (a &&
-        ((a & 537079808) === 537079808 && e.report(119),
-        (a & 36864) === 36864 && e.report(40)),
-      e.flags & 512 && e.report(119),
-      e.flags & 256 && e.report(118));
+    if (t & 1) {
+      if (a) {
+        if ((a & 537079808) === 537079808) {
+          e.report(119);
+        }
+        if ((a & 36864) === 36864) {
+          e.report(40);
+        }
+      }
+      if (e.flags & 512) {
+        e.report(119);
+      }
+      if (e.flags & 256) {
+        e.report(118);
+      }
+    }
   }
   for (
-    e.flags = (e.flags | 4928) ^ 4928,
+    (() => {
+      e.flags = (e.flags | 4928) ^ 4928;
       e.destructible = (e.destructible | 256) ^ 256;
+    })();
     e.getToken() !== 1074790415;
   )
     c.push(M$1(e, t, n, r, 4, {}));
-  return (
-    D$1(e, i & 24 ? t | 32 : t, 1074790415),
-    (e.flags &= -4289),
-    e.getToken() === 1077936155 && e.report(26),
-    e.finishNode(
-      {
-        type: "BlockStatement",
-        body: c,
-      },
-      s,
-    )
+  D$1(e, i & 24 ? t | 32 : t, 1074790415);
+  e.flags &= -4289;
+  e.getToken() === 1077936155 && e.report(26);
+  return e.finishNode(
+    {
+      type: "BlockStatement",
+      body: c,
+    },
+    s,
   );
 }
 function an(e, t) {
   const { tokenStart: n } = e;
-  switch ((A$1(e, t), e.getToken())) {
+  switch (
+    (() => {
+      A$1(e, t);
+      return e.getToken();
+    })()
+  ) {
     case 67108990:
       e.report(167);
+      t & 512 || e.report(28);
+      e.assignable = 2;
+      break;
     case 67174411:
-      t & 512 || e.report(28), (e.assignable = 2);
+      t & 512 || e.report(28);
+      e.assignable = 2;
       break;
     case 69271571:
     case 67108877:
-      t & 256 || e.report(29), (e.assignable = 1);
+      t & 256 || e.report(29);
+      e.assignable = 1;
       break;
     default:
       e.report(30, "super");
@@ -6477,32 +7274,39 @@ function U(e, t, n, r, i, a) {
 function on(e, t, n, r) {
   e.assignable & 2 && e.report(55);
   const i = e.getToken();
-  return (
-    A$1(e, t),
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "UpdateExpression",
-        argument: n,
-        operator: w$1[i & 255],
-        prefix: !1,
-      },
-      r,
-    )
+  A$1(e, t);
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "UpdateExpression",
+      argument: n,
+      operator: w$1[i & 255],
+      prefix: !1,
+    },
+    r,
   );
 }
 function W(e, t, n, r, i, a, o) {
   if ((e.getToken() & 33619968) === 33619968 && !(e.flags & 1))
     r = on(e, t, r, o);
   else if ((e.getToken() & 67108864) === 67108864) {
-    switch (((t = (t | 131072) ^ 131072), e.getToken())) {
+    switch (
+      (() => {
+        (() => {
+          const assignedValue = (t | 131072) ^ 131072;
+          t = assignedValue;
+          return assignedValue;
+        })();
+        return e.getToken();
+      })()
+    ) {
       case 67108877: {
-        A$1(e, (t | 262152) ^ 8),
-          t & 16 &&
-            e.getToken() === 130 &&
-            e.tokenValue === "super" &&
-            e.report(173),
-          (e.assignable = 1);
+        A$1(e, (t | 262152) ^ 8);
+        t & 16 &&
+          e.getToken() === 130 &&
+          e.tokenValue === "super" &&
+          e.report(173);
+        e.assignable = 1;
         const i = cn(e, t | 64, n);
         r = e.finishNode(
           {
@@ -6518,159 +7322,169 @@ function W(e, t, n, r, i, a, o) {
       }
       case 69271571: {
         let a = !1;
-        (e.flags & 2048) === 2048 &&
-          ((a = !0), (e.flags = (e.flags | 2048) ^ 2048)),
-          A$1(e, t | 32);
+        if ((e.flags & 2048) === 2048) {
+          a = !0;
+          e.flags = (e.flags | 2048) ^ 2048;
+        }
+        A$1(e, t | 32);
         const { tokenStart: s } = e,
           c = z$1(e, t, n, i, 1, s);
-        D$1(e, t, 20),
-          (e.assignable = 1),
-          (r = e.finishNode(
-            {
-              type: "MemberExpression",
-              object: r,
-              computed: !0,
-              property: c,
-              optional: !1,
-            },
-            o,
-          )),
-          a && (e.flags |= 2048);
+        D$1(e, t, 20);
+        e.assignable = 1;
+        r = e.finishNode(
+          {
+            type: "MemberExpression",
+            object: r,
+            computed: !0,
+            property: c,
+            optional: !1,
+          },
+          o,
+        );
+        if (a) {
+          e.flags |= 2048;
+        }
         break;
       }
       case 67174411: {
-        if ((e.flags & 1024) === 1024)
-          return (e.flags = (e.flags | 1024) ^ 1024), r;
+        if ((e.flags & 1024) === 1024) {
+          e.flags = (e.flags | 1024) ^ 1024;
+          return r;
+        }
         let a = !1;
-        (e.flags & 2048) === 2048 &&
-          ((a = !0), (e.flags = (e.flags | 2048) ^ 2048));
+        if ((e.flags & 2048) === 2048) {
+          a = !0;
+          e.flags = (e.flags | 2048) ^ 2048;
+        }
         const s = Cn(e, t, n, i);
-        (e.assignable = 2),
-          (r = e.finishNode(
-            {
-              type: "CallExpression",
-              callee: r,
-              arguments: s,
-              optional: !1,
-            },
-            o,
-          )),
-          a && (e.flags |= 2048);
+        e.assignable = 2;
+        r = e.finishNode(
+          {
+            type: "CallExpression",
+            callee: r,
+            arguments: s,
+            optional: !1,
+          },
+          o,
+        );
+        if (a) {
+          e.flags |= 2048;
+        }
         break;
       }
       case 67108990:
-        A$1(e, (t | 262152) ^ 8),
-          (e.flags |= 2048),
-          (e.assignable = 2),
-          (r = sn(e, t, n, r, o));
+        A$1(e, (t | 262152) ^ 8);
+        e.flags |= 2048;
+        e.assignable = 2;
+        r = sn(e, t, n, r, o);
         break;
       default:
-        (e.flags & 2048) === 2048 && e.report(166),
-          (e.assignable = 2),
-          (r = e.finishNode(
-            {
-              type: "TaggedTemplateExpression",
-              tag: r,
-              quasi: e.getToken() === 67174408 ? bn(e, t | 64, n) : yn(e, t),
-            },
-            o,
-          ));
+        (e.flags & 2048) === 2048 && e.report(166);
+        e.assignable = 2;
+        r = e.finishNode(
+          {
+            type: "TaggedTemplateExpression",
+            tag: r,
+            quasi: e.getToken() === 67174408 ? bn(e, t | 64, n) : yn(e, t),
+          },
+          o,
+        );
     }
     r = W(e, t, n, r, 0, 1, o);
   }
-  return (
-    a === 0 &&
-      (e.flags & 2048) === 2048 &&
-      ((e.flags = (e.flags | 2048) ^ 2048),
-      (r = e.finishNode(
-        {
-          type: "ChainExpression",
-          expression: r,
-        },
-        o,
-      ))),
-    r
-  );
+  if (a === 0 && (e.flags & 2048) === 2048) {
+    e.flags = (e.flags | 2048) ^ 2048;
+    r = e.finishNode(
+      {
+        type: "ChainExpression",
+        expression: r,
+      },
+      o,
+    );
+  }
+  return r;
 }
 function sn(e, t, n, r, i) {
   let a = !1,
-    o;
+    o: any;
   if (
-    ((e.getToken() === 69271571 || e.getToken() === 67174411) &&
-      (e.flags & 2048) === 2048 &&
-      ((a = !0), (e.flags = (e.flags | 2048) ^ 2048)),
-    e.getToken() === 69271571)
+    (e.getToken() === 69271571 || e.getToken() === 67174411) &&
+    (e.flags & 2048) === 2048
   ) {
+    a = !0;
+    e.flags = (e.flags | 2048) ^ 2048;
+  }
+  if (e.getToken() === 69271571) {
     A$1(e, t | 32);
     const { tokenStart: a } = e,
       s = z$1(e, t, n, 0, 1, a);
-    D$1(e, t, 20),
-      (e.assignable = 2),
-      (o = e.finishNode(
-        {
-          type: "MemberExpression",
-          object: r,
-          computed: !0,
-          optional: !0,
-          property: s,
-        },
-        i,
-      ));
+    D$1(e, t, 20);
+    e.assignable = 2;
+    o = e.finishNode(
+      {
+        type: "MemberExpression",
+        object: r,
+        computed: !0,
+        optional: !0,
+        property: s,
+      },
+      i,
+    );
   } else if (e.getToken() === 67174411) {
     const a = Cn(e, t, n, 0);
-    (e.assignable = 2),
-      (o = e.finishNode(
-        {
-          type: "CallExpression",
-          callee: r,
-          arguments: a,
-          optional: !0,
-        },
-        i,
-      ));
+    e.assignable = 2;
+    o = e.finishNode(
+      {
+        type: "CallExpression",
+        callee: r,
+        arguments: a,
+        optional: !0,
+      },
+      i,
+    );
   } else {
     const a = cn(e, t, n);
-    (e.assignable = 2),
-      (o = e.finishNode(
-        {
-          type: "MemberExpression",
-          object: r,
-          computed: !1,
-          optional: !0,
-          property: a,
-        },
-        i,
-      ));
+    e.assignable = 2;
+    o = e.finishNode(
+      {
+        type: "MemberExpression",
+        object: r,
+        computed: !1,
+        optional: !0,
+        property: a,
+      },
+      i,
+    );
   }
-  return a && (e.flags |= 2048), o;
+  if (a) {
+    e.flags |= 2048;
+  }
+  return o;
 }
 function cn(e, t, n) {
-  return (
-    !(e.getToken() & 143360) &&
-      e.getToken() !== -2147483528 &&
-      e.getToken() !== -2147483527 &&
-      e.getToken() !== 130 &&
-      e.report(160),
-    e.getToken() === 130 ? Yn(e, t, n, 0) : K(e, t)
-  );
+  !(e.getToken() & 143360) &&
+    e.getToken() !== -2147483528 &&
+    e.getToken() !== -2147483527 &&
+    e.getToken() !== 130 &&
+    e.report(160);
+  return e.getToken() === 130 ? Yn(e, t, n, 0) : K(e, t);
 }
 function ln(e, t, n, r, i, a) {
-  r && e.report(56), i || e.report(0);
+  r && e.report(56);
+  i || e.report(0);
   const o = e.getToken();
   A$1(e, t | 32);
   const s = U(e, t, n, 0, 0, 1);
-  return (
-    e.assignable & 2 && e.report(55),
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "UpdateExpression",
-        argument: s,
-        operator: w$1[o & 255],
-        prefix: !0,
-      },
-      a,
-    )
+  e.assignable & 2 && e.report(55);
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "UpdateExpression",
+      argument: s,
+      operator: w$1[o & 255],
+      prefix: !0,
+    },
+    a,
   );
 }
 function G(e, t, n, r, i, a, o, s, c) {
@@ -6686,19 +7500,35 @@ function G(e, t, n, r, i, a, o, s, c) {
     const { tokenValue: l } = e,
       u = e.getToken(),
       d = K(e, t | 64);
-    return e.getToken() === 10
-      ? (s || e.report(0),
-        Ge(e, t, u),
-        (u & 36864) === 36864 && (e.flags |= 256),
-        Nn(e, t, n, l, d, i, a, 0, c))
-      : (t & 16 &&
-          !(t & 32768) &&
-          !(t & 8192) &&
-          e.tokenValue === "arguments" &&
-          e.report(130),
-        (u & 255) === 73 && (t & 1 && e.report(113), r & 24 && e.report(100)),
-        (e.assignable = t & 1 && (u & 537079808) === 537079808 ? 2 : 1),
-        d);
+    if (e.getToken() === 10) {
+      if (!s) {
+        e.report(0);
+      }
+      Ge(e, t, u);
+      if ((u & 36864) === 36864) {
+        e.flags |= 256;
+      }
+      return Nn(e, t, n, l, d, i, a, 0, c);
+    } else {
+      if (
+        t & 16 &&
+        !(t & 32768) &&
+        !(t & 8192) &&
+        e.tokenValue === "arguments"
+      ) {
+        e.report(130);
+      }
+      if ((u & 255) === 73) {
+        if (t & 1) {
+          e.report(113);
+        }
+        if (r & 24) {
+          e.report(100);
+        }
+      }
+      e.assignable = t & 1 && (u & 537079808) === 537079808 ? 2 : 1;
+      return d;
+    }
   }
   if ((e.getToken() & 134217728) === 134217728) return q(e, t);
   switch (e.getToken()) {
@@ -6748,6 +7578,9 @@ function G(e, t, n, r, i, a, o, s, c) {
       return un(e, t, n, i, o, c);
     case 8456256:
       if (e.options.jsx) return $n(e, t, n, 0, e.tokenStart);
+      if (k$1(t, e.getToken())) return Mn(e, t, n);
+      e.report(30, w$1[e.getToken() & 255]);
+      break;
     default:
       if (k$1(t, e.getToken())) return Mn(e, t, n);
       e.report(30, w$1[e.getToken() & 255]);
@@ -6755,46 +7588,53 @@ function G(e, t, n, r, i, a, o, s, c) {
 }
 function un(e, t, n, r, i, a) {
   let o = K(e, t);
-  return e.getToken() === 67108877
-    ? dn(e, t, o, a)
-    : (r && e.report(142),
-      (o = fn(e, t, n, i, a)),
-      (e.assignable = 2),
-      W(e, t, n, o, i, 0, a));
+  if (e.getToken() === 67108877) {
+    return dn(e, t, o, a);
+  } else {
+    if (r) {
+      e.report(142);
+    }
+    o = fn(e, t, n, i, a);
+    e.assignable = 2;
+    return W(e, t, n, o, i, 0, a);
+  }
 }
 function dn(e, t, n, r) {
-  t & 2 || e.report(169), A$1(e, t);
+  t & 2 || e.report(169);
+  A$1(e, t);
   const i = e.getToken();
-  return (
-    i !== 209030 && e.tokenValue !== "meta"
-      ? e.report(174)
-      : i & -2147483648 && e.report(175),
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "MetaProperty",
-        meta: n,
-        property: K(e, t),
-      },
-      r,
-    )
+  i !== 209030 && e.tokenValue !== "meta"
+    ? e.report(174)
+    : i & -2147483648 && e.report(175);
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "MetaProperty",
+      meta: n,
+      property: K(e, t),
+    },
+    r,
   );
 }
 function fn(e, t, n, r, i) {
-  D$1(e, t | 32, 67174411), e.getToken() === 14 && e.report(143);
+  D$1(e, t | 32, 67174411);
+  e.getToken() === 14 && e.report(143);
   let a = L$1(e, t, n, 1, r, e.tokenStart),
     o = null;
-  e.getToken() === 18 &&
-    (D$1(e, t, 18),
-    e.getToken() !== 16 &&
-      (o = L$1(e, (t | 131072) ^ 131072, n, 1, r, e.tokenStart)),
-    E$1(e, t, 18));
+  if (e.getToken() === 18) {
+    D$1(e, t, 18);
+    if (e.getToken() !== 16) {
+      o = L$1(e, (t | 131072) ^ 131072, n, 1, r, e.tokenStart);
+    }
+    E$1(e, t, 18);
+  }
   const s = {
     type: "ImportExpression",
     source: a,
     options: o,
   };
-  return D$1(e, t, 16), e.finishNode(s, i);
+  D$1(e, t, 16);
+  return e.finishNode(s, i);
 }
 function pn(e, t) {
   if (!E$1(e, t, 20579)) return [];
@@ -6807,21 +7647,22 @@ function pn(e, t) {
     D$1(e, t, 21);
     const o = mn(e, t),
       s = a.type === "Literal" ? a.value : a.name;
-    r.has(s) && e.report(145, `${s}`),
-      r.add(s),
-      n.push(
-        e.finishNode(
-          {
-            type: "ImportAttribute",
-            key: a,
-            value: o,
-          },
-          i,
-        ),
+    r.has(s) && e.report(145, `${s}`);
+    r.add(s);
+    n.push(
+      e.finishNode(
+        {
+          type: "ImportAttribute",
+          key: a,
+          value: o,
+        },
+        i,
       ),
-      e.getToken() !== 1074790415 && D$1(e, t, 18);
+    );
+    e.getToken() !== 1074790415 && D$1(e, t, 18);
   }
-  return D$1(e, t, 1074790415), n;
+  D$1(e, t, 1074790415);
+  return n;
 }
 function mn(e, t) {
   if (e.getToken() === 134283267) return q(e, t);
@@ -6842,19 +7683,26 @@ function gn(e, t) {
   }
 }
 function _n(e, t) {
-  if (e.getToken() === 134283267) return gn(e, e.tokenValue), q(e, t);
+  if (e.getToken() === 134283267) {
+    gn(e, e.tokenValue);
+    return q(e, t);
+  }
   if (e.getToken() & 143360) return K(e, t);
   e.report(30, w$1[e.getToken() & 255]);
 }
 function vn(e, t) {
   const { tokenRaw: n, tokenValue: r, tokenStart: i } = e;
-  A$1(e, t), (e.assignable = 2);
+  A$1(e, t);
+  e.assignable = 2;
   const a = {
     type: "Literal",
     value: r,
     bigint: String(r),
   };
-  return e.options.raw && (a.raw = n), e.finishNode(a, i);
+  if (e.options.raw) {
+    a.raw = n;
+  }
+  return e.finishNode(a, i);
 }
 function yn(e, t) {
   e.assignable = 2;
@@ -6881,14 +7729,15 @@ function bn(e, t, n) {
     e.setToken(je(e, t), !0) !== 67174409;
   ) {
     const { tokenValue: r, tokenRaw: i, tokenStart: a } = e;
-    D$1(e, (t & -65) | 32, 67174408),
-      o.push(xn(e, r, i, a, !1)),
-      s.push(z$1(e, t, n, 0, 1, e.tokenStart)),
-      e.getToken() !== 1074790415 && e.report(83);
+    D$1(e, (t & -65) | 32, 67174408);
+    o.push(xn(e, r, i, a, !1));
+    s.push(z$1(e, t, n, 0, 1, e.tokenStart));
+    e.getToken() !== 1074790415 && e.report(83);
   }
   {
     const { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
-    D$1(e, t, 67174409), o.push(xn(e, n, r, i, !0));
+    D$1(e, t, 67174409);
+    o.push(xn(e, n, r, i, !0));
   }
   return e.finishNode(
     {
@@ -6912,108 +7761,122 @@ function xn(e, t, n, r, i) {
       r,
     ),
     o = i ? 1 : 2;
-  return (
-    e.options.ranges &&
-      ((a.start += 1), (a.range[0] += 1), (a.end -= o), (a.range[1] -= o)),
-    e.options.loc && ((a.loc.start.column += 1), (a.loc.end.column -= o)),
-    a
-  );
+  if (e.options.ranges) {
+    a.start += 1;
+    a.range[0] += 1;
+    a.end -= o;
+    a.range[1] -= o;
+  }
+  if (e.options.loc) {
+    a.loc.start.column += 1;
+    a.loc.end.column -= o;
+  }
+  return a;
 }
 function Sn(e, t, n) {
   const r = e.tokenStart;
-  (t = (t | 131072) ^ 131072), D$1(e, t | 32, 14);
+  t = (t | 131072) ^ 131072;
+  D$1(e, t | 32, 14);
   const i = L$1(e, t, n, 1, 0, e.tokenStart);
-  return (
-    (e.assignable = 1),
-    e.finishNode(
-      {
-        type: "SpreadElement",
-        argument: i,
-      },
-      r,
-    )
+  e.assignable = 1;
+  return e.finishNode(
+    {
+      type: "SpreadElement",
+      argument: i,
+    },
+    r,
   );
 }
 function Cn(e, t, n, r) {
   A$1(e, t | 32);
   const i = [];
-  if (e.getToken() === 16) return A$1(e, t | 64), i;
+  if (e.getToken() === 16) {
+    A$1(e, t | 64);
+    return i;
+  }
   for (
     ;
     e.getToken() !== 16 &&
-    (e.getToken() === 14
-      ? i.push(Sn(e, t, n))
-      : i.push(L$1(e, t, n, 1, r, e.tokenStart)),
-    !(e.getToken() !== 18 || (A$1(e, t | 32), e.getToken() === 16)));
+    (() => {
+      e.getToken() === 14
+        ? i.push(Sn(e, t, n))
+        : i.push(L$1(e, t, n, 1, r, e.tokenStart));
+      return !(
+        e.getToken() !== 18 ||
+        (() => {
+          A$1(e, t | 32);
+          return e.getToken() === 16;
+        })()
+      );
+    })();
   );
-  return D$1(e, t | 64, 16), i;
+  D$1(e, t | 64, 16);
+  return i;
 }
 function K(e, t) {
   const { tokenValue: n, tokenStart: r } = e;
-  return (
-    A$1(e, t | (n === "await" && !(e.getToken() & -2147483648) ? 32 : 0)),
-    e.finishNode(
-      {
-        type: "Identifier",
-        name: n,
-      },
-      r,
-    )
+  A$1(e, t | (n === "await" && !(e.getToken() & -2147483648) ? 32 : 0));
+  return e.finishNode(
+    {
+      type: "Identifier",
+      name: n,
+    },
+    r,
   );
 }
 function q(e, t) {
   const { tokenValue: n, tokenRaw: r, tokenStart: i } = e;
-  return e.getToken() === 134283388
-    ? vn(e, t)
-    : (A$1(e, t),
-      (e.assignable = 2),
-      e.finishNode(
-        e.options.raw
-          ? {
-              type: "Literal",
-              value: n,
-              raw: r,
-            }
-          : {
-              type: "Literal",
-              value: n,
-            },
-        i,
-      ));
+  if (e.getToken() === 134283388) {
+    return vn(e, t);
+  } else {
+    A$1(e, t);
+    e.assignable = 2;
+    return e.finishNode(
+      e.options.raw
+        ? {
+            type: "Literal",
+            value: n,
+            raw: r,
+          }
+        : {
+            type: "Literal",
+            value: n,
+          },
+      i,
+    );
+  }
 }
 function wn(e, t) {
   const n = e.tokenStart,
     r = w$1[e.getToken() & 255],
     i = e.getToken() === 86023 ? null : r === "true";
-  return (
-    A$1(e, t),
-    (e.assignable = 2),
-    e.finishNode(
-      e.options.raw
-        ? {
-            type: "Literal",
-            value: i,
-            raw: r,
-          }
-        : {
-            type: "Literal",
-            value: i,
-          },
-      n,
-    )
+  A$1(e, t);
+  e.assignable = 2;
+  return e.finishNode(
+    e.options.raw
+      ? {
+          type: "Literal",
+          value: i,
+          raw: r,
+        }
+      : {
+          type: "Literal",
+          value: i,
+        },
+    n,
   );
 }
 function Tn(e, t) {
   const { tokenStart: n } = e;
-  return (
-    A$1(e, t), (e.assignable = 2), e.finishNode({ type: "ThisExpression" }, n)
-  );
+  A$1(e, t);
+  e.assignable = 2;
+  return e.finishNode({ type: "ThisExpression" }, n);
 }
 function J(e, t, n, r, i, a, o, s, c) {
   A$1(e, t | 32);
   let l = a ? Le(e, t, 8391476) : 0,
     u = null,
-    d,
+    d: any,
     f = n ? e.createScope() : void 0;
   if (e.getToken() === 67174411) o & 1 || e.report(39, "Function");
   else {
@@ -7021,17 +7884,24 @@ function J(e, t, n, r, i, a, o, s, c) {
       i & 4 && (!(t & 8) || !(t & 2))
         ? 4
         : 64 | (s ? 1024 : 0) | (l ? 1024 : 0);
-    ze(e, t, e.getToken()),
-      n &&
-        (r & 4
-          ? n.addVarName(t, e.tokenValue, r)
-          : n.addBlockName(t, e.tokenValue, r, i),
-        (f = f?.createChildScope(128)),
-        o && o & 2 && e.declareUnboundVariable(e.tokenValue)),
-      (d = e.getToken()),
-      e.getToken() & 143360
-        ? (u = K(e, t))
-        : e.report(30, w$1[e.getToken() & 255]);
+    ze(e, t, e.getToken());
+    if (n) {
+      if (r & 4) {
+        n.addVarName(t, e.tokenValue, r);
+      } else {
+        n.addBlockName(t, e.tokenValue, r, i);
+      }
+      f = f?.createChildScope(128);
+      if (o && o & 2) {
+        e.declareUnboundVariable(e.tokenValue);
+      }
+    }
+    d = e.getToken();
+    if (e.getToken() & 143360) {
+      u = K(e, t);
+    } else {
+      e.report(30, w$1[e.getToken() & 255]);
+    }
   }
   {
     const e = 28416;
@@ -7063,38 +7933,37 @@ function En(e, t, n, r, i, a) {
   let o = Le(e, t, 8391476),
     s = (r ? 2048 : 0) | (o ? 1024 : 0),
     c = null,
-    l,
+    l: any,
     u = e.createScopeIfLexical(),
     d = 552704;
-  e.getToken() & 143360 &&
-    (ze(e, ((t | d) ^ d) | s, e.getToken()),
-    (u = u?.createChildScope(128)),
-    (l = e.getToken()),
-    (c = K(e, t))),
-    (t = ((t | d) ^ d) | 65536 | s | (o ? 0 : 262144)),
-    (u = u?.createChildScope(256));
+  if (e.getToken() & 143360) {
+    ze(e, ((t | d) ^ d) | s, e.getToken());
+    u = u?.createChildScope(128);
+    l = e.getToken();
+    c = K(e, t);
+  }
+  t = ((t | d) ^ d) | 65536 | s | (o ? 0 : 262144);
+  u = u?.createChildScope(256);
   const f = In(e, (t | 8192) & -524289, u, n, i, 1),
     p = rn(e, (t & -131229) | 36864, u?.createChildScope(64), n, 0, l, u);
-  return (
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "FunctionExpression",
-        id: c,
-        params: f,
-        body: p,
-        async: r === 1,
-        generator: o === 1,
-      },
-      a,
-    )
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "FunctionExpression",
+      id: c,
+      params: f,
+      body: p,
+      async: r === 1,
+      generator: o === 1,
+    },
+    a,
   );
 }
 function Dn(e, t, n, r, i) {
   const a = Y(e, t, void 0, n, r, i, 0, 2, 0);
-  return (
-    e.destructible & 64 && e.report(63), e.destructible & 8 && e.report(62), a
-  );
+  e.destructible & 64 && e.report(63);
+  e.destructible & 8 && e.report(62);
+  return a;
 }
 function Y(e, t, n, r, i, a, o, s, c) {
   const { tokenStart: l } = e;
@@ -7104,16 +7973,17 @@ function Y(e, t, n, r, i, a, o, s, c) {
   for (t = (t | 131072) ^ 131072; e.getToken() !== 20; )
     if (E$1(e, t | 32, 18)) u.push(null);
     else {
-      let i,
+      let i: any,
         { tokenStart: l, tokenValue: f } = e,
         p = e.getToken();
-      if (p & 143360)
-        if (((i = G(e, t, r, s, 0, 1, a, 1, l)), e.getToken() === 1077936155)) {
-          e.assignable & 2 && e.report(26),
-            A$1(e, t | 32),
-            n?.addVarOrBlock(t, f, s, c);
+      if (p & 143360) {
+        i = G(e, t, r, s, 0, 1, a, 1, l);
+        if (e.getToken() === 1077936155) {
+          e.assignable & 2 && e.report(26);
+          A$1(e, t | 32);
+          n?.addVarOrBlock(t, f, s, c);
           const u = L$1(e, t, r, 1, a, e.tokenStart);
-          (i = e.finishNode(
+          i = e.finishNode(
             o
               ? {
                   type: "AssignmentPattern",
@@ -7127,62 +7997,88 @@ function Y(e, t, n, r, i, a, o, s, c) {
                   right: u,
                 },
             l,
-          )),
-            (d |=
-              e.destructible & 256
-                ? 256
-                : 0 | (e.destructible & 128)
-                  ? 128
-                  : 0);
-        } else
-          e.getToken() === 18 || e.getToken() === 20
-            ? (e.assignable & 2 ? (d |= 16) : n?.addVarOrBlock(t, f, s, c),
-              (d |=
-                e.destructible & 256
-                  ? 256
-                  : 0 | (e.destructible & 128)
-                    ? 128
-                    : 0))
-            : ((d |= s & 1 ? 32 : s & 2 ? 0 : 16),
-              (i = W(e, t, r, i, a, 0, l)),
-              e.getToken() !== 18 && e.getToken() !== 20
-                ? (e.getToken() !== 1077936155 && (d |= 16),
-                  (i = B$1(e, t, r, a, o, l, i)))
-                : e.getToken() !== 1077936155 &&
-                  (d |= e.assignable & 2 ? 16 : 32));
-      else
-        p & 2097152
-          ? ((i =
-              e.getToken() === 2162700
-                ? Q(e, t, n, r, 0, a, o, s, c)
-                : Y(e, t, n, r, 0, a, o, s, c)),
-            (d |= e.destructible),
-            (e.assignable = e.destructible & 16 ? 2 : 1),
-            e.getToken() === 18 || e.getToken() === 20
-              ? e.assignable & 2 && (d |= 16)
-              : e.destructible & 8
-                ? e.report(71)
-                : ((i = W(e, t, r, i, a, 0, l)),
-                  (d = e.assignable & 2 ? 16 : 0),
-                  e.getToken() !== 18 && e.getToken() !== 20
-                    ? (i = B$1(e, t, r, a, o, l, i))
-                    : e.getToken() !== 1077936155 &&
-                      (d |= e.assignable & 2 ? 16 : 32)))
-          : p === 14
-            ? ((i = X(e, t, n, r, 20, s, c, 0, a, o)),
-              (d |= e.destructible),
-              e.getToken() !== 18 &&
-                e.getToken() !== 20 &&
-                e.report(30, w$1[e.getToken() & 255]))
-            : ((i = U(e, t, r, 1, 0, 1)),
-              e.getToken() !== 18 && e.getToken() !== 20
-                ? ((i = B$1(e, t, r, a, o, l, i)),
-                  !(s & 3) && p === 67174411 && (d |= 16))
-                : e.assignable & 2
-                  ? (d |= 16)
-                  : p === 67174411 &&
-                    (d |= e.assignable & 1 && s & 3 ? 32 : 16));
-      if ((u.push(i), E$1(e, t | 32, 18))) {
+          );
+          d |=
+            e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0;
+        } else {
+          if (e.getToken() === 18 || e.getToken() === 20) {
+            if (e.assignable & 2) {
+              d |= 16;
+            } else {
+              n?.addVarOrBlock(t, f, s, c);
+            }
+            d |=
+              e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0;
+          } else {
+            d |= s & 1 ? 32 : s & 2 ? 0 : 16;
+            i = W(e, t, r, i, a, 0, l);
+            if (e.getToken() !== 18 && e.getToken() !== 20) {
+              if (e.getToken() !== 1077936155) {
+                d |= 16;
+              }
+              i = B$1(e, t, r, a, o, l, i);
+            } else {
+              if (e.getToken() !== 1077936155) {
+                d |= e.assignable & 2 ? 16 : 32;
+              }
+            }
+          }
+        }
+      } else {
+        if (p & 2097152) {
+          i =
+            e.getToken() === 2162700
+              ? Q(e, t, n, r, 0, a, o, s, c)
+              : Y(e, t, n, r, 0, a, o, s, c);
+          d |= e.destructible;
+          e.assignable = e.destructible & 16 ? 2 : 1;
+          if (e.getToken() === 18 || e.getToken() === 20) {
+            if (e.assignable & 2) {
+              d |= 16;
+            }
+          } else {
+            if (e.destructible & 8) {
+              e.report(71);
+            } else {
+              i = W(e, t, r, i, a, 0, l);
+              d = e.assignable & 2 ? 16 : 0;
+              if (e.getToken() !== 18 && e.getToken() !== 20) {
+                i = B$1(e, t, r, a, o, l, i);
+              } else {
+                if (e.getToken() !== 1077936155) {
+                  d |= e.assignable & 2 ? 16 : 32;
+                }
+              }
+            }
+          }
+        } else {
+          if (p === 14) {
+            i = X(e, t, n, r, 20, s, c, 0, a, o);
+            d |= e.destructible;
+            if (e.getToken() !== 18 && e.getToken() !== 20) {
+              e.report(30, w$1[e.getToken() & 255]);
+            }
+          } else {
+            i = U(e, t, r, 1, 0, 1);
+            if (e.getToken() !== 18 && e.getToken() !== 20) {
+              i = B$1(e, t, r, a, o, l, i);
+              if (!(s & 3) && p === 67174411) {
+                d |= 16;
+              }
+            } else {
+              if (e.assignable & 2) {
+                d |= 16;
+              } else {
+                if (p === 67174411) {
+                  d |= e.assignable & 1 && s & 3 ? 32 : 16;
+                }
+              }
+            }
+          }
+        }
+      }
+      u.push(i);
+      if (E$1(e, t | 32, 18)) {
         if (e.getToken() === 20) break;
       } else break;
     }
@@ -7194,37 +8090,38 @@ function Y(e, t, n, r, i, a, o, s, c) {
     },
     l,
   );
-  return !i && e.getToken() & 4194304
-    ? On(e, t, r, d, a, o, l, f)
-    : ((e.destructible = d), f);
+  if (!i && e.getToken() & 4194304) {
+    return On(e, t, r, d, a, o, l, f);
+  } else {
+    e.destructible = d;
+    return f;
+  }
 }
 function On(e, t, n, r, i, a, o, s) {
-  e.getToken() !== 1077936155 && e.report(26),
-    A$1(e, t | 32),
-    r & 16 && e.report(26),
-    a || O(e, s);
+  e.getToken() !== 1077936155 && e.report(26);
+  A$1(e, t | 32);
+  r & 16 && e.report(26);
+  a || O(e, s);
   const { tokenStart: c } = e,
     l = L$1(e, t, n, 1, i, c);
-  return (
-    (e.destructible =
-      ((r | 72) ^ 72) |
-      (e.destructible & 128 ? 128 : 0) |
-      (e.destructible & 256 ? 256 : 0)),
-    e.finishNode(
-      a
-        ? {
-            type: "AssignmentPattern",
-            left: s,
-            right: l,
-          }
-        : {
-            type: "AssignmentExpression",
-            left: s,
-            operator: "=",
-            right: l,
-          },
-      o,
-    )
+  e.destructible =
+    ((r | 72) ^ 72) |
+    (e.destructible & 128 ? 128 : 0) |
+    (e.destructible & 256 ? 256 : 0);
+  return e.finishNode(
+    a
+      ? {
+          type: "AssignmentPattern",
+          left: s,
+          right: l,
+        }
+      : {
+          type: "AssignmentExpression",
+          left: s,
+          operator: "=",
+          right: l,
+        },
+    o,
   );
 }
 function X(e, t, n, r, i, a, o, s, c, l) {
@@ -7234,68 +8131,98 @@ function X(e, t, n, r, i, a, o, s, c, l) {
     f = 0,
     { tokenValue: p, tokenStart: m } = e,
     h = e.getToken();
-  if (h & 143360)
-    (e.assignable = 1),
-      (d = G(e, t, r, a, 0, 1, c, 1, m)),
-      (h = e.getToken()),
-      (d = W(e, t, r, d, c, 0, m)),
-      e.getToken() !== 18 &&
-        e.getToken() !== i &&
-        (e.assignable & 2 && e.getToken() === 1077936155 && e.report(71),
-        (f |= 16),
-        (d = B$1(e, t, r, c, l, m, d))),
-      e.assignable & 2
-        ? (f |= 16)
-        : h === i || h === 18
-          ? n?.addVarOrBlock(t, p, a, o)
-          : (f |= 32),
-      (f |= e.destructible & 128 ? 128 : 0);
-  else if (h === i) e.report(41);
-  else if (h & 2097152)
-    (d =
+  if (h & 143360) {
+    e.assignable = 1;
+    d = G(e, t, r, a, 0, 1, c, 1, m);
+    h = e.getToken();
+    d = W(e, t, r, d, c, 0, m);
+    if (e.getToken() !== 18 && e.getToken() !== i) {
+      if (e.assignable & 2 && e.getToken() === 1077936155) {
+        e.report(71);
+      }
+      f |= 16;
+      d = B$1(e, t, r, c, l, m, d);
+    }
+    if (e.assignable & 2) {
+      f |= 16;
+    } else {
+      if (h === i || h === 18) {
+        n?.addVarOrBlock(t, p, a, o);
+      } else {
+        f |= 32;
+      }
+    }
+    f |= e.destructible & 128 ? 128 : 0;
+  } else if (h === i) e.report(41);
+  else if (h & 2097152) {
+    d =
       e.getToken() === 2162700
         ? Q(e, t, n, r, 1, c, l, a, o)
-        : Y(e, t, n, r, 1, c, l, a, o)),
-      (h = e.getToken()),
-      h !== 1077936155 && h !== i && h !== 18
-        ? (e.destructible & 8 && e.report(71),
-          (d = W(e, t, r, d, c, 0, m)),
-          (f |= e.assignable & 2 ? 16 : 0),
-          (e.getToken() & 4194304) === 4194304
-            ? (e.getToken() !== 1077936155 && (f |= 16),
-              (d = B$1(e, t, r, c, l, m, d)))
-            : ((e.getToken() & 8388608) === 8388608 &&
-                (d = H$1(e, t, r, 1, m, 4, h, d)),
-              E$1(e, t | 32, 22) && (d = V$1(e, t, r, d, m)),
-              (f |= e.assignable & 2 ? 16 : 32)))
-        : (f |= i === 1074790415 && h !== 1077936155 ? 16 : e.destructible);
-  else {
-    (f |= 32), (d = U(e, t, r, 1, c, 1));
+        : Y(e, t, n, r, 1, c, l, a, o);
+    h = e.getToken();
+    if (h !== 1077936155 && h !== i && h !== 18) {
+      if (e.destructible & 8) {
+        e.report(71);
+      }
+      d = W(e, t, r, d, c, 0, m);
+      f |= e.assignable & 2 ? 16 : 0;
+      if ((e.getToken() & 4194304) === 4194304) {
+        if (e.getToken() !== 1077936155) {
+          f |= 16;
+        }
+        d = B$1(e, t, r, c, l, m, d);
+      } else {
+        if ((e.getToken() & 8388608) === 8388608) {
+          d = H$1(e, t, r, 1, m, 4, h, d);
+        }
+        if (E$1(e, t | 32, 22)) {
+          d = V$1(e, t, r, d, m);
+        }
+        f |= e.assignable & 2 ? 16 : 32;
+      }
+    } else {
+      f |= i === 1074790415 && h !== 1077936155 ? 16 : e.destructible;
+    }
+  } else {
+    f |= 32;
+    d = U(e, t, r, 1, c, 1);
     const { tokenStart: n } = e,
       a = e.getToken();
-    return (
-      a === 1077936155
-        ? (e.assignable & 2 && e.report(26),
-          (d = B$1(e, t, r, c, l, n, d)),
-          (f |= 16))
-        : (a === 18 ? (f |= 16) : a !== i && (d = B$1(e, t, r, c, l, n, d)),
-          (f |= e.assignable & 1 ? 32 : 16)),
-      (e.destructible = f),
-      e.getToken() !== i && e.getToken() !== 18 && e.report(161),
-      e.finishNode(
-        {
-          type: l ? "RestElement" : "SpreadElement",
-          argument: d,
-        },
-        u,
-      )
+    if (a === 1077936155) {
+      if (e.assignable & 2) {
+        e.report(26);
+      }
+      d = B$1(e, t, r, c, l, n, d);
+      f |= 16;
+    } else {
+      if (a === 18) {
+        f |= 16;
+      } else {
+        if (a !== i) {
+          d = B$1(e, t, r, c, l, n, d);
+        }
+      }
+      f |= e.assignable & 1 ? 32 : 16;
+    }
+    e.destructible = f;
+    e.getToken() !== i && e.getToken() !== 18 && e.report(161);
+    return e.finishNode(
+      {
+        type: l ? "RestElement" : "SpreadElement",
+        argument: d,
+      },
+      u,
     );
   }
-  if (e.getToken() !== i)
-    if ((a & 1 && (f |= s ? 16 : 32), E$1(e, t | 32, 1077936155))) {
-      f & 16 && e.report(26), O(e, d);
+  if (e.getToken() !== i) {
+    if (a & 1) {
+      f |= s ? 16 : 32;
+    }
+    if (E$1(e, t | 32, 1077936155)) {
+      f & 16 && e.report(26);
+      O(e, d);
       const n = L$1(e, t, r, 1, c, e.tokenStart);
-      (d = e.finishNode(
+      d = e.finishNode(
         l
           ? {
               type: "AssignmentPattern",
@@ -7309,18 +8236,17 @@ function X(e, t, n, r, i, a, o, s, c, l) {
               right: n,
             },
         m,
-      )),
-        (f = 16);
+      );
+      f = 16;
     } else f |= 16;
-  return (
-    (e.destructible = f),
-    e.finishNode(
-      {
-        type: l ? "RestElement" : "SpreadElement",
-        argument: d,
-      },
-      u,
-    )
+  }
+  e.destructible = f;
+  return e.finishNode(
+    {
+      type: l ? "RestElement" : "SpreadElement",
+      argument: d,
+    },
+    u,
   );
 }
 function Z$1(e, t, n, r, i, a) {
@@ -7349,9 +8275,9 @@ function Z$1(e, t, n, r, i, a) {
 }
 function kn(e, t, n, r, i) {
   const a = Q(e, t, void 0, n, r, i, 0, 2, 0);
-  return (
-    e.destructible & 64 && e.report(63), e.destructible & 8 && e.report(62), a
-  );
+  e.destructible & 64 && e.report(63);
+  e.destructible & 8 && e.report(62);
+  return a;
 }
 function Q(e, t, n, r, i, a, o, s, c) {
   const { tokenStart: l } = e;
@@ -7366,269 +8292,422 @@ function Q(e, t, n, r, i, a, o, s, c) {
     else {
       let m = 0,
         h = null,
-        g;
+        g: any;
       if (
         e.getToken() & 143360 ||
         e.getToken() === -2147483528 ||
         e.getToken() === -2147483527
-      )
+      ) {
+        if (e.getToken() === -2147483527) {
+          d |= 16;
+        }
+        h = K(e, t);
         if (
-          (e.getToken() === -2147483527 && (d |= 16),
-          (h = K(e, t)),
           e.getToken() === 18 ||
-            e.getToken() === 1074790415 ||
-            e.getToken() === 1077936155)
-        )
-          if (
-            ((m |= 4),
-            t & 1 && (p & 537079808) === 537079808
-              ? (d |= 16)
-              : Re(e, t, s, p, 0),
-            n?.addVarOrBlock(t, i, s, c),
-            E$1(e, t | 32, 1077936155))
-          ) {
+          e.getToken() === 1074790415 ||
+          e.getToken() === 1077936155
+        ) {
+          m |= 4;
+          if (t & 1 && (p & 537079808) === 537079808) {
+            d |= 16;
+          } else {
+            Re(e, t, s, p, 0);
+          }
+          n?.addVarOrBlock(t, i, s, c);
+          if (E$1(e, t | 32, 1077936155)) {
             d |= 8;
             const n = L$1(e, t, r, 1, a, e.tokenStart);
-            (d |=
-              e.destructible & 256
-                ? 256
-                : 0 | (e.destructible & 128)
-                  ? 128
-                  : 0),
-              (g = e.finishNode(
-                {
-                  type: "AssignmentPattern",
-                  left: e.options.uniqueKeyInPattern ? Object.assign({}, h) : h,
-                  right: n,
-                },
-                l,
-              ));
-          } else
-            (d |= (p === 209006 ? 128 : 0) | (p === -2147483528 ? 16 : 0)),
-              (g = e.options.uniqueKeyInPattern ? Object.assign({}, h) : h);
-        else if (E$1(e, t | 32, 21)) {
+            d |=
+              e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0;
+            g = e.finishNode(
+              {
+                type: "AssignmentPattern",
+                left: e.options.uniqueKeyInPattern ? Object.assign({}, h) : h,
+                right: n,
+              },
+              l,
+            );
+          } else {
+            d |= (p === 209006 ? 128 : 0) | (p === -2147483528 ? 16 : 0);
+            g = e.options.uniqueKeyInPattern ? Object.assign({}, h) : h;
+          }
+        } else if (E$1(e, t | 32, 21)) {
           const { tokenStart: l } = e;
-          if ((i === "__proto__" && f++, e.getToken() & 143360)) {
+          i === "__proto__" && f++;
+          if (e.getToken() & 143360) {
             const i = e.getToken(),
               u = e.tokenValue;
             g = G(e, t, r, s, 0, 1, a, 1, l);
             const f = e.getToken();
-            (g = W(e, t, r, g, a, 0, l)),
-              e.getToken() === 18 || e.getToken() === 1074790415
-                ? f === 1077936155 || f === 1074790415 || f === 18
-                  ? ((d |= e.destructible & 128 ? 128 : 0),
-                    e.assignable & 2
-                      ? (d |= 16)
-                      : (i & 143360) === 143360 && n?.addVarOrBlock(t, u, s, c))
-                  : (d |= e.assignable & 1 ? 32 : 16)
-                : (e.getToken() & 4194304) === 4194304
-                  ? (e.assignable & 2
-                      ? (d |= 16)
-                      : f === 1077936155
-                        ? n?.addVarOrBlock(t, u, s, c)
-                        : (d |= 32),
-                    (g = B$1(e, t, r, a, o, l, g)))
-                  : ((d |= 16),
-                    (e.getToken() & 8388608) === 8388608 &&
-                      (g = H$1(e, t, r, 1, l, 4, f, g)),
-                    E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)));
-          } else
-            (e.getToken() & 2097152) === 2097152
-              ? ((g =
-                  e.getToken() === 69271571
-                    ? Y(e, t, n, r, 0, a, o, s, c)
-                    : Q(e, t, n, r, 0, a, o, s, c)),
-                (d = e.destructible),
-                (e.assignable = d & 16 ? 2 : 1),
-                e.getToken() === 18 || e.getToken() === 1074790415
-                  ? e.assignable & 2 && (d |= 16)
-                  : e.destructible & 8
-                    ? e.report(71)
-                    : ((g = W(e, t, r, g, a, 0, l)),
-                      (d = e.assignable & 2 ? 16 : 0),
-                      (e.getToken() & 4194304) === 4194304
-                        ? (g = Qt(e, t, r, a, o, l, g))
-                        : ((e.getToken() & 8388608) === 8388608 &&
-                            (g = H$1(e, t, r, 1, l, 4, p, g)),
-                          E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)),
-                          (d |= e.assignable & 2 ? 16 : 32))))
-              : ((g = U(e, t, r, 1, a, 1)),
-                (d |= e.assignable & 1 ? 32 : 16),
-                e.getToken() === 18 || e.getToken() === 1074790415
-                  ? e.assignable & 2 && (d |= 16)
-                  : ((g = W(e, t, r, g, a, 0, l)),
-                    (d = e.assignable & 2 ? 16 : 0),
-                    e.getToken() !== 18 &&
-                      p !== 1074790415 &&
-                      (e.getToken() !== 1077936155 && (d |= 16),
-                      (g = B$1(e, t, r, a, o, l, g)))));
-        } else
-          e.getToken() === 69271571
-            ? ((d |= 16),
-              p === 209005 && (m |= 16),
-              (m |= (p === 209008 ? 256 : p === 209009 ? 512 : 1) | 2),
-              (h = $$1(e, t, r, a)),
-              (d |= e.assignable),
-              (g = Z$1(e, t, r, m, a, e.tokenStart)))
-            : e.getToken() & 143360
-              ? ((d |= 16),
-                p === -2147483528 && e.report(95),
-                p === 209005
-                  ? (e.flags & 1 && e.report(132), (m |= 17))
-                  : p === 209008
-                    ? (m |= 256)
-                    : p === 209009
-                      ? (m |= 512)
-                      : e.report(0),
-                (h = K(e, t)),
-                (g = Z$1(e, t, r, m, a, e.tokenStart)))
-              : e.getToken() === 67174411
-                ? ((d |= 16), (m |= 1), (g = Z$1(e, t, r, m, a, e.tokenStart)))
-                : e.getToken() === 8391476
-                  ? ((d |= 16),
-                    p === 209008
-                      ? e.report(42)
-                      : p === 209009
-                        ? e.report(43)
-                        : p !== 209005 && e.report(30, w$1[52]),
-                    A$1(e, t),
-                    (m |= 9 | (p === 209005 ? 16 : 0)),
-                    e.getToken() & 143360
-                      ? (h = K(e, t))
-                      : (e.getToken() & 134217728) === 134217728
-                        ? (h = q(e, t))
-                        : e.getToken() === 69271571
-                          ? ((m |= 2),
-                            (h = $$1(e, t, r, a)),
-                            (d |= e.assignable))
-                          : e.report(30, w$1[e.getToken() & 255]),
-                    (g = Z$1(e, t, r, m, a, e.tokenStart)))
-                  : (e.getToken() & 134217728) === 134217728
-                    ? (p === 209005 && (m |= 16),
-                      (m |= p === 209008 ? 256 : p === 209009 ? 512 : 1),
-                      (d |= 16),
-                      (h = q(e, t)),
-                      (g = Z$1(e, t, r, m, a, e.tokenStart)))
-                    : e.report(133);
-      else if ((e.getToken() & 134217728) === 134217728)
-        if (((h = q(e, t)), e.getToken() === 21)) {
+            g = W(e, t, r, g, a, 0, l);
+            if (e.getToken() === 18 || e.getToken() === 1074790415) {
+              if (f === 1077936155 || f === 1074790415 || f === 18) {
+                d |= e.destructible & 128 ? 128 : 0;
+                if (e.assignable & 2) {
+                  d |= 16;
+                } else {
+                  if ((i & 143360) === 143360) {
+                    n?.addVarOrBlock(t, u, s, c);
+                  }
+                }
+              } else {
+                d |= e.assignable & 1 ? 32 : 16;
+              }
+            } else {
+              if ((e.getToken() & 4194304) === 4194304) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                } else {
+                  if (f === 1077936155) {
+                    n?.addVarOrBlock(t, u, s, c);
+                  } else {
+                    d |= 32;
+                  }
+                }
+                g = B$1(e, t, r, a, o, l, g);
+              } else {
+                d |= 16;
+                if ((e.getToken() & 8388608) === 8388608) {
+                  g = H$1(e, t, r, 1, l, 4, f, g);
+                }
+                if (E$1(e, t | 32, 22)) {
+                  g = V$1(e, t, r, g, l);
+                }
+              }
+            }
+          } else {
+            if ((e.getToken() & 2097152) === 2097152) {
+              g =
+                e.getToken() === 69271571
+                  ? Y(e, t, n, r, 0, a, o, s, c)
+                  : Q(e, t, n, r, 0, a, o, s, c);
+              d = e.destructible;
+              e.assignable = d & 16 ? 2 : 1;
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+              } else {
+                if (e.destructible & 8) {
+                  e.report(71);
+                } else {
+                  g = W(e, t, r, g, a, 0, l);
+                  d = e.assignable & 2 ? 16 : 0;
+                  if ((e.getToken() & 4194304) === 4194304) {
+                    g = Qt(e, t, r, a, o, l, g);
+                  } else {
+                    if ((e.getToken() & 8388608) === 8388608) {
+                      g = H$1(e, t, r, 1, l, 4, p, g);
+                    }
+                    if (E$1(e, t | 32, 22)) {
+                      g = V$1(e, t, r, g, l);
+                    }
+                    d |= e.assignable & 2 ? 16 : 32;
+                  }
+                }
+              }
+            } else {
+              g = U(e, t, r, 1, a, 1);
+              d |= e.assignable & 1 ? 32 : 16;
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+              } else {
+                g = W(e, t, r, g, a, 0, l);
+                d = e.assignable & 2 ? 16 : 0;
+                if (e.getToken() !== 18 && p !== 1074790415) {
+                  if (e.getToken() !== 1077936155) {
+                    d |= 16;
+                  }
+                  g = B$1(e, t, r, a, o, l, g);
+                }
+              }
+            }
+          }
+        } else {
+          if (e.getToken() === 69271571) {
+            d |= 16;
+            if (p === 209005) {
+              m |= 16;
+            }
+            m |= (p === 209008 ? 256 : p === 209009 ? 512 : 1) | 2;
+            h = $$1(e, t, r, a);
+            d |= e.assignable;
+            g = Z$1(e, t, r, m, a, e.tokenStart);
+          } else {
+            if (e.getToken() & 143360) {
+              d |= 16;
+              if (p === -2147483528) {
+                e.report(95);
+              }
+              if (p === 209005) {
+                if (e.flags & 1) {
+                  e.report(132);
+                }
+                m |= 17;
+              } else {
+                if (p === 209008) {
+                  m |= 256;
+                } else {
+                  if (p === 209009) {
+                    m |= 512;
+                  } else {
+                    e.report(0);
+                  }
+                }
+              }
+              h = K(e, t);
+              g = Z$1(e, t, r, m, a, e.tokenStart);
+            } else {
+              if (e.getToken() === 67174411) {
+                d |= 16;
+                m |= 1;
+                g = Z$1(e, t, r, m, a, e.tokenStart);
+              } else {
+                if (e.getToken() === 8391476) {
+                  d |= 16;
+                  if (p === 209008) {
+                    e.report(42);
+                  } else {
+                    if (p === 209009) {
+                      e.report(43);
+                    } else {
+                      if (p !== 209005) {
+                        e.report(30, w$1[52]);
+                      }
+                    }
+                  }
+                  A$1(e, t);
+                  m |= 9 | (p === 209005 ? 16 : 0);
+                  if (e.getToken() & 143360) {
+                    h = K(e, t);
+                  } else {
+                    if ((e.getToken() & 134217728) === 134217728) {
+                      h = q(e, t);
+                    } else {
+                      if (e.getToken() === 69271571) {
+                        m |= 2;
+                        h = $$1(e, t, r, a);
+                        d |= e.assignable;
+                      } else {
+                        e.report(30, w$1[e.getToken() & 255]);
+                      }
+                    }
+                  }
+                  g = Z$1(e, t, r, m, a, e.tokenStart);
+                } else {
+                  if ((e.getToken() & 134217728) === 134217728) {
+                    if (p === 209005) {
+                      m |= 16;
+                    }
+                    m |= p === 209008 ? 256 : p === 209009 ? 512 : 1;
+                    d |= 16;
+                    h = q(e, t);
+                    g = Z$1(e, t, r, m, a, e.tokenStart);
+                  } else {
+                    e.report(133);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } else if ((e.getToken() & 134217728) === 134217728) {
+        h = q(e, t);
+        if (e.getToken() === 21) {
           D$1(e, t | 32, 21);
           const { tokenStart: l } = e;
-          if ((i === "__proto__" && f++, e.getToken() & 143360)) {
+          i === "__proto__" && f++;
+          if (e.getToken() & 143360) {
             g = G(e, t, r, s, 0, 1, a, 1, l);
             const { tokenValue: i } = e,
               u = e.getToken();
-            (g = W(e, t, r, g, a, 0, l)),
-              e.getToken() === 18 || e.getToken() === 1074790415
-                ? u === 1077936155 || u === 1074790415 || u === 18
-                  ? e.assignable & 2
-                    ? (d |= 16)
-                    : n?.addVarOrBlock(t, i, s, c)
-                  : (d |= e.assignable & 1 ? 32 : 16)
-                : e.getToken() === 1077936155
-                  ? (e.assignable & 2 && (d |= 16),
-                    (g = B$1(e, t, r, a, o, l, g)))
-                  : ((d |= 16), (g = B$1(e, t, r, a, o, l, g)));
-          } else
-            (e.getToken() & 2097152) === 2097152
-              ? ((g =
-                  e.getToken() === 69271571
-                    ? Y(e, t, n, r, 0, a, o, s, c)
-                    : Q(e, t, n, r, 0, a, o, s, c)),
-                (d = e.destructible),
-                (e.assignable = d & 16 ? 2 : 1),
-                e.getToken() === 18 || e.getToken() === 1074790415
-                  ? e.assignable & 2 && (d |= 16)
-                  : (e.destructible & 8) !== 8 &&
-                    ((g = W(e, t, r, g, a, 0, l)),
-                    (d = e.assignable & 2 ? 16 : 0),
-                    (e.getToken() & 4194304) === 4194304
-                      ? (g = Qt(e, t, r, a, o, l, g))
-                      : ((e.getToken() & 8388608) === 8388608 &&
-                          (g = H$1(e, t, r, 1, l, 4, p, g)),
-                        E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, l)),
-                        (d |= e.assignable & 2 ? 16 : 32))))
-              : ((g = U(e, t, r, 1, 0, 1)),
-                (d |= e.assignable & 1 ? 32 : 16),
-                e.getToken() === 18 || e.getToken() === 1074790415
-                  ? e.assignable & 2 && (d |= 16)
-                  : ((g = W(e, t, r, g, a, 0, l)),
-                    (d = e.assignable & 1 ? 0 : 16),
-                    e.getToken() !== 18 &&
-                      e.getToken() !== 1074790415 &&
-                      (e.getToken() !== 1077936155 && (d |= 16),
-                      (g = B$1(e, t, r, a, o, l, g)))));
-        } else
-          e.getToken() === 67174411
-            ? ((m |= 1),
-              (g = Z$1(e, t, r, m, a, e.tokenStart)),
-              (d = e.assignable | 16))
-            : e.report(134);
-      else if (e.getToken() === 69271571)
-        if (
-          ((h = $$1(e, t, r, a)),
-          (d |= e.destructible & 256 ? 256 : 0),
-          (m |= 2),
-          e.getToken() === 21)
-        ) {
+            g = W(e, t, r, g, a, 0, l);
+            if (e.getToken() === 18 || e.getToken() === 1074790415) {
+              if (u === 1077936155 || u === 1074790415 || u === 18) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                } else {
+                  n?.addVarOrBlock(t, i, s, c);
+                }
+              } else {
+                d |= e.assignable & 1 ? 32 : 16;
+              }
+            } else {
+              if (e.getToken() === 1077936155) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+                g = B$1(e, t, r, a, o, l, g);
+              } else {
+                d |= 16;
+                g = B$1(e, t, r, a, o, l, g);
+              }
+            }
+          } else {
+            if ((e.getToken() & 2097152) === 2097152) {
+              g =
+                e.getToken() === 69271571
+                  ? Y(e, t, n, r, 0, a, o, s, c)
+                  : Q(e, t, n, r, 0, a, o, s, c);
+              d = e.destructible;
+              e.assignable = d & 16 ? 2 : 1;
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+              } else {
+                if ((e.destructible & 8) !== 8) {
+                  g = W(e, t, r, g, a, 0, l);
+                  d = e.assignable & 2 ? 16 : 0;
+                  if ((e.getToken() & 4194304) === 4194304) {
+                    g = Qt(e, t, r, a, o, l, g);
+                  } else {
+                    if ((e.getToken() & 8388608) === 8388608) {
+                      g = H$1(e, t, r, 1, l, 4, p, g);
+                    }
+                    if (E$1(e, t | 32, 22)) {
+                      g = V$1(e, t, r, g, l);
+                    }
+                    d |= e.assignable & 2 ? 16 : 32;
+                  }
+                }
+              }
+            } else {
+              g = U(e, t, r, 1, 0, 1);
+              d |= e.assignable & 1 ? 32 : 16;
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+              } else {
+                g = W(e, t, r, g, a, 0, l);
+                d = e.assignable & 1 ? 0 : 16;
+                if (e.getToken() !== 18 && e.getToken() !== 1074790415) {
+                  if (e.getToken() !== 1077936155) {
+                    d |= 16;
+                  }
+                  g = B$1(e, t, r, a, o, l, g);
+                }
+              }
+            }
+          }
+        } else {
+          if (e.getToken() === 67174411) {
+            m |= 1;
+            g = Z$1(e, t, r, m, a, e.tokenStart);
+            d = e.assignable | 16;
+          } else {
+            e.report(134);
+          }
+        }
+      } else if (e.getToken() === 69271571) {
+        h = $$1(e, t, r, a);
+        d |= e.destructible & 256 ? 256 : 0;
+        m |= 2;
+        if (e.getToken() === 21) {
           A$1(e, t | 32);
           const { tokenStart: i, tokenValue: l } = e,
             u = e.getToken();
           if (e.getToken() & 143360) {
             g = G(e, t, r, s, 0, 1, a, 1, i);
             const f = e.getToken();
-            (g = W(e, t, r, g, a, 0, i)),
-              (e.getToken() & 4194304) === 4194304
-                ? ((d |= e.assignable & 2 ? 16 : f === 1077936155 ? 0 : 32),
-                  (g = Qt(e, t, r, a, o, i, g)))
-                : e.getToken() === 18 || e.getToken() === 1074790415
-                  ? f === 1077936155 || f === 1074790415 || f === 18
-                    ? e.assignable & 2
-                      ? (d |= 16)
-                      : (u & 143360) === 143360 && n?.addVarOrBlock(t, l, s, c)
-                    : (d |= e.assignable & 1 ? 32 : 16)
-                  : ((d |= 16), (g = B$1(e, t, r, a, o, i, g)));
-          } else
-            (e.getToken() & 2097152) === 2097152
-              ? ((g =
-                  e.getToken() === 69271571
-                    ? Y(e, t, n, r, 0, a, o, s, c)
-                    : Q(e, t, n, r, 0, a, o, s, c)),
-                (d = e.destructible),
-                (e.assignable = d & 16 ? 2 : 1),
-                e.getToken() === 18 || e.getToken() === 1074790415
-                  ? e.assignable & 2 && (d |= 16)
-                  : d & 8
-                    ? e.report(62)
-                    : ((g = W(e, t, r, g, a, 0, i)),
-                      (d = e.assignable & 2 ? d | 16 : 0),
-                      (e.getToken() & 4194304) === 4194304
-                        ? (e.getToken() !== 1077936155 && (d |= 16),
-                          (g = Qt(e, t, r, a, o, i, g)))
-                        : ((e.getToken() & 8388608) === 8388608 &&
-                            (g = H$1(e, t, r, 1, i, 4, p, g)),
-                          E$1(e, t | 32, 22) && (g = V$1(e, t, r, g, i)),
-                          (d |= e.assignable & 2 ? 16 : 32))))
-              : ((g = U(e, t, r, 1, 0, 1)),
-                (d |= e.assignable & 1 ? 32 : 16),
-                e.getToken() === 18 || e.getToken() === 1074790415
-                  ? e.assignable & 2 && (d |= 16)
-                  : ((g = W(e, t, r, g, a, 0, i)),
-                    (d = e.assignable & 1 ? 0 : 16),
-                    e.getToken() !== 18 &&
-                      e.getToken() !== 1074790415 &&
-                      (e.getToken() !== 1077936155 && (d |= 16),
-                      (g = B$1(e, t, r, a, o, i, g)))));
-        } else
-          e.getToken() === 67174411
-            ? ((m |= 1), (g = Z$1(e, t, r, m, a, e.tokenStart)), (d = 16))
-            : e.report(44);
-      else if (p === 8391476)
-        if ((D$1(e, t | 32, 8391476), (m |= 8), e.getToken() & 143360)) {
+            g = W(e, t, r, g, a, 0, i);
+            if ((e.getToken() & 4194304) === 4194304) {
+              d |= e.assignable & 2 ? 16 : f === 1077936155 ? 0 : 32;
+              g = Qt(e, t, r, a, o, i, g);
+            } else {
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (f === 1077936155 || f === 1074790415 || f === 18) {
+                  if (e.assignable & 2) {
+                    d |= 16;
+                  } else {
+                    if ((u & 143360) === 143360) {
+                      n?.addVarOrBlock(t, l, s, c);
+                    }
+                  }
+                } else {
+                  d |= e.assignable & 1 ? 32 : 16;
+                }
+              } else {
+                d |= 16;
+                g = B$1(e, t, r, a, o, i, g);
+              }
+            }
+          } else {
+            if ((e.getToken() & 2097152) === 2097152) {
+              g =
+                e.getToken() === 69271571
+                  ? Y(e, t, n, r, 0, a, o, s, c)
+                  : Q(e, t, n, r, 0, a, o, s, c);
+              d = e.destructible;
+              e.assignable = d & 16 ? 2 : 1;
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+              } else {
+                if (d & 8) {
+                  e.report(62);
+                } else {
+                  g = W(e, t, r, g, a, 0, i);
+                  d = e.assignable & 2 ? d | 16 : 0;
+                  if ((e.getToken() & 4194304) === 4194304) {
+                    if (e.getToken() !== 1077936155) {
+                      d |= 16;
+                    }
+                    g = Qt(e, t, r, a, o, i, g);
+                  } else {
+                    if ((e.getToken() & 8388608) === 8388608) {
+                      g = H$1(e, t, r, 1, i, 4, p, g);
+                    }
+                    if (E$1(e, t | 32, 22)) {
+                      g = V$1(e, t, r, g, i);
+                    }
+                    d |= e.assignable & 2 ? 16 : 32;
+                  }
+                }
+              }
+            } else {
+              g = U(e, t, r, 1, 0, 1);
+              d |= e.assignable & 1 ? 32 : 16;
+              if (e.getToken() === 18 || e.getToken() === 1074790415) {
+                if (e.assignable & 2) {
+                  d |= 16;
+                }
+              } else {
+                g = W(e, t, r, g, a, 0, i);
+                d = e.assignable & 1 ? 0 : 16;
+                if (e.getToken() !== 18 && e.getToken() !== 1074790415) {
+                  if (e.getToken() !== 1077936155) {
+                    d |= 16;
+                  }
+                  g = B$1(e, t, r, a, o, i, g);
+                }
+              }
+            }
+          }
+        } else {
+          if (e.getToken() === 67174411) {
+            m |= 1;
+            g = Z$1(e, t, r, m, a, e.tokenStart);
+            d = 16;
+          } else {
+            e.report(44);
+          }
+        }
+      } else if (p === 8391476) {
+        D$1(e, t | 32, 8391476);
+        m |= 8;
+        if (e.getToken() & 143360) {
           const n = e.getToken();
-          if (((h = K(e, t)), (m |= 1), e.getToken() === 67174411))
-            (d |= 16), (g = Z$1(e, t, r, m, a, e.tokenStart));
-          else
+          h = K(e, t);
+          m |= 1;
+          if (e.getToken() === 67174411) {
+            d |= 16;
+            g = Z$1(e, t, r, m, a, e.tokenStart);
+          } else
             throw new C$1(
               e.tokenStart,
               e.currentLocation,
@@ -7639,40 +8718,49 @@ function Q(e, t, n, r, i, a, o, s, c) {
                   : 47,
               w$1[n & 255],
             );
-        } else
-          (e.getToken() & 134217728) === 134217728
-            ? ((d |= 16),
-              (h = q(e, t)),
-              (m |= 1),
-              (g = Z$1(e, t, r, m, a, e.tokenStart)))
-            : e.getToken() === 69271571
-              ? ((d |= 16),
-                (m |= 3),
-                (h = $$1(e, t, r, a)),
-                (g = Z$1(e, t, r, m, a, e.tokenStart)))
-              : e.report(126);
-      else e.report(30, w$1[p & 255]);
-      (d |= e.destructible & 128 ? 128 : 0),
-        (e.destructible = d),
-        u.push(
-          e.finishNode(
-            {
-              type: "Property",
-              key: h,
-              value: g,
-              kind: m & 768 ? (m & 512 ? "set" : "get") : "init",
-              computed: (m & 2) > 0,
-              method: (m & 1) > 0,
-              shorthand: (m & 4) > 0,
-            },
-            l,
-          ),
-        );
+        } else {
+          if ((e.getToken() & 134217728) === 134217728) {
+            d |= 16;
+            h = q(e, t);
+            m |= 1;
+            g = Z$1(e, t, r, m, a, e.tokenStart);
+          } else {
+            if (e.getToken() === 69271571) {
+              d |= 16;
+              m |= 3;
+              h = $$1(e, t, r, a);
+              g = Z$1(e, t, r, m, a, e.tokenStart);
+            } else {
+              e.report(126);
+            }
+          }
+        }
+      } else e.report(30, w$1[p & 255]);
+      d |= e.destructible & 128 ? 128 : 0;
+      e.destructible = d;
+      u.push(
+        e.finishNode(
+          {
+            type: "Property",
+            key: h,
+            value: g,
+            kind: m & 768 ? (m & 512 ? "set" : "get") : "init",
+            computed: (m & 2) > 0,
+            method: (m & 1) > 0,
+            shorthand: (m & 4) > 0,
+          },
+          l,
+        ),
+      );
     }
-    if (((d |= e.destructible), e.getToken() !== 18)) break;
+    d |= e.destructible;
+    if (e.getToken() !== 18) break;
     A$1(e, t);
   }
-  D$1(e, t, 1074790415), f > 1 && (d |= 64);
+  D$1(e, t, 1074790415);
+  if (f > 1) {
+    d |= 64;
+  }
   const p = e.finishNode(
     {
       type: o ? "ObjectPattern" : "ObjectExpression",
@@ -7680,39 +8768,60 @@ function Q(e, t, n, r, i, a, o, s, c) {
     },
     l,
   );
-  return !i && e.getToken() & 4194304
-    ? On(e, t, r, d, a, o, l, p)
-    : ((e.destructible = d), p);
+  if (!i && e.getToken() & 4194304) {
+    return On(e, t, r, d, a, o, l, p);
+  } else {
+    e.destructible = d;
+    return p;
+  }
 }
 function An(e, t, n, r, i, a, o) {
   D$1(e, t, 67174411);
   const s = [];
-  if (((e.flags = (e.flags | 128) ^ 128), e.getToken() === 16))
-    return i & 512 && e.report(37, "Setter", "one", ""), A$1(e, t), s;
-  i & 256 && e.report(37, "Getter", "no", "s"),
-    i & 512 && e.getToken() === 14 && e.report(38),
-    (t = (t | 131072) ^ 131072);
+  e.flags = (e.flags | 128) ^ 128;
+  if (e.getToken() === 16) {
+    i & 512 && e.report(37, "Setter", "one", "");
+    A$1(e, t);
+    return s;
+  }
+  i & 256 && e.report(37, "Getter", "no", "s");
+  i & 512 && e.getToken() === 14 && e.report(38);
+  t = (t | 131072) ^ 131072;
   let c = 0,
     l = 0;
   for (; e.getToken() !== 18; ) {
     let u = null,
       { tokenStart: d } = e;
-    if (
-      (e.getToken() & 143360
-        ? (t & 1 ||
-            ((e.getToken() & 36864) === 36864 && (e.flags |= 256),
-            (e.getToken() & 537079808) === 537079808 && (e.flags |= 512)),
-          (u = Qn(e, t, n, i | 1, 0)))
-        : (e.getToken() === 2162700
-            ? (u = Q(e, t, n, r, 1, o, 1, a, 0))
-            : e.getToken() === 69271571
-              ? (u = Y(e, t, n, r, 1, o, 1, a, 0))
-              : e.getToken() === 14 && (u = X(e, t, n, r, 16, a, 0, 0, o, 1)),
-          (l = 1),
-          e.destructible & 48 && e.report(50)),
-      e.getToken() === 1077936155)
-    ) {
-      A$1(e, t | 32), (l = 1);
+    if (e.getToken() & 143360) {
+      if (!(t & 1)) {
+        if ((e.getToken() & 36864) === 36864) {
+          e.flags |= 256;
+        }
+        if ((e.getToken() & 537079808) === 537079808) {
+          e.flags |= 512;
+        }
+      }
+      u = Qn(e, t, n, i | 1, 0);
+    } else {
+      if (e.getToken() === 2162700) {
+        u = Q(e, t, n, r, 1, o, 1, a, 0);
+      } else {
+        if (e.getToken() === 69271571) {
+          u = Y(e, t, n, r, 1, o, 1, a, 0);
+        } else {
+          if (e.getToken() === 14) {
+            u = X(e, t, n, r, 16, a, 0, 0, o, 1);
+          }
+        }
+      }
+      l = 1;
+      if (e.destructible & 48) {
+        e.report(50);
+      }
+    }
+    if (e.getToken() === 1077936155) {
+      A$1(e, t | 32);
+      l = 1;
       const n = L$1(e, t, r, 1, 0, e.tokenStart);
       u = e.finishNode(
         {
@@ -7723,31 +8832,34 @@ function An(e, t, n, r, i, a, o) {
         d,
       );
     }
-    if ((c++, s.push(u), !E$1(e, t, 18) || e.getToken() === 16)) break;
+    c++;
+    s.push(u);
+    if (!E$1(e, t, 18) || e.getToken() === 16) break;
   }
-  return (
-    i & 512 && c !== 1 && e.report(37, "Setter", "one", ""),
-    n?.reportScopeError(),
-    l && (e.flags |= 128),
-    D$1(e, t, 16),
-    s
-  );
+  i & 512 && c !== 1 && e.report(37, "Setter", "one", "");
+  n?.reportScopeError();
+  if (l) {
+    e.flags |= 128;
+  }
+  D$1(e, t, 16);
+  return s;
 }
 function $$1(e, t, n, r) {
   A$1(e, t | 32);
   const i = L$1(e, (t | 131072) ^ 131072, n, 1, r, e.tokenStart);
-  return D$1(e, t, 20), i;
+  D$1(e, t, 20);
+  return i;
 }
 function jn(e, t, n, r, i, a, o) {
   e.flags = (e.flags | 128) ^ 128;
   const s = e.tokenStart;
   A$1(e, t | 262176);
   const c = e.createScopeIfLexical()?.createChildScope(512);
-  if (((t = (t | 131072) ^ 131072), E$1(e, t, 16)))
-    return Pn(e, t, c, n, [], r, 0, o);
+  t = (t | 131072) ^ 131072;
+  if (E$1(e, t, 16)) return Pn(e, t, c, n, [], r, 0, o);
   let l = 0;
   e.destructible &= -385;
-  let u,
+  let u: any,
     d = [],
     f = 0,
     p = 0,
@@ -7756,142 +8868,183 @@ function jn(e, t, n, r, i, a, o) {
   for (e.assignable = 1; e.getToken() !== 16; ) {
     const { tokenStart: r } = e,
       o = e.getToken();
-    if (o & 143360)
-      c?.addBlockName(t, e.tokenValue, 1, 0),
-        (o & 537079808) === 537079808
-          ? (p = 1)
-          : (o & 36864) === 36864 && (m = 1),
-        (u = G(e, t, n, i, 0, 1, 1, 1, r)),
-        e.getToken() === 16 || e.getToken() === 18
-          ? e.assignable & 2 && ((l |= 16), (p = 1))
-          : (e.getToken() === 1077936155 ? (p = 1) : (l |= 16),
-            (u = W(e, t, n, u, 1, 0, r)),
-            e.getToken() !== 16 &&
-              e.getToken() !== 18 &&
-              (u = B$1(e, t, n, 1, 0, r, u)));
-    else if ((o & 2097152) === 2097152)
-      (u =
+    if (o & 143360) {
+      c?.addBlockName(t, e.tokenValue, 1, 0);
+      if ((o & 537079808) === 537079808) {
+        p = 1;
+      } else {
+        if ((o & 36864) === 36864) {
+          m = 1;
+        }
+      }
+      u = G(e, t, n, i, 0, 1, 1, 1, r);
+      if (e.getToken() === 16 || e.getToken() === 18) {
+        if (e.assignable & 2) {
+          l |= 16;
+          p = 1;
+        }
+      } else {
+        if (e.getToken() === 1077936155) {
+          p = 1;
+        } else {
+          l |= 16;
+        }
+        u = W(e, t, n, u, 1, 0, r);
+        if (e.getToken() !== 16 && e.getToken() !== 18) {
+          u = B$1(e, t, n, 1, 0, r, u);
+        }
+      }
+    } else if ((o & 2097152) === 2097152) {
+      u =
         o === 2162700
           ? Q(e, t | 262144, c, n, 0, 1, 0, i, a)
-          : Y(e, t | 262144, c, n, 0, 1, 0, i, a)),
-        (l |= e.destructible),
-        (p = 1),
-        (e.assignable = 2),
-        e.getToken() !== 16 &&
-          e.getToken() !== 18 &&
-          (l & 8 && e.report(122),
-          (u = W(e, t, n, u, 0, 0, r)),
-          (l |= 16),
-          e.getToken() !== 16 &&
-            e.getToken() !== 18 &&
-            (u = B$1(e, t, n, 0, 0, r, u)));
-    else if (o === 14) {
-      (u = X(e, t, c, n, 16, i, a, 0, 1, 0)),
-        e.destructible & 16 && e.report(74),
-        (p = 1),
-        f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u),
-        (l |= 8);
+          : Y(e, t | 262144, c, n, 0, 1, 0, i, a);
+      l |= e.destructible;
+      p = 1;
+      e.assignable = 2;
+      if (e.getToken() !== 16 && e.getToken() !== 18) {
+        if (l & 8) {
+          e.report(122);
+        }
+        u = W(e, t, n, u, 0, 0, r);
+        l |= 16;
+        if (e.getToken() !== 16 && e.getToken() !== 18) {
+          u = B$1(e, t, n, 0, 0, r, u);
+        }
+      }
+    } else if (o === 14) {
+      u = X(e, t, c, n, 16, i, a, 0, 1, 0);
+      e.destructible & 16 && e.report(74);
+      p = 1;
+      f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u);
+      l |= 8;
       break;
     } else {
-      if (
-        ((l |= 16),
-        (u = L$1(e, t, n, 1, 1, r)),
-        f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u),
-        e.getToken() === 18 && (f || ((f = 1), (d = [u]))),
-        f)
-      ) {
-        for (; E$1(e, t | 32, 18); ) d.push(L$1(e, t, n, 1, 1, e.tokenStart));
-        (e.assignable = 2),
-          (u = e.finishNode(
-            {
-              type: "SequenceExpression",
-              expressions: d,
-            },
-            h,
-          ));
+      l |= 16;
+      u = L$1(e, t, n, 1, 1, r);
+      f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u);
+      if (e.getToken() === 18) {
+        if (!f) {
+          f = 1;
+          d = [u];
+        }
       }
-      return (
-        D$1(e, t, 16),
-        (e.destructible = l),
-        e.options.preserveParens
-          ? e.finishNode(
-              {
-                type: "ParenthesizedExpression",
-                expression: u,
-              },
-              s,
-            )
-          : u
-      );
+      if (f) {
+        for (; E$1(e, t | 32, 18); ) d.push(L$1(e, t, n, 1, 1, e.tokenStart));
+        e.assignable = 2;
+        u = e.finishNode(
+          {
+            type: "SequenceExpression",
+            expressions: d,
+          },
+          h,
+        );
+      }
+      D$1(e, t, 16);
+      e.destructible = l;
+      return e.options.preserveParens
+        ? e.finishNode(
+            {
+              type: "ParenthesizedExpression",
+              expression: u,
+            },
+            s,
+          )
+        : u;
     }
-    if (
-      (f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u),
-      !E$1(e, t | 32, 18))
-    )
-      break;
-    if ((f || ((f = 1), (d = [u])), e.getToken() === 16)) {
+    f && (e.getToken() === 16 || e.getToken() === 18) && d.push(u);
+    if (!E$1(e, t | 32, 18)) break;
+    if (!f) {
+      f = 1;
+      d = [u];
+    }
+    if (e.getToken() === 16) {
       l |= 8;
       break;
     }
   }
-  return (
-    f &&
-      ((e.assignable = 2),
-      (u = e.finishNode(
+  if (f) {
+    e.assignable = 2;
+    u = e.finishNode(
+      {
+        type: "SequenceExpression",
+        expressions: d,
+      },
+      h,
+    );
+  }
+  D$1(e, t, 16);
+  l & 16 && l & 8 && e.report(151);
+  l |= e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0;
+  if (e.getToken() === 10) {
+    if (l & 48) {
+      e.report(49);
+    }
+    if (t & 2050 && l & 128) {
+      e.report(31);
+    }
+    if (t & 1025 && l & 256) {
+      e.report(32);
+    }
+    if (p) {
+      e.flags |= 128;
+    }
+    if (m) {
+      e.flags |= 256;
+    }
+    return Pn(e, t, c, n, f ? d : [u], r, 0, o);
+  } else {
+    if (l & 64) {
+      e.report(63);
+    }
+    if (l & 8) {
+      e.report(144);
+    }
+    e.destructible = ((e.destructible | 256) ^ 256) | l;
+    if (e.options.preserveParens) {
+      return e.finishNode(
         {
-          type: "SequenceExpression",
-          expressions: d,
+          type: "ParenthesizedExpression",
+          expression: u,
         },
-        h,
-      ))),
-    D$1(e, t, 16),
-    l & 16 && l & 8 && e.report(151),
-    (l |= e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0),
-    e.getToken() === 10
-      ? (l & 48 && e.report(49),
-        t & 2050 && l & 128 && e.report(31),
-        t & 1025 && l & 256 && e.report(32),
-        p && (e.flags |= 128),
-        m && (e.flags |= 256),
-        Pn(e, t, c, n, f ? d : [u], r, 0, o))
-      : (l & 64 && e.report(63),
-        l & 8 && e.report(144),
-        (e.destructible = ((e.destructible | 256) ^ 256) | l),
-        e.options.preserveParens
-          ? e.finishNode(
-              {
-                type: "ParenthesizedExpression",
-                expression: u,
-              },
-              s,
-            )
-          : u)
-  );
+        s,
+      );
+    } else {
+      return u;
+    }
+  }
 }
 function Mn(e, t, n) {
   let { tokenStart: r } = e,
     { tokenValue: i } = e,
     a = 0,
     o = 0;
-  (e.getToken() & 537079808) === 537079808
-    ? (a = 1)
-    : (e.getToken() & 36864) === 36864 && (o = 1);
+  if ((e.getToken() & 537079808) === 537079808) {
+    a = 1;
+  } else {
+    if ((e.getToken() & 36864) === 36864) {
+      o = 1;
+    }
+  }
   const s = K(e, t);
-  if (((e.assignable = 1), e.getToken() === 10)) {
+  e.assignable = 1;
+  if (e.getToken() === 10) {
     const c = e.options.lexical ? lt(e, t, i) : void 0;
-    return (
-      a && (e.flags |= 128), o && (e.flags |= 256), Fn(e, t, c, n, [s], 0, r)
-    );
+    if (a) {
+      e.flags |= 128;
+    }
+    if (o) {
+      e.flags |= 256;
+    }
+    return Fn(e, t, c, n, [s], 0, r);
   }
   return s;
 }
 function Nn(e, t, n, r, i, a, o, s, c) {
-  return (
-    o || e.report(57),
-    a && e.report(51),
-    (e.flags &= -129),
-    Fn(e, t, e.options.lexical ? lt(e, t, r) : void 0, n, [i], s, c)
-  );
+  o || e.report(57);
+  a && e.report(51);
+  e.flags &= -129;
+  return Fn(e, t, e.options.lexical ? lt(e, t, r) : void 0, n, [i], s, c);
 }
 function Pn(e, t, n, r, i, a, o, s) {
   a || e.report(57);
@@ -7899,19 +9052,36 @@ function Pn(e, t, n, r, i, a, o, s) {
   return Fn(e, t, n, r, i, o, s);
 }
 function Fn(e, t, n, r, i, a, o) {
-  e.flags & 1 && e.report(48), D$1(e, t | 32, 10);
+  e.flags & 1 && e.report(48);
+  D$1(e, t | 32, 10);
   const s = 535552;
   t = ((t | s) ^ s) | (a ? 2048 : 0);
   let c = e.getToken() !== 2162700,
-    l;
-  if ((n?.reportScopeError(), c))
-    (e.flags = (e.flags | 4928) ^ 4928), (l = L$1(e, t, r, 1, 0, e.tokenStart));
-  else {
+    l: any;
+  n?.reportScopeError();
+  if (c) {
+    e.flags = (e.flags | 4928) ^ 4928;
+    l = L$1(e, t, r, 1, 0, e.tokenStart);
+  } else {
     n = n?.createChildScope(64);
     const i = 131084;
     switch (
-      ((l = rn(e, ((t | i) ^ i) | 4096, n, r, 16, void 0, void 0)),
-      e.getToken())
+      (() => {
+        (() => {
+          const assignedValue = rn(
+            e,
+            ((t | i) ^ i) | 4096,
+            n,
+            r,
+            16,
+            void 0,
+            void 0,
+          );
+          l = assignedValue;
+          return assignedValue;
+        })();
+        return e.getToken();
+      })()
     ) {
       case 69271571:
         e.flags & 1 || e.report(116);
@@ -7920,57 +9090,74 @@ function Fn(e, t, n, r, i, a, o) {
       case 67174409:
       case 22:
         e.report(117);
+        e.flags & 1 || e.report(116);
+        e.flags |= 1024;
+        break;
       case 67174411:
-        e.flags & 1 || e.report(116), (e.flags |= 1024);
+        e.flags & 1 || e.report(116);
+        e.flags |= 1024;
     }
     (e.getToken() & 8388608) === 8388608 &&
       !(e.flags & 1) &&
-      e.report(30, w$1[e.getToken() & 255]),
-      (e.getToken() & 33619968) === 33619968 && e.report(125);
+      e.report(30, w$1[e.getToken() & 255]);
+    (e.getToken() & 33619968) === 33619968 && e.report(125);
   }
-  return (
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "ArrowFunctionExpression",
-        params: i,
-        body: l,
-        async: a === 1,
-        expression: c,
-        generator: !1,
-      },
-      o,
-    )
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "ArrowFunctionExpression",
+      params: i,
+      body: l,
+      async: a === 1,
+      expression: c,
+      generator: !1,
+    },
+    o,
   );
 }
 function In(e, t, n, r, i, a) {
-  D$1(e, t, 67174411), (e.flags = (e.flags | 128) ^ 128);
+  D$1(e, t, 67174411);
+  e.flags = (e.flags | 128) ^ 128;
   const o = [];
   if (E$1(e, t, 16)) return o;
   t = (t | 131072) ^ 131072;
   let s = 0;
   for (; e.getToken() !== 18; ) {
-    let c,
+    let c: any,
       { tokenStart: l } = e,
       u = e.getToken();
-    if (
-      (u & 143360
-        ? (t & 1 ||
-            ((u & 36864) === 36864 && (e.flags |= 256),
-            (u & 537079808) === 537079808 && (e.flags |= 512)),
-          (c = Qn(e, t, n, a | 1, 0)))
-        : (u === 2162700
-            ? (c = Q(e, t, n, r, 1, i, 1, a, 0))
-            : u === 69271571
-              ? (c = Y(e, t, n, r, 1, i, 1, a, 0))
-              : u === 14
-                ? (c = X(e, t, n, r, 16, a, 0, 0, i, 1))
-                : e.report(30, w$1[u & 255]),
-          (s = 1),
-          e.destructible & 48 && e.report(50)),
-      e.getToken() === 1077936155)
-    ) {
-      A$1(e, t | 32), (s = 1);
+    if (u & 143360) {
+      if (!(t & 1)) {
+        if ((u & 36864) === 36864) {
+          e.flags |= 256;
+        }
+        if ((u & 537079808) === 537079808) {
+          e.flags |= 512;
+        }
+      }
+      c = Qn(e, t, n, a | 1, 0);
+    } else {
+      if (u === 2162700) {
+        c = Q(e, t, n, r, 1, i, 1, a, 0);
+      } else {
+        if (u === 69271571) {
+          c = Y(e, t, n, r, 1, i, 1, a, 0);
+        } else {
+          if (u === 14) {
+            c = X(e, t, n, r, 16, a, 0, 0, i, 1);
+          } else {
+            e.report(30, w$1[u & 255]);
+          }
+        }
+      }
+      s = 1;
+      if (e.destructible & 48) {
+        e.report(50);
+      }
+    }
+    if (e.getToken() === 1077936155) {
+      A$1(e, t | 32);
+      s = 1;
       const n = L$1(e, t, r, 1, i, e.tokenStart);
       c = e.finishNode(
         {
@@ -7981,20 +9168,22 @@ function In(e, t, n, r, i, a) {
         l,
       );
     }
-    if ((o.push(c), !E$1(e, t, 18) || e.getToken() === 16)) break;
+    o.push(c);
+    if (!E$1(e, t, 18) || e.getToken() === 16) break;
   }
-  return (
-    s && (e.flags |= 128),
-    (s || t & 1) && n?.reportScopeError(),
-    D$1(e, t, 16),
-    o
-  );
+  if (s) {
+    e.flags |= 128;
+  }
+  (s || t & 1) && n?.reportScopeError();
+  D$1(e, t, 16);
+  return o;
 }
 function Ln(e, t, n, r, i, a) {
   const o = e.getToken();
   if (o & 67108864) {
     if (o === 67108877) {
-      A$1(e, t | 262144), (e.assignable = 1);
+      A$1(e, t | 262144);
+      e.assignable = 1;
       const i = cn(e, t, n);
       return Ln(
         e,
@@ -8018,48 +9207,44 @@ function Ln(e, t, n, r, i, a) {
       A$1(e, t | 32);
       const { tokenStart: o } = e,
         s = z$1(e, t, n, i, 1, o);
-      return (
-        D$1(e, t, 20),
-        (e.assignable = 1),
-        Ln(
-          e,
-          t,
-          n,
-          e.finishNode(
-            {
-              type: "MemberExpression",
-              object: r,
-              computed: !0,
-              property: s,
-              optional: !1,
-            },
-            a,
-          ),
-          0,
+      D$1(e, t, 20);
+      e.assignable = 1;
+      return Ln(
+        e,
+        t,
+        n,
+        e.finishNode(
+          {
+            type: "MemberExpression",
+            object: r,
+            computed: !0,
+            property: s,
+            optional: !1,
+          },
           a,
-        )
+        ),
+        0,
+        a,
       );
     }
-    if (o === 67174408 || o === 67174409)
-      return (
-        (e.assignable = 2),
-        Ln(
-          e,
-          t,
-          n,
-          e.finishNode(
-            {
-              type: "TaggedTemplateExpression",
-              tag: r,
-              quasi:
-                e.getToken() === 67174408 ? bn(e, t | 64, n) : yn(e, t | 64),
-            },
-            a,
-          ),
-          0,
+    if (o === 67174408 || o === 67174409) {
+      e.assignable = 2;
+      return Ln(
+        e,
+        t,
+        n,
+        e.finishNode(
+          {
+            type: "TaggedTemplateExpression",
+            tag: r,
+            quasi: e.getToken() === 67174408 ? bn(e, t | 64, n) : yn(e, t | 64),
+          },
           a,
-        )
+        ),
+        0,
+        a,
       );
+    }
   }
   return r;
 }
@@ -8068,26 +9253,27 @@ function Rn(e, t, n, r) {
     a = K(e, t | 32),
     { tokenStart: o } = e;
   if (E$1(e, t, 67108877)) {
-    if (t & 65536 && e.getToken() === 209029)
-      return (e.assignable = 2), zn(e, t, a, i);
+    if (t & 65536 && e.getToken() === 209029) {
+      e.assignable = 2;
+      return zn(e, t, a, i);
+    }
     e.report(94);
   }
-  (e.assignable = 2),
-    (e.getToken() & 16842752) === 16842752 &&
-      e.report(65, w$1[e.getToken() & 255]);
+  e.assignable = 2;
+  (e.getToken() & 16842752) === 16842752 &&
+    e.report(65, w$1[e.getToken() & 255]);
   const s = G(e, t, n, 2, 1, 0, r, 1, o);
-  (t = (t | 131072) ^ 131072), e.getToken() === 67108990 && e.report(168);
+  t = (t | 131072) ^ 131072;
+  e.getToken() === 67108990 && e.report(168);
   const c = Ln(e, t, n, s, r, o);
-  return (
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "NewExpression",
-        callee: c,
-        arguments: e.getToken() === 67174411 ? Cn(e, t, n, r) : [],
-      },
-      i,
-    )
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "NewExpression",
+      callee: c,
+      arguments: e.getToken() === 67174411 ? Cn(e, t, n, r) : [],
+    },
+    i,
   );
 }
 function zn(e, t, n, r) {
@@ -8102,29 +9288,36 @@ function zn(e, t, n, r) {
   );
 }
 function Bn(e, t, n, r, i) {
-  return (
-    e.getToken() === 209006 && e.report(31),
-    t & 1025 && e.getToken() === 241771 && e.report(32),
-    Ge(e, t, e.getToken()),
-    (e.getToken() & 36864) === 36864 && (e.flags |= 256),
-    Nn(e, (t & -524289) | 2048, n, e.tokenValue, K(e, t), 0, r, 1, i)
-  );
+  e.getToken() === 209006 && e.report(31);
+  t & 1025 && e.getToken() === 241771 && e.report(32);
+  Ge(e, t, e.getToken());
+  if ((e.getToken() & 36864) === 36864) {
+    e.flags |= 256;
+  }
+  return Nn(e, (t & -524289) | 2048, n, e.tokenValue, K(e, t), 0, r, 1, i);
 }
 function Vn(e, t, n, r, i, a, o, s, c) {
   A$1(e, t | 32);
   const l = e.createScopeIfLexical()?.createChildScope(512);
-  if (((t = (t | 131072) ^ 131072), E$1(e, t, 16)))
-    return e.getToken() === 10
-      ? (s & 1 && e.report(48), Pn(e, t, l, n, [], i, 1, c))
-      : e.finishNode(
-          {
-            type: "CallExpression",
-            callee: r,
-            arguments: [],
-            optional: !1,
-          },
-          c,
-        );
+  t = (t | 131072) ^ 131072;
+  if (E$1(e, t, 16)) {
+    if (e.getToken() === 10) {
+      if (s & 1) {
+        e.report(48);
+      }
+      return Pn(e, t, l, n, [], i, 1, c);
+    } else {
+      return e.finishNode(
+        {
+          type: "CallExpression",
+          callee: r,
+          arguments: [],
+          optional: !1,
+        },
+        c,
+      );
+    }
+  }
   let u = 0,
     d = null,
     f = 0;
@@ -8133,121 +9326,179 @@ function Vn(e, t, n, r, i, a, o, s, c) {
   for (; e.getToken() !== 16; ) {
     const { tokenStart: i } = e,
       s = e.getToken();
-    if (s & 143360)
-      l?.addBlockName(t, e.tokenValue, a, 0),
-        (s & 537079808) === 537079808
-          ? (e.flags |= 512)
-          : (s & 36864) === 36864 && (e.flags |= 256),
-        (d = G(e, t, n, a, 0, 1, 1, 1, i)),
-        e.getToken() === 16 || e.getToken() === 18
-          ? e.assignable & 2 && ((u |= 16), (f = 1))
-          : (e.getToken() === 1077936155 ? (f = 1) : (u |= 16),
-            (d = W(e, t, n, d, 1, 0, i)),
-            e.getToken() !== 16 &&
-              e.getToken() !== 18 &&
-              (d = B$1(e, t, n, 1, 0, i, d)));
-    else if (s & 2097152)
-      (d =
+    if (s & 143360) {
+      l?.addBlockName(t, e.tokenValue, a, 0);
+      if ((s & 537079808) === 537079808) {
+        e.flags |= 512;
+      } else {
+        if ((s & 36864) === 36864) {
+          e.flags |= 256;
+        }
+      }
+      d = G(e, t, n, a, 0, 1, 1, 1, i);
+      if (e.getToken() === 16 || e.getToken() === 18) {
+        if (e.assignable & 2) {
+          u |= 16;
+          f = 1;
+        }
+      } else {
+        if (e.getToken() === 1077936155) {
+          f = 1;
+        } else {
+          u |= 16;
+        }
+        d = W(e, t, n, d, 1, 0, i);
+        if (e.getToken() !== 16 && e.getToken() !== 18) {
+          d = B$1(e, t, n, 1, 0, i, d);
+        }
+      }
+    } else if (s & 2097152) {
+      d =
         s === 2162700
           ? Q(e, t, l, n, 0, 1, 0, a, o)
-          : Y(e, t, l, n, 0, 1, 0, a, o)),
-        (u |= e.destructible),
-        (f = 1),
-        e.getToken() !== 16 &&
-          e.getToken() !== 18 &&
-          (u & 8 && e.report(122),
-          (d = W(e, t, n, d, 0, 0, i)),
-          (u |= 16),
-          (e.getToken() & 8388608) === 8388608 &&
-            (d = H$1(e, t, n, 1, c, 4, s, d)),
-          E$1(e, t | 32, 22) && (d = V$1(e, t, n, d, c)));
-    else if (s === 14)
-      (d = X(e, t, l, n, 16, a, o, 1, 1, 0)),
-        (u |= (e.getToken() === 16 ? 0 : 16) | e.destructible),
-        (f = 1);
-    else {
+          : Y(e, t, l, n, 0, 1, 0, a, o);
+      u |= e.destructible;
+      f = 1;
+      if (e.getToken() !== 16 && e.getToken() !== 18) {
+        if (u & 8) {
+          e.report(122);
+        }
+        d = W(e, t, n, d, 0, 0, i);
+        u |= 16;
+        if ((e.getToken() & 8388608) === 8388608) {
+          d = H$1(e, t, n, 1, c, 4, s, d);
+        }
+        if (E$1(e, t | 32, 22)) {
+          d = V$1(e, t, n, d, c);
+        }
+      }
+    } else if (s === 14) {
+      d = X(e, t, l, n, 16, a, o, 1, 1, 0);
+      u |= (e.getToken() === 16 ? 0 : 16) | e.destructible;
+      f = 1;
+    } else {
       for (
-        d = L$1(e, t, n, 1, 0, i), u = e.assignable, p.push(d);
+        (() => {
+          d = L$1(e, t, n, 1, 0, i);
+          u = e.assignable;
+          return p.push(d);
+        })();
         E$1(e, t | 32, 18);
       )
         p.push(L$1(e, t, n, 1, 0, i));
-      return (
-        (u |= e.assignable),
-        D$1(e, t, 16),
-        (e.destructible = u | 16),
-        (e.assignable = 2),
-        e.finishNode(
-          {
-            type: "CallExpression",
-            callee: r,
-            arguments: p,
-            optional: !1,
-          },
-          c,
-        )
+      u |= e.assignable;
+      D$1(e, t, 16);
+      e.destructible = u | 16;
+      e.assignable = 2;
+      return e.finishNode(
+        {
+          type: "CallExpression",
+          callee: r,
+          arguments: p,
+          optional: !1,
+        },
+        c,
       );
     }
-    if ((p.push(d), !E$1(e, t | 32, 18))) break;
+    p.push(d);
+    if (!E$1(e, t | 32, 18)) break;
   }
-  return (
-    D$1(e, t, 16),
-    (u |= e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0),
-    e.getToken() === 10
-      ? (u & 48 && e.report(27),
-        (e.flags & 1 || s & 1) && e.report(48),
-        u & 128 && e.report(31),
-        t & 1025 && u & 256 && e.report(32),
-        f && (e.flags |= 128),
-        Pn(e, t | 2048, l, n, p, i, 1, c))
-      : (u & 64 && e.report(63),
-        u & 8 && e.report(62),
-        (e.assignable = 2),
-        e.finishNode(
-          {
-            type: "CallExpression",
-            callee: r,
-            arguments: p,
-            optional: !1,
-          },
-          c,
-        ))
-  );
+  D$1(e, t, 16);
+  u |= e.destructible & 256 ? 256 : 0 | (e.destructible & 128) ? 128 : 0;
+  if (e.getToken() === 10) {
+    if (u & 48) {
+      e.report(27);
+    }
+    if (e.flags & 1 || s & 1) {
+      e.report(48);
+    }
+    if (u & 128) {
+      e.report(31);
+    }
+    if (t & 1025 && u & 256) {
+      e.report(32);
+    }
+    if (f) {
+      e.flags |= 128;
+    }
+    return Pn(e, t | 2048, l, n, p, i, 1, c);
+  } else {
+    if (u & 64) {
+      e.report(63);
+    }
+    if (u & 8) {
+      e.report(62);
+    }
+    e.assignable = 2;
+    return e.finishNode(
+      {
+        type: "CallExpression",
+        callee: r,
+        arguments: p,
+        optional: !1,
+      },
+      c,
+    );
+  }
 }
 function Hn(e, t) {
   const { tokenRaw: n, tokenRegExp: r, tokenValue: i, tokenStart: a } = e;
-  A$1(e, t), (e.assignable = 2);
+  A$1(e, t);
+  e.assignable = 2;
   const o = {
     type: "Literal",
     value: i,
     regex: r,
   };
-  return e.options.raw && (o.raw = n), e.finishNode(o, a);
+  if (e.options.raw) {
+    o.raw = n;
+  }
+  return e.finishNode(o, a);
 }
 function Un(e, t, n, r, i) {
-  let a, o;
-  e.leadingDecorators.decorators.length
-    ? (e.getToken() === 132 && e.report(30, "@"),
-      (a = e.leadingDecorators.start),
-      (o = [...e.leadingDecorators.decorators]),
-      (e.leadingDecorators.decorators.length = 0))
-    : ((a = e.tokenStart), (o = Gn(e, t, r))),
-    (t = (t | 16385) ^ 16384),
-    A$1(e, t);
+  let a: any, o: any;
+  if (e.leadingDecorators.decorators.length) {
+    if (e.getToken() === 132) {
+      e.report(30, "@");
+    }
+    a = e.leadingDecorators.start;
+    o = [...e.leadingDecorators.decorators];
+    e.leadingDecorators.decorators.length = 0;
+  } else {
+    a = e.tokenStart;
+    o = Gn(e, t, r);
+  }
+  t = (t | 16385) ^ 16384;
+  A$1(e, t);
   let s = null,
     c = null,
     { tokenValue: l } = e;
-  e.getToken() & 4096 && e.getToken() !== 20565
-    ? (Be(e, t, e.getToken()) && e.report(118),
-      (e.getToken() & 537079808) === 537079808 && e.report(119),
-      n &&
-        (n.addBlockName(t, l, 32, 0),
-        i && i & 2 && e.declareUnboundVariable(l)),
-      (s = K(e, t)))
-    : i & 1 || e.report(39, "Class");
+  if (e.getToken() & 4096 && e.getToken() !== 20565) {
+    if (Be(e, t, e.getToken())) {
+      e.report(118);
+    }
+    if ((e.getToken() & 537079808) === 537079808) {
+      e.report(119);
+    }
+    if (n) {
+      n.addBlockName(t, l, 32, 0);
+      if (i && i & 2) {
+        e.declareUnboundVariable(l);
+      }
+    }
+    s = K(e, t);
+  } else {
+    if (!(i & 1)) {
+      e.report(39, "Class");
+    }
+  }
   let u = t;
-  E$1(e, t | 32, 20565)
-    ? ((c = U(e, t, r, 0, 0, 0)), (u |= 512))
-    : (u = (u | 512) ^ 512);
+  if (E$1(e, t | 32, 20565)) {
+    c = U(e, t, r, 0, 0, 0);
+    u |= 512;
+  } else {
+    u = (u | 512) ^ 512;
+  }
   const d = qn(e, u, t, n, r, 2, 8, 0);
   return e.finishNode(
     {
@@ -8264,30 +9515,35 @@ function Wn(e, t, n, r, i) {
   let a = null,
     o = null,
     s = Gn(e, t, n);
-  (t = (t | 16385) ^ 16384),
-    A$1(e, t),
-    e.getToken() & 4096 &&
-      e.getToken() !== 20565 &&
-      (Be(e, t, e.getToken()) && e.report(118),
-      (e.getToken() & 537079808) === 537079808 && e.report(119),
-      (a = K(e, t)));
+  t = (t | 16385) ^ 16384;
+  A$1(e, t);
+  if (e.getToken() & 4096 && e.getToken() !== 20565) {
+    if (Be(e, t, e.getToken())) {
+      e.report(118);
+    }
+    if ((e.getToken() & 537079808) === 537079808) {
+      e.report(119);
+    }
+    a = K(e, t);
+  }
   let c = t;
-  E$1(e, t | 32, 20565)
-    ? ((o = U(e, t, n, 0, r, 0)), (c |= 512))
-    : (c = (c | 512) ^ 512);
+  if (E$1(e, t | 32, 20565)) {
+    o = U(e, t, n, 0, r, 0);
+    c |= 512;
+  } else {
+    c = (c | 512) ^ 512;
+  }
   const l = qn(e, c, t, void 0, n, 2, 0, r);
-  return (
-    (e.assignable = 2),
-    e.finishNode(
-      {
-        type: "ClassExpression",
-        id: a,
-        superClass: o,
-        body: l,
-        ...(e.options.next ? { decorators: s } : null),
-      },
-      i,
-    )
+  e.assignable = 2;
+  return e.finishNode(
+    {
+      type: "ClassExpression",
+      id: a,
+      superClass: o,
+      body: l,
+      ...(e.options.next ? { decorators: s } : null),
+    },
+    i,
   );
 }
 function Gn(e, t, n) {
@@ -8299,15 +9555,13 @@ function Kn(e, t, n) {
   const r = e.tokenStart;
   A$1(e, t | 32);
   let i = G(e, t, n, 2, 0, 1, 0, 1, r);
-  return (
-    (i = W(e, t, n, i, 0, 0, e.tokenStart)),
-    e.finishNode(
-      {
-        type: "Decorator",
-        expression: i,
-      },
-      r,
-    )
+  i = W(e, t, n, i, 0, 0, e.tokenStart);
+  return e.finishNode(
+    {
+      type: "Decorator",
+      expression: i,
+    },
+    r,
   );
 }
 function qn(e, t, n, r, i, a, o, s) {
@@ -8322,27 +9576,23 @@ function qn(e, t, n, r, i, a, o, s) {
   for (; e.getToken() !== 1074790415; ) {
     const i = e.tokenStart,
       o = Gn(e, t, l);
-    if (
-      (o.length > 0 && e.tokenValue === "constructor" && e.report(109),
-      e.getToken() === 1074790415 && e.report(108),
-      E$1(e, t, 1074790417))
-    ) {
+    o.length > 0 && e.tokenValue === "constructor" && e.report(109);
+    e.getToken() === 1074790415 && e.report(108);
+    if (E$1(e, t, 1074790417)) {
       o.length > 0 && e.report(120);
       continue;
     }
     f.push(Jn(e, t, r, l, n, a, o, 0, s, o.length > 0 ? i : e.tokenStart));
   }
-  return (
-    D$1(e, o & 8 ? t | 32 : t, 1074790415),
-    l?.validatePrivateIdentifierRefs(),
-    (e.flags = (e.flags & -33) | d),
-    e.finishNode(
-      {
-        type: "ClassBody",
-        body: f,
-      },
-      c,
-    )
+  D$1(e, o & 8 ? t | 32 : t, 1074790415);
+  l?.validatePrivateIdentifierRefs();
+  e.flags = (e.flags & -33) | d;
+  return e.finishNode(
+    {
+      type: "ClassBody",
+      body: f,
+    },
+    c,
   );
 }
 function Jn(e, t, n, r, i, a, o, s, c, l) {
@@ -8350,7 +9600,16 @@ function Jn(e, t, n, r, i, a, o, s, c, l) {
     d = null,
     f = e.getToken();
   if (f & 176128 || f === -2147483528)
-    switch (((d = K(e, t)), f)) {
+    switch (
+      (() => {
+        (() => {
+          const assignedValue = K(e, t);
+          d = assignedValue;
+          return assignedValue;
+        })();
+        return f;
+      })()
+    ) {
       case 36970:
         if (
           !s &&
@@ -8385,49 +9644,85 @@ function Jn(e, t, n, r, i, a, o, s, c, l) {
         if (e.getToken() !== 67174411 && !(e.flags & 1)) {
           if ((e.getToken() & 1073741824) === 1073741824)
             return Xn(e, t, r, d, u, o, l);
-          e.options.next && (u |= 1024);
+          if (e.options.next) {
+            u |= 1024;
+          }
         }
     }
-  else if (f === 69271571) (u |= 2), (d = $$1(e, i, r, c));
-  else if ((f & 134217728) === 134217728) d = q(e, t);
-  else if (f === 8391476) (u |= 8), A$1(e, t);
-  else if (e.getToken() === 130) (u |= 8192), (d = Yn(e, t | 16, r, 768));
-  else if ((e.getToken() & 1073741824) === 1073741824) u |= 128;
+  else if (f === 69271571) {
+    u |= 2;
+    d = $$1(e, i, r, c);
+  } else if ((f & 134217728) === 134217728) d = q(e, t);
+  else if (f === 8391476) {
+    u |= 8;
+    A$1(e, t);
+  } else if (e.getToken() === 130) {
+    u |= 8192;
+    d = Yn(e, t | 16, r, 768);
+  } else if ((e.getToken() & 1073741824) === 1073741824) u |= 128;
   else if (s && f === 2162700) return Lt(e, t | 16, n, r, l);
-  else
-    f === -2147483527
-      ? ((d = K(e, t)),
-        e.getToken() !== 67174411 && e.report(30, w$1[e.getToken() & 255]))
-      : e.report(30, w$1[e.getToken() & 255]);
-  if (
-    (u & 1816 &&
-      (e.getToken() & 143360 ||
+  else {
+    if (f === -2147483527) {
+      d = K(e, t);
+      if (e.getToken() !== 67174411) {
+        e.report(30, w$1[e.getToken() & 255]);
+      }
+    } else {
+      e.report(30, w$1[e.getToken() & 255]);
+    }
+  }
+  if (u & 1816) {
+    if (
+      e.getToken() & 143360 ||
       e.getToken() === -2147483528 ||
       e.getToken() === -2147483527
-        ? (d = K(e, t))
-        : (e.getToken() & 134217728) === 134217728
-          ? (d = q(e, t))
-          : e.getToken() === 69271571
-            ? ((u |= 2), (d = $$1(e, t, r, 0)))
-            : e.getToken() === 130
-              ? ((u |= 8192), (d = Yn(e, t, r, u)))
-              : e.report(135)),
-    u & 2 ||
-      (e.tokenValue === "constructor"
-        ? ((e.getToken() & 1073741824) === 1073741824
-            ? e.report(129)
-            : !(u & 32) &&
-              e.getToken() === 67174411 &&
-              (u & 920
-                ? e.report(53, "accessor")
-                : t & 512 || (e.flags & 32 ? e.report(54) : (e.flags |= 32))),
-          (u |= 64))
-        : !(u & 8192) &&
-          u & 32 &&
-          e.tokenValue === "prototype" &&
-          e.report(52)),
-    u & 1024 || (e.getToken() !== 67174411 && !(u & 768)))
-  )
+    ) {
+      d = K(e, t);
+    } else {
+      if ((e.getToken() & 134217728) === 134217728) {
+        d = q(e, t);
+      } else {
+        if (e.getToken() === 69271571) {
+          u |= 2;
+          d = $$1(e, t, r, 0);
+        } else {
+          if (e.getToken() === 130) {
+            u |= 8192;
+            d = Yn(e, t, r, u);
+          } else {
+            e.report(135);
+          }
+        }
+      }
+    }
+  }
+  if (!(u & 2)) {
+    if (e.tokenValue === "constructor") {
+      if ((e.getToken() & 1073741824) === 1073741824) {
+        e.report(129);
+      } else {
+        if (!(u & 32) && e.getToken() === 67174411) {
+          if (u & 920) {
+            e.report(53, "accessor");
+          } else {
+            if (!(t & 512)) {
+              if (e.flags & 32) {
+                e.report(54);
+              } else {
+                e.flags |= 32;
+              }
+            }
+          }
+        }
+      }
+      u |= 64;
+    } else {
+      if (!(u & 8192) && u & 32 && e.tokenValue === "prototype") {
+        e.report(52);
+      }
+    }
+  }
+  if (u & 1024 || (e.getToken() !== 67174411 && !(u & 768)))
     return Xn(e, t, r, d, u, o, l);
   const p = Z$1(e, t | 16, r, u, c, e.tokenStart);
   return e.finishNode(
@@ -8454,53 +9749,60 @@ function Yn(e, t, n, r) {
   const { tokenStart: i } = e;
   A$1(e, t);
   const { tokenValue: a } = e;
-  return (
-    a === "constructor" && e.report(128),
-    e.options.lexical &&
-      (n || e.report(4, a),
-      r ? n.addPrivateIdentifier(a, r) : n.addPrivateIdentifierRef(a)),
-    A$1(e, t),
-    e.finishNode(
-      {
-        type: "PrivateIdentifier",
-        name: a,
-      },
-      i,
-    )
+  a === "constructor" && e.report(128);
+  if (e.options.lexical) {
+    if (!n) {
+      e.report(4, a);
+    }
+    if (r) {
+      n.addPrivateIdentifier(a, r);
+    } else {
+      n.addPrivateIdentifierRef(a);
+    }
+  }
+  A$1(e, t);
+  return e.finishNode(
+    {
+      type: "PrivateIdentifier",
+      name: a,
+    },
+    i,
   );
 }
 function Xn(e, t, n, r, i, a, o) {
   let s = null;
-  if ((i & 8 && e.report(0), e.getToken() === 1077936155)) {
+  i & 8 && e.report(0);
+  if (e.getToken() === 1077936155) {
     A$1(e, t | 32);
     const { tokenStart: r } = e;
     e.getToken() === 537079927 && e.report(119);
     const a = 11264 | (i & 64 ? 0 : 16896);
-    (t =
+    t =
       ((t | a) ^ a) |
       (i & 8 ? 1024 : 0) |
       (i & 16 ? 2048 : 0) |
       (i & 64 ? 16384 : 0) |
-      65792),
-      (s = G(e, t | 16, n, 2, 0, 1, 0, 1, r)),
-      ((e.getToken() & 1073741824) !== 1073741824 ||
-        (e.getToken() & 4194304) === 4194304) &&
-        ((s = W(e, t | 16, n, s, 0, 0, r)),
-        (s = B$1(e, t | 16, n, 0, 0, r, s)));
+      65792;
+    s = G(e, t | 16, n, 2, 0, 1, 0, 1, r);
+    if (
+      (e.getToken() & 1073741824) !== 1073741824 ||
+      (e.getToken() & 4194304) === 4194304
+    ) {
+      s = W(e, t | 16, n, s, 0, 0, r);
+      s = B$1(e, t | 16, n, 0, 0, r, s);
+    }
   }
-  return (
-    T$1(e, t),
-    e.finishNode(
-      {
-        type: i & 1024 ? "AccessorProperty" : "PropertyDefinition",
-        key: r,
-        value: s,
-        static: (i & 32) > 0,
-        computed: (i & 2) > 0,
-        ...(e.options.next ? { decorators: a } : null),
-      },
-      o,
-    )
+  T$1(e, t);
+  return e.finishNode(
+    {
+      type: i & 1024 ? "AccessorProperty" : "PropertyDefinition",
+      key: r,
+      value: s,
+      static: (i & 32) > 0,
+      computed: (i & 2) > 0,
+      ...(e.options.next ? { decorators: a } : null),
+    },
+    o,
   );
 }
 function Zn(e, t, n, r, i, a) {
@@ -8511,35 +9813,48 @@ function Zn(e, t, n, r, i, a) {
     e.getToken() === 69271571
       ? Y(e, t, n, r, 1, 0, 1, i, a)
       : Q(e, t, n, r, 1, 0, 1, i, a);
-  return (
-    e.destructible & 16 && e.report(50), e.destructible & 32 && e.report(50), o
-  );
+  e.destructible & 16 && e.report(50);
+  e.destructible & 32 && e.report(50);
+  return o;
 }
 function Qn(e, t, n, r, i) {
   const a = e.getToken();
   t & 1 &&
     ((a & 537079808) === 537079808
       ? e.report(119)
-      : ((a & 36864) === 36864 || a === -2147483527) && e.report(118)),
-    (a & 20480) === 20480 && e.report(102),
-    a === 241771 && (t & 1024 && e.report(32), t & 2 && e.report(111)),
-    (a & 255) === 73 && r & 24 && e.report(100),
-    a === 209006 && (t & 2048 && e.report(176), t & 2 && e.report(110));
+      : ((a & 36864) === 36864 || a === -2147483527) && e.report(118));
+  (a & 20480) === 20480 && e.report(102);
+  if (a === 241771) {
+    if (t & 1024) {
+      e.report(32);
+    }
+    if (t & 2) {
+      e.report(111);
+    }
+  }
+  (a & 255) === 73 && r & 24 && e.report(100);
+  if (a === 209006) {
+    if (t & 2048) {
+      e.report(176);
+    }
+    if (t & 2) {
+      e.report(110);
+    }
+  }
   const { tokenValue: o, tokenStart: s } = e;
-  return (
-    A$1(e, t),
-    n?.addVarOrBlock(t, o, r, i),
-    e.finishNode(
-      {
-        type: "Identifier",
-        name: o,
-      },
-      s,
-    )
+  A$1(e, t);
+  n?.addVarOrBlock(t, o, r, i);
+  return e.finishNode(
+    {
+      type: "Identifier",
+      name: o,
+    },
+    s,
   );
 }
 function $n(e, t, n, r, i) {
-  if ((r || D$1(e, t, 8456256), e.getToken() === 8390721)) {
+  r || D$1(e, t, 8456256);
+  if (e.getToken() === 8390721) {
     const a = er(e, i),
       [o, s] = ir(e, t, n, r);
     return e.finishNode(
@@ -8572,30 +9887,27 @@ function $n(e, t, n, r, i) {
   );
 }
 function er(e, t) {
-  return j(e), e.finishNode({ type: "JSXOpeningFragment" }, t);
+  j(e);
+  return e.finishNode({ type: "JSXOpeningFragment" }, t);
 }
 function tr(e, t, n, r) {
   D$1(e, t, 8457014);
   const i = lr(e, t);
-  return (
-    e.getToken() !== 8390721 && e.report(25, w$1[65]),
-    n ? j(e) : A$1(e, t),
-    e.finishNode(
-      {
-        type: "JSXClosingElement",
-        name: i,
-      },
-      r,
-    )
+  e.getToken() !== 8390721 && e.report(25, w$1[65]);
+  n ? j(e) : A$1(e, t);
+  return e.finishNode(
+    {
+      type: "JSXClosingElement",
+      name: i,
+    },
+    r,
   );
 }
 function nr(e, t, n, r) {
-  return (
-    D$1(e, t, 8457014),
-    e.getToken() !== 8390721 && e.report(25, w$1[65]),
-    n ? j(e) : A$1(e, t),
-    e.finishNode({ type: "JSXClosingFragment" }, r)
-  );
+  D$1(e, t, 8457014);
+  e.getToken() !== 8390721 && e.report(25, w$1[65]);
+  n ? j(e) : A$1(e, t);
+  return e.finishNode({ type: "JSXClosingFragment" }, r);
 }
 function rr(e, t, n, r) {
   const i = [];
@@ -8618,9 +9930,8 @@ function ar(e, t, n, r) {
   if (e.getToken() === 2162700) return hr(e, t, n, 1, 0);
   if (e.getToken() === 8456256) {
     const { tokenStart: i } = e;
-    return (
-      A$1(e, t), e.getToken() === 8457014 ? tr(e, t, r, i) : $n(e, t, n, 1, i)
-    );
+    A$1(e, t);
+    return e.getToken() === 8457014 ? tr(e, t, r, i) : $n(e, t, n, 1, i);
   }
   e.report(0);
 }
@@ -8629,9 +9940,8 @@ function or(e, t, n, r) {
   if (e.getToken() === 2162700) return hr(e, t, n, 1, 0);
   if (e.getToken() === 8456256) {
     const { tokenStart: i } = e;
-    return (
-      A$1(e, t), e.getToken() === 8457014 ? nr(e, t, r, i) : $n(e, t, n, 1, i)
-    );
+    A$1(e, t);
+    return e.getToken() === 8457014 ? nr(e, t, r, i) : $n(e, t, n, 1, i);
   }
   e.report(0);
 }
@@ -8642,7 +9952,10 @@ function sr(e, t) {
     type: "JSXText",
     value: e.tokenValue,
   };
-  return e.options.raw && (r.raw = e.tokenRaw), e.finishNode(r, n);
+  if (e.options.raw) {
+    r.raw = e.tokenRaw;
+  }
+  return e.finishNode(r, n);
 }
 function cr(e, t, n, r, i) {
   (e.getToken() & 143360) !== 143360 &&
@@ -8651,19 +9964,17 @@ function cr(e, t, n, r, i) {
   const a = lr(e, t),
     o = dr(e, t, n),
     s = e.getToken() === 8457014;
-  return (
-    s && D$1(e, t, 8457014),
-    e.getToken() !== 8390721 && e.report(25, w$1[65]),
-    r || !s ? j(e) : A$1(e, t),
-    e.finishNode(
-      {
-        type: "JSXOpeningElement",
-        name: a,
-        attributes: o,
-        selfClosing: s,
-      },
-      i,
-    )
+  s && D$1(e, t, 8457014);
+  e.getToken() !== 8390721 && e.report(25, w$1[65]);
+  r || !s ? j(e) : A$1(e, t);
+  return e.finishNode(
+    {
+      type: "JSXOpeningElement",
+      name: a,
+      attributes: o,
+      selfClosing: s,
+    },
+    i,
   );
 }
 function lr(e, t) {
@@ -8671,7 +9982,10 @@ function lr(e, t) {
   st(e);
   let r = vr(e, t);
   if (e.getToken() === 21) return mr(e, t, r, n);
-  for (; E$1(e, t, 67108877); ) st(e), (r = ur(e, t, r, n));
+  for (; E$1(e, t, 67108877); ) {
+    st(e);
+    r = ur(e, t, r, n);
+  }
   return r;
 }
 function ur(e, t, n, r) {
@@ -8698,17 +10012,16 @@ function dr(e, t, n) {
 }
 function fr(e, t, n) {
   const r = e.tokenStart;
-  A$1(e, t), D$1(e, t, 14);
+  A$1(e, t);
+  D$1(e, t, 14);
   const i = L$1(e, t, n, 1, 0, e.tokenStart);
-  return (
-    D$1(e, t, 1074790415),
-    e.finishNode(
-      {
-        type: "JSXSpreadAttribute",
-        argument: i,
-      },
-      r,
-    )
+  D$1(e, t, 1074790415);
+  return e.finishNode(
+    {
+      type: "JSXSpreadAttribute",
+      argument: i,
+    },
+    r,
   );
 }
 function pr(e, t, n) {
@@ -8717,9 +10030,10 @@ function pr(e, t, n) {
   st(e);
   let i = null,
     a = vr(e, t);
-  if (
-    (e.getToken() === 21 && (a = mr(e, t, a, r)), e.getToken() === 1077936155)
-  )
+  if (e.getToken() === 21) {
+    a = mr(e, t, a, r);
+  }
+  if (e.getToken() === 1077936155)
     switch (at(e, t)) {
       case 134283267:
         i = q(e, t);
@@ -8760,38 +10074,38 @@ function hr(e, t, n, r, i) {
   const { tokenStart: o } = e;
   if (e.getToken() === 14) return gr(e, t, n, a);
   let s = null;
-  return (
-    e.getToken() === 1074790415
-      ? (i && e.report(157),
-        (s = _r(e, {
-          index: e.startIndex,
-          line: e.startLine,
-          column: e.startColumn,
-        })))
-      : (s = L$1(e, t, n, 1, 0, o)),
-    e.getToken() !== 1074790415 && e.report(25, w$1[15]),
-    r ? j(e) : A$1(e, t),
-    e.finishNode(
-      {
-        type: "JSXExpressionContainer",
-        expression: s,
-      },
-      a,
-    )
+  if (e.getToken() === 1074790415) {
+    if (i) {
+      e.report(157);
+    }
+    s = _r(e, {
+      index: e.startIndex,
+      line: e.startLine,
+      column: e.startColumn,
+    });
+  } else {
+    s = L$1(e, t, n, 1, 0, o);
+  }
+  e.getToken() !== 1074790415 && e.report(25, w$1[15]);
+  r ? j(e) : A$1(e, t);
+  return e.finishNode(
+    {
+      type: "JSXExpressionContainer",
+      expression: s,
+    },
+    a,
   );
 }
 function gr(e, t, n, r) {
   D$1(e, t, 14);
   const i = L$1(e, t, n, 1, 0, e.tokenStart);
-  return (
-    D$1(e, t, 1074790415),
-    e.finishNode(
-      {
-        type: "JSXSpreadChild",
-        expression: i,
-      },
-      r,
-    )
+  D$1(e, t, 1074790415);
+  return e.finishNode(
+    {
+      type: "JSXSpreadChild",
+      expression: i,
+    },
+    r,
   );
 }
 function _r(e, t) {
@@ -8801,15 +10115,13 @@ function vr(e, t) {
   const n = e.tokenStart;
   e.getToken() & 143360 || e.report(30, w$1[e.getToken() & 255]);
   const { tokenValue: r } = e;
-  return (
-    A$1(e, t),
-    e.finishNode(
-      {
-        type: "JSXIdentifier",
-        name: r,
-      },
-      n,
-    )
+  A$1(e, t);
+  return e.finishNode(
+    {
+      type: "JSXIdentifier",
+      name: r,
+    },
+    n,
   );
 }
 var yr = "6.1.4";
@@ -9011,22 +10323,21 @@ var Cr = ((e, t) => {
               e.expression.callee.type === "FunctionExpression"
             ) {
               const t = e.expression.callee.body;
-              return t.body.splice(0, 1), t;
+              t.body.splice(0, 1);
+              return t;
             }
             break;
           }
         }
         throw Error("Unexpected YouTube player structure");
       })();
-    return (
-      (n.body = n.body.filter(
-        (e) =>
-          e.type !== "ExpressionStatement" ||
-          e.expression.type === "AssignmentExpression" ||
-          e.expression.type === "Literal",
-      )),
-      n.body
+    n.body = n.body.filter(
+      (e) =>
+        e.type !== "ExpressionStatement" ||
+        e.expression.type === "AssignmentExpression" ||
+        e.expression.type === "Literal",
     );
+    return n.body;
   }
   function u(e) {
     const t = {
@@ -9035,19 +10346,20 @@ var Cr = ((e, t) => {
     };
     for (const n of e) {
       const e = o(n);
-      e &&
-        (t.n.push(
+      if (e) {
+        t.n.push(
           d(e, {
             type: "Identifier",
             name: "n",
           }),
-        ),
+        );
         t.sig.push(
           d(e, {
             type: "Identifier",
             name: "sig",
           }),
-        ));
+        );
+      }
     }
     return t;
   }

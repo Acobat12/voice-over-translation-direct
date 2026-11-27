@@ -4,7 +4,7 @@ import type {
   Direction,
   Position,
   Status,
-} from "../../types/components/votButton";
+} from "../../types/components/votRail";
 import UI from "../../ui";
 import {
   CHEVRON_ICON,
@@ -24,6 +24,16 @@ type VOTRailProps = {
 };
 
 export default class VOTRail {
+  static calcPosition(percentX: number, isBigContainer: boolean): Position {
+    if (!isBigContainer) return "default";
+    if (percentX <= 44) return "left";
+    if (percentX >= 66) return "right";
+    return "default";
+  }
+
+  static calcDirection(position: Position): Direction {
+    return ["default", "top"].includes(position) ? "row" : "column";
+  }
   container: HTMLElement;
   translateGroup: HTMLElement;
   translateButton: HTMLElement;

@@ -5,16 +5,17 @@ import {
   VideoTranslationStatus,
 } from "@vot.js/core/types/yandex";
 import type { RequestLang, ResponseLang } from "@vot.js/shared/types/data";
-
 import type { VideoData, VideoHandler } from "..";
 import { AudioDownloader } from "../audioDownloader";
 import {
-  DOUYIN_AUDIO_STRATEGY,
+  SABR_STRATEGY,
   VK_AUDIO_STRATEGY,
   WEB_ABR_STRATEGY,
   WEB_MSE_PROXY_STRATEGY,
   YT_AUDIO_STRATEGY,
 } from "../audioDownloader/strategies";
+import { YOUTUBE_VOT_SOURCE_LANGUAGES } from "../audioDownloader/strategies/youtubeAudioMetadata";
+import { getYouTubeAudioMode } from "../audioDownloader/youtubeAudioMode";
 import { localizationProvider } from "../localization/localizationProvider";
 import type {
   DownloadedAudioData,
@@ -23,12 +24,16 @@ import type {
 import { NEVER_ABORTED_SIGNAL, throwIfAborted } from "../utils/abort";
 import debug from "../utils/debug";
 import { getErrorMessage, isAbortError, makeAbortError } from "../utils/errors";
+import { findActivePlaybackVideo, isDirectMediaUrl } from "../utils/media";
 import {
   adjustTranslationEtaForDisplay,
   formatTranslationEta,
 } from "../utils/timeFormatting";
 import VOTLocalizedError from "../utils/VOTLocalizedError";
-import { notifyTranslationFailureIfNeeded } from "../videoHandler/modules/translationShared";
+import {
+  getTranslationRequestVideoData,
+  notifyTranslationFailureIfNeeded,
+} from "../videoHandler/modules/translationShared";
 
 type VotClientErrorShape = {
   name?: unknown;
@@ -71,8 +76,8 @@ function getServerErrorMessage(value: unknown): string | undefined {
 export function isCompletedTranslationResponse(
   response: Pick<
     VideoTranslationResponse,
-    "translated" | "status" | "url" | "remainingTime"
-  >,
+    "translated" | "status" | "remainingTime"
+  > & { url?: string },
 ): response is TranslatedVideoTranslationResponse {
   return Boolean(
     response.translated &&
@@ -171,14 +176,12 @@ type CachedAudioUpload =
         audioData: Uint8Array;
         index: number;
         amount: number;
-        version: number;
+        version: 1;
       }>;
     };
 
 const POST_AUDIO_TRANSLATE_RETRY_DELAY_MS = 5000;
 const MAX_POST_AUDIO_TRANSLATE_RETRIES = 12;
-const _YOUTUBE_SERVER_POLL_MAX_INITIAL_WAIT_SEC = 180;
-const _YOUTUBE_SERVER_POLL_LONG_WAIT_MS = 120000;
 const YOUTUBE_AUDIO_STREAM_TIMEOUT_MS = 30 * 60 * 1000;
 const YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS = 30000;
 const MAX_YOUTUBE_SERVER_POLL_ERROR_RETRIES = 60;
@@ -418,14 +421,14 @@ export class VOTTranslationHandler {
       this.videoHandler.site.host === "vk"
         ? VK_AUDIO_STRATEGY
         : this.videoHandler.site.host === "youtube"
-          ? WEB_ABR_STRATEGY
+          ? getYouTubeAudioMode() === "web-abr"
+            ? WEB_ABR_STRATEGY
+            : SABR_STRATEGY
           : this.videoHandler.site.host === "yandexdisk"
             ? "localFile"
-            : this.videoHandler.site.host === "douyin"
-              ? DOUYIN_AUDIO_STRATEGY
-              : this.videoHandler.site.host === "custom"
-                ? "localFile"
-                : YT_AUDIO_STRATEGY;
+            : this.videoHandler.site.host === "custom"
+              ? "localFile"
+              : YT_AUDIO_STRATEGY;
 
     this.audioDownloader = new AudioDownloader(strategy as any);
     this.downloading = false;
@@ -481,28 +484,7 @@ export class VOTTranslationHandler {
       return;
     }
 
-    const activeYouTubeVideo = Array.from(
-      document.querySelectorAll<HTMLVideoElement>(
-        "video.html5-main-video, .html5-video-container video, video",
-      ),
-    )
-      .filter((candidate) => {
-        if (candidate.paused || candidate.ended) return false;
-        if (candidate.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
-          return false;
-        const rect = candidate.getBoundingClientRect();
-        return (
-          rect.width > 80 &&
-          rect.height > 80 &&
-          rect.bottom > 0 &&
-          rect.top < globalThis.innerHeight
-        );
-      })
-      .sort((a, b) => {
-        const ar = a.getBoundingClientRect();
-        const br = b.getBoundingClientRect();
-        return br.width * br.height - ar.width * ar.height;
-      })[0];
+    const activeYouTubeVideo = findActivePlaybackVideo();
 
     if (activeYouTubeVideo) {
       console.log(
@@ -551,14 +533,10 @@ export class VOTTranslationHandler {
   }
 
   private shouldRetryYouTubeProcessingError(error: unknown): boolean {
-    const message = getErrorMessage(error);
-    const serverMessage = getServerErrorMessage(error) ?? "";
-    const _combinedMessage = `${message} ${serverMessage}`.toLowerCase();
-
     // Only retry a transport/request failure here.
     // A server-side translation failure is terminal: stop the current task
     // instead of polling the same dead translationId again.
-    return message === "Failed to request video translation";
+    return getErrorMessage(error) === "Failed to request video translation";
   }
 
   private isYouTubeTranslationRequest(videoData?: VideoData): boolean {
@@ -621,6 +599,62 @@ export class VOTTranslationHandler {
     // still used for the UI text, but it no longer delays readiness checks.
     void remainingTimeSeconds;
     return YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS;
+  }
+
+  // Keep TikTok's VOT identity tied to the original page, not to UMP's MP4 URL.
+  private normalizeTikTokVideoId(videoData: VideoData): VideoData {
+    if (
+      videoData.host !== "tiktok" &&
+      this.videoHandler.site.host !== "tiktok"
+    ) {
+      return videoData;
+    }
+
+    const candidates = [
+      String(globalThis.location?.href || ""),
+      String(videoData.videoId || ""),
+      String(videoData.url || ""),
+    ];
+
+    for (const candidate of candidates) {
+      let path = candidate;
+      try {
+        const parsed = new URL(candidate);
+        if (/(^|\.)tiktok\.com$/i.test(parsed.hostname)) {
+          path = parsed.pathname;
+        } else if (/^\/media\/tiktok\//.test(parsed.pathname)) {
+          const match = parsed.pathname.match(
+            /^\/media\/tiktok\/shortdrama\/(\d+)\/(\d+)\/video\.mp4$/i,
+          );
+          if (match) path = `/shortdrama/episode/${match[1]}/${match[2]}`;
+          else continue;
+        } else {
+          continue;
+        }
+      } catch {
+        // A videoId can be a relative TikTok path.
+      }
+
+      const drama = path.match(/^\/?shortdrama\/episode\/(\d+)\/(\d+)\/?$/i);
+      const shortDramaId = path.match(/^(\d+)\/(\d+)$/);
+      const standard = path.match(/^\/?(@[^/]+)\/(video|photo)\/(\d+)\/?$/i);
+      const bareStandard = path.match(/^(?:video|photo)\/(\d+)$/i);
+      const normalized = drama
+        ? `/shortdrama/episode/${drama[1]}/${drama[2]}`
+        : shortDramaId
+          ? `/shortdrama/episode/${shortDramaId[1]}/${shortDramaId[2]}`
+          : standard
+            ? `/${standard[1]}/${standard[2].toLowerCase()}/${standard[3]}`
+            : bareStandard
+              ? `/${bareStandard[0]}`
+              : null;
+      if (normalized) {
+        return normalized === videoData.videoId
+          ? videoData
+          : { ...videoData, videoId: normalized };
+      }
+    }
+    return videoData;
   }
 
   private normalizeUrlForRequest(raw: string): string {
@@ -794,11 +828,7 @@ export class VOTTranslationHandler {
       return false;
     }
 
-    try {
-      return this.videoHandler.votClient.isDirectMediaUrl(url);
-    } catch {
-      return false;
-    }
+    return isDirectMediaUrl(this.videoHandler.votClient, url);
   }
 
   private isCrossOriginMediaUrl(url: string): boolean {
@@ -819,13 +849,6 @@ export class VOTTranslationHandler {
     if (!this.isDirectMediaUrlCandidate(url)) {
       return false;
     }
-    if (
-      this.videoHandler.site.host === "douyin" ||
-      videoData.host === "douyin"
-    ) {
-      return false;
-    }
-
     if (
       this.videoHandler.site.host === "custom" ||
       videoData.host === "custom"
@@ -885,11 +908,11 @@ export class VOTTranslationHandler {
         ? VK_AUDIO_STRATEGY
         : this.videoHandler.site.host === "yandexdisk"
           ? "localFile"
-          : this.videoHandler.site.host === "douyin"
-            ? DOUYIN_AUDIO_STRATEGY
-            : this.videoHandler.site.host === "youtube"
+          : this.videoHandler.site.host === "youtube"
+            ? getYouTubeAudioMode() === "web-abr"
               ? WEB_ABR_STRATEGY
-              : YT_AUDIO_STRATEGY;
+              : SABR_STRATEGY
+            : YT_AUDIO_STRATEGY;
 
     if (this.audioDownloader.strategy === nextStrategy) {
       return;
@@ -921,11 +944,7 @@ export class VOTTranslationHandler {
     }
 
     if (data.host === "custom") {
-      try {
-        return this.videoHandler.votClient.isDirectMediaUrl(rawUrl);
-      } catch {
-        return false;
-      }
+      return isDirectMediaUrl(this.videoHandler.votClient, rawUrl);
     }
 
     return false;
@@ -1172,7 +1191,7 @@ export class VOTTranslationHandler {
         }
 
         try {
-          if (this.videoHandler.votClient.isDirectMediaUrl(normalized)) {
+          if (isDirectMediaUrl(this.videoHandler.votClient, normalized)) {
             return {
               url: normalized,
               videoId: String(bridgeData.unitedVideoId || normalized),
@@ -1211,7 +1230,7 @@ export class VOTTranslationHandler {
       }
 
       try {
-        if (this.videoHandler.votClient.isDirectMediaUrl(normalized)) {
+        if (isDirectMediaUrl(this.videoHandler.votClient, normalized)) {
           return {
             url: normalized,
             videoId: normalized,
@@ -2061,6 +2080,7 @@ export class VOTTranslationHandler {
         amount,
       );
     } catch (error) {
+      let uploadError = error;
       if (this.isAudioUploadConfirmed(translationId, fileId)) {
         debug.warn(
           "[AudioUpload] ignoring error after Yandex confirmed all chunks",
@@ -2153,7 +2173,7 @@ export class VOTTranslationHandler {
             "[FORK][AudioUpload] full-sequence recovery failed",
             recoveryError,
           );
-          error = recoveryError;
+          uploadError = recoveryError;
         }
       } else {
         console.warn("[FORK][AudioUpload] full replay unavailable", {
@@ -2164,7 +2184,7 @@ export class VOTTranslationHandler {
       }
       this.finishDownloadFailure(
         new Error(
-          `Audio chunk ${index}/${amount} upload failed: ${getErrorMessage(error)}`,
+          `Audio chunk ${index}/${amount} upload failed: ${getErrorMessage(uploadError)}`,
         ),
       );
       return;
@@ -2518,7 +2538,7 @@ export class VOTTranslationHandler {
         Boolean(this.videoHandler.data?.useLivelyVoice);
 
       const res = await this.videoHandler.votClient.translateVideo({
-        videoData: normalizedVideoData,
+        videoData: getTranslationRequestVideoData(normalizedVideoData),
         requestLang,
         responseLang,
         translationHelp,
@@ -2682,6 +2702,41 @@ export class VOTTranslationHandler {
     // На данный момент повторный перевод удалось подтвердить только для
     // `de → ru` и `fr → ru`.
 
+    // A validator may replace an unsupported original with a concrete supported
+    // YouTube dub after the caller has already captured requestLang (e.g. pt).
+    // Do not let that stale argument reach Yandex or any audio downloader.
+    if (this.isYouTubeTranslationRequest(videoData)) {
+      const detected = String(videoData.detectedLanguage || "")
+        .toLowerCase()
+        .split(/[-_]/)[0];
+      const requested = String(requestLang || "")
+        .toLowerCase()
+        .split(/[-_]/)[0];
+      if (
+        !YOUTUBE_VOT_SOURCE_LANGUAGES.has(requested) &&
+        YOUTUBE_VOT_SOURCE_LANGUAGES.has(detected)
+      ) {
+        debug.log(
+          "[language] overriding stale unsupported YouTube request language",
+          {
+            original: requestLang,
+            selected: detected,
+            videoId: videoData.videoId,
+          },
+        );
+        requestLang = detected as RequestLang;
+      }
+      if (
+        !YOUTUBE_VOT_SOURCE_LANGUAGES.has(
+          String(requestLang).toLowerCase().split(/[-_]/)[0],
+        )
+      ) {
+        throw new Error(
+          `Audio downloader. unsupported YouTube source language: ${requestLang}`,
+        );
+      }
+    }
+
     const forceSameYouTubeSourceLang = false;
 
     const requestLangForApi = this.videoHandler.getRequestLangForTranslation(
@@ -2695,15 +2750,24 @@ export class VOTTranslationHandler {
     );
 
     let livelyDisabled = disableLivelyVoice;
+    const translateAgain = (sendFailedAudio = shouldSendFailedAudio) =>
+      this.translateVideoImpl(
+        videoData,
+        requestLang,
+        responseLang,
+        translationHelp,
+        sendFailedAudio,
+        signal,
+        livelyDisabled,
+      );
     const useLocalFileWorkflow = this.shouldUseLocalFileWorkflow(videoData);
     this.updateAudioDownloaderStrategy(videoData);
 
     if (
-      this.videoHandler.site.host !== "douyin" &&
-      (this.videoHandler.site.host === "yandexdisk" ||
-        this.videoHandler.site.host === "custom" ||
-        videoData.host === "custom" ||
-        useLocalFileWorkflow)
+      this.videoHandler.site.host === "yandexdisk" ||
+      this.videoHandler.site.host === "custom" ||
+      videoData.host === "custom" ||
+      useLocalFileWorkflow
     ) {
       return await this.translateVideoYDImpl(
         videoData,
@@ -2714,17 +2778,7 @@ export class VOTTranslationHandler {
       );
     }
 
-    let requestVideoData = videoData;
-    if (this.videoHandler.site.host === "douyin") {
-      const fresh = await this.videoHandler.site.getVideoData?.();
-
-      if (fresh?.host === "douyin") {
-        requestVideoData = fresh;
-      } else if (requestVideoData.host !== "douyin") {
-        return null;
-      }
-    }
-
+    let requestVideoData = this.normalizeTikTokVideoId(videoData);
     if (
       this.videoHandler.site.host === "odysee" &&
       typeof videoData.url === "string"
@@ -2761,7 +2815,11 @@ export class VOTTranslationHandler {
       : undefined;
     if (reprocessStrategy) {
       let strategyUrl = requestVideoData.url;
-      if (reprocessStrategy.urlVariant && requestVideoData.videoId) {
+      if (
+        "urlVariant" in reprocessStrategy &&
+        reprocessStrategy.urlVariant &&
+        requestVideoData.videoId
+      ) {
         const id = encodeURIComponent(requestVideoData.videoId);
         const watch = `https://www.youtube.com/watch?v=${id}`;
         if (reprocessStrategy.urlVariant === "short")
@@ -2834,15 +2892,10 @@ export class VOTTranslationHandler {
 
       let res: VideoTranslationResponse | undefined;
 
-      const _isYouTubeTranslateRequest =
-        this.isYouTubeTranslationRequest(requestVideoData);
-
       // Match the known-working userscript: no video_lang/cache preflight
       // in the main YouTube translation path.
       for (let attempt = 0; attempt < 2; attempt++) {
         try {
-          const _isYouTubeRequestForCall =
-            this.isYouTubeTranslationRequest(requestVideoData);
           const youtubeFailedAudioSignalUrl = String(
             requestVideoData.url || this.activeTranslationUrl || "",
           );
@@ -2893,7 +2946,7 @@ export class VOTTranslationHandler {
           });
 
           res = await this.videoHandler.votClient.translateVideo({
-            videoData: requestVideoData,
+            videoData: getTranslationRequestVideoData(requestVideoData),
             requestLang: requestLangForApi,
             responseLang,
             translationHelp,
@@ -3093,20 +3146,7 @@ export class VOTTranslationHandler {
           this.youtubeServerPollRetryAttempt += 1;
         }
 
-        return this.scheduleRetry(
-          () =>
-            this.translateVideoImpl(
-              videoData,
-              requestLang,
-              responseLang,
-              translationHelp,
-              shouldSendFailedAudio,
-              signal,
-              livelyDisabled,
-            ),
-          retryDelayMs,
-          signal,
-        );
+        return this.scheduleRetry(translateAgain, retryDelayMs, signal);
       }
 
       // AUDIO_REQUESTED must not wait for the UI message update before starting
@@ -3168,16 +3208,7 @@ export class VOTTranslationHandler {
           // Give Yandex one extra poll before sending the audio again.
           if (this.repeatedAudioRequestCount === 1) {
             return this.scheduleRetry(
-              () =>
-                this.translateVideoImpl(
-                  videoData,
-                  requestLang,
-                  responseLang,
-                  translationHelp,
-                  false,
-                  signal,
-                  livelyDisabled,
-                ),
+              () => translateAgain(false),
               5000,
               signal,
             );
@@ -3191,15 +3222,7 @@ export class VOTTranslationHandler {
               signal,
             );
             if (replayed) {
-              return this.translateVideoImpl(
-                videoData,
-                requestLang,
-                responseLang,
-                translationHelp,
-                false,
-                signal,
-                livelyDisabled,
-              );
+              return translateAgain(false);
             }
           }
 
@@ -3209,20 +3232,7 @@ export class VOTTranslationHandler {
 
           // After the initial upload and one exact replay, keep polling Yandex.
           // Do not start another WEB_ABR download for the same AUDIO_REQUESTED state.
-          return this.scheduleRetry(
-            () =>
-              this.translateVideoImpl(
-                videoData,
-                requestLang,
-                responseLang,
-                translationHelp,
-                false,
-                signal,
-                livelyDisabled,
-              ),
-            5000,
-            signal,
-          );
+          return this.scheduleRetry(() => translateAgain(false), 5000, signal);
         }
 
         this.resetRepeatedAudioRequestRecovery(audioRequestKey);
@@ -3267,7 +3277,7 @@ export class VOTTranslationHandler {
             (error: unknown) => ({ ok: false as const, error }),
           );
         const downloaderOutcome = await downloaderResult;
-        if (!downloaderOutcome.ok) {
+        if (downloaderOutcome.ok === false) {
           if (!this.audioChunksStarted) {
             // Consume the already-created waiter rejection as well.
             void uploadCompletion.catch(() => {});
@@ -3310,15 +3320,7 @@ export class VOTTranslationHandler {
         // Real source audio has already been downloaded and uploaded successfully.
         // Do not enable the legacy failed-audio signal here: doing so can trigger
         // fail-audio-js / empty-audio handling after a valid web_abr upload.
-        return await this.translateVideoImpl(
-          videoData,
-          requestLang,
-          responseLang,
-          translationHelp,
-          false,
-          signal,
-          livelyDisabled,
-        );
+        return await translateAgain(false);
       }
     } catch (err) {
       if (isAbortError(err)) {
@@ -3362,16 +3364,7 @@ export class VOTTranslationHandler {
         );
 
         return this.scheduleRetry(
-          () =>
-            this.translateVideoImpl(
-              videoData,
-              requestLang,
-              responseLang,
-              translationHelp,
-              false,
-              signal,
-              livelyDisabled,
-            ),
+          () => translateAgain(false),
           YOUTUBE_SERVER_POLL_RETRY_INTERVAL_MS,
           signal,
         );
@@ -3399,16 +3392,7 @@ export class VOTTranslationHandler {
         );
 
         return this.scheduleRetry(
-          () =>
-            this.translateVideoImpl(
-              videoData,
-              requestLang,
-              responseLang,
-              translationHelp,
-              false,
-              signal,
-              livelyDisabled,
-            ),
+          () => translateAgain(false),
           POST_AUDIO_TRANSLATE_RETRY_DELAY_MS,
           signal,
         );
@@ -3442,20 +3426,7 @@ export class VOTTranslationHandler {
 
     this.videoHandler.hadAsyncWait = true;
 
-    return this.scheduleRetry(
-      () =>
-        this.translateVideoImpl(
-          videoData,
-          requestLang,
-          responseLang,
-          translationHelp,
-          shouldSendFailedAudio,
-          signal,
-          livelyDisabled,
-        ),
-      20000,
-      signal,
-    );
+    return this.scheduleRetry(translateAgain, 20000, signal);
   }
 
   private getYandexDiskSourceUrl(videoData: VideoData): string {

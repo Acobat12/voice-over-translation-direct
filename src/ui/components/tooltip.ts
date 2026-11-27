@@ -202,13 +202,7 @@ export default class Tooltip {
     this.destroy();
   };
 
-  onTooltipMouseLeave = (event: MouseEvent) => {
-    if (this.isInTooltipContext(event.relatedTarget)) {
-      return;
-    }
-
-    this.destroy();
-  };
+  onTooltipMouseLeave = this.onMouseLeave;
 
   private isInTooltipContext(nextTarget: EventTarget | null): boolean {
     if (!(nextTarget instanceof Node)) {

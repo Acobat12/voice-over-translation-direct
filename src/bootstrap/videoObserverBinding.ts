@@ -1,4 +1,10 @@
 import type { ServiceConf } from "@vot.js/ext/types/service";
+import { hasResolvableMediaSource } from "../utils/media";
+import {
+  getPageKey,
+  isMobileYouTubePage,
+  isVkPage,
+} from "../utils/pageContext";
 import type { VideoObserver } from "../utils/VideoObserver";
 
 type VideoHandlerLike = {
@@ -43,20 +49,8 @@ type PendingGraceRelease = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-function isVkProbeHost(): boolean {
-  return /(?:^|\.)vkvideo\.ru$|(?:^|\.)vk\.(?:com|ru)$/i.test(
-    String(globalThis.location.hostname || ""),
-  );
-}
-
-function isMobileYouTubeDebugHost(): boolean {
-  return /^(m|music)\.youtube\.com$/i.test(
-    String(globalThis.location.hostname || ""),
-  );
-}
-
 function logMobileOverlay(message: string, details?: unknown): void {
-  if (!isMobileYouTubeDebugHost()) {
+  if (!isMobileYouTubePage()) {
     return;
   }
 
@@ -68,10 +62,6 @@ function isGracefulMobileYouTubeSite(site: ServiceConf): boolean {
     String(site.host || "") === "youtube" &&
     (site.additionalData === "mobile" || site.additionalData === "music")
   );
-}
-
-function getMobileYouTubePageKey(): string {
-  return `${globalThis.location.origin}${globalThis.location.pathname}${globalThis.location.search}`;
 }
 
 function isRenderableVideo(video: HTMLVideoElement): boolean {
@@ -99,15 +89,6 @@ function isRenderableVideo(video: HTMLVideoElement): boolean {
 function getVideoArea(video: HTMLVideoElement): number {
   const rect = video.getBoundingClientRect();
   return Math.max(0, rect.width) * Math.max(0, rect.height);
-}
-
-function hasResolvableMediaSource(video: HTMLVideoElement): boolean {
-  if (video.currentSrc || video.src || video.srcObject) {
-    return true;
-  }
-
-  const source = video.querySelector("source");
-  return Boolean(source?.getAttribute("src") || source?.src);
 }
 
 function logNativeSubtitleTracks(video: HTMLVideoElement): void {
@@ -370,7 +351,7 @@ export function bindObserverListeners(
   ): Promise<void> => {
     cancelPendingGraceRelease(video, `reschedule:${reason}`);
 
-    const pageKey = getMobileYouTubePageKey();
+    const pageKey = getPageKey();
     logMobileOverlay("schedule delayed cleanup", {
       reason,
       pageKey,
@@ -424,7 +405,7 @@ export function bindObserverListeners(
         return;
       }
 
-      const currentPageKey = getMobileYouTubePageKey();
+      const currentPageKey = getPageKey();
       if (currentPageKey === pageKey) {
         logMobileOverlay("keep overlay alive on same page during repaint", {
           reason,
@@ -519,7 +500,7 @@ export function bindObserverListeners(
 
       const match = getMatchedSiteAndContainer(video);
       if (!match) {
-        if (isVkProbeHost()) {
+        if (isVkPage()) {
           const rect = video.getBoundingClientRect();
           console.warn(
             "[FORK][VK probe] video detected but no site/container match",
@@ -542,7 +523,7 @@ export function bindObserverListeners(
         readyState: video.readyState,
         src: video.currentSrc || video.src || "",
       });
-      if (isVkProbeHost()) {
+      if (isVkPage()) {
         const rect = video.getBoundingClientRect();
         console.log("[FORK][VK probe] matched video", {
           site: site.host,
