@@ -1,17 +1,12 @@
 {
-   "addons": {
-      "vot-extension@firefox": {
-         "updates": [
-            {
-<<<<<<< HEAD
-               "version": "1.11.8.8",
-               "update_link": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext/vot-extension-firefox-1.11.8.8.xpi"
-=======
-               "version": "1.11.8.6",
-               "update_link": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext/vot-extension-firefox-1.11.8.6.xpi"
->>>>>>> ad39c0449d88ae59251d4caaf55435d8744799af
-            }
-         ]
-      }
-   }
+  "addons": {
+    "vot-extension@firefox": {
+      "updates": [
+        {
+          "version": "1.11.8.8",
+          "update_link": "https://raw.githubusercontent.com/Acobat12/voice-over-translation-direct/my-code/dist-ext/vot-extension-firefox-1.11.8.8.xpi"
+        }
+      ]
+    }
+  }
 }
