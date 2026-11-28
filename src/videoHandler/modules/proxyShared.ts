@@ -1,4 +1,4 @@
-import { proxyWorkerHost } from "../../config/config";
+import { proxyWorkerHost, umpApiHost, umpMediaHost } from "../../config/config";
 
 const AUDIO_SOURCE_PREFIX =
   "https://vtrans.s3-private.mds.yandex.net/tts/prod/";
@@ -16,7 +16,9 @@ type ProxyConfig = {
 
 function getProxyHost(host?: string | null, preset?: string | null): string {
   if (preset === "builtin" || !preset) return proxyWorkerHost;
-  const clean = (host || proxyWorkerHost)
+  if (preset === "ump-media") return umpMediaHost;
+  if (preset === "ump-protobuf") return umpApiHost;
+  const clean = (host || umpApiHost)
     .trim()
     .replace(/^https?:\/\//i, "")
     .replace(/\/+$/, "");

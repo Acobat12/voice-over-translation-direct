@@ -78,6 +78,23 @@ function buildRequestErrorResult<T>(error: unknown): ClientResponse<T> {
 }
 
 export default class VOTClient extends ExtVOTClient<string> {
+  override isCustomLink(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+
+      if (
+        parsed.origin === "https://media-proxy.mooo.com" &&
+        parsed.pathname.startsWith("/media/")
+      ) {
+        return false;
+      }
+    } catch {
+      // Use default URL classification.
+    }
+
+    return super.isCustomLink(url);
+  }
+
   override async request<T = ArrayBuffer>(
     path: string,
     body: Uint8Array,

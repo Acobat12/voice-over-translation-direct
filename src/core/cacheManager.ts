@@ -134,8 +134,7 @@ export class VOTSessionStorageCache {
   constructor(private readonly storage: VOTSessionStorage = votStorage) {}
 
   private getStorageKey(host: string): string {
-    void host;
-    return VOT_SESSION_STORAGE_KEY;
+    return `${VOT_SESSION_STORAGE_KEY}:${encodeURIComponent(host)}`;
   }
 
   async restore(
@@ -173,7 +172,6 @@ export class VOTSessionStorageCache {
     host: string,
     sessions: VOTSessions | undefined,
   ): Promise<void> {
-    void host;
     const storageKey = this.getStorageKey(host);
     const translationSession =
       sanitizeVOTSessions(sessions)["video-translation"];

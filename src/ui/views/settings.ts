@@ -57,7 +57,12 @@ import {
   defaultTranslationService,
   proxyOnlyCountries,
   proxyWorkerHost,
+  umpApiHost,
 } from "../../config/config";
+import {
+  normalizeProxyHost,
+  type ProxyPreset,
+} from "../../config/proxyRouting";
 import {
   createPkceAuthUrl,
   exchangeCodeForToken,
@@ -913,7 +918,7 @@ export class SettingsView {
 
     this.proxyWorkerHostTextfield = new Textfield({
       labelHtml: localizationProvider.get("VOTProxyWorkerHost"),
-      value: this.data.proxyWorkerHost,
+      value: this.data.proxyWorkerHost || umpApiHost,
       placeholder: proxyWorkerHost,
     });
 
@@ -950,8 +955,7 @@ export class SettingsView {
         selected: item.value === currentPreset,
       })),
     });
-    this.proxyWorkerHostTextfield.container.hidden =
-      currentPreset === "builtin";
+    this.proxyWorkerHostTextfield.container.hidden = currentPreset !== "custom";
     const proxyEnabledLabels = [
       localizationProvider.get("VOTTranslateProxyDisabled"),
       localizationProvider.get("VOTTranslateProxyEnabled"),
@@ -1710,44 +1714,36 @@ export class SettingsView {
         "ump-protobuf": "Universal Media Proxy — VOT API (Protobuf)",
         custom: localizationProvider.get("VOTCustomProxy"),
       };
-      this.proxyServerSelect.selectTitle = labels[value] || labels.custom;
-      this.proxyWorkerHostTextfield.container.hidden = value === "builtin";
-      if (value === "builtin") {
-        this.data.proxyWorkerHost = proxyWorkerHost;
-        await votStorage.set("proxyWorkerHost", proxyWorkerHost);
-        this.events["change:proxyWorkerHost"].dispatch(proxyWorkerHost);
-      } else if (value === "ump-media" || value === "ump-protobuf") {
-        const host =
-          value === "ump-media"
-            ? "media-proxy.mooo.com"
-            : "media-proxy.mooo.com/vot";
-        this.data.proxyWorkerHost = host;
-        this.proxyWorkerHostTextfield.value = host;
-        await votStorage.set("proxyWorkerHost", host);
-        this.events["change:proxyWorkerHost"].dispatch(host);
-      } else {
-        const host = this.proxyWorkerHostTextfield.value.trim();
-        if (host && host !== proxyWorkerHost) {
-          this.data.proxyWorkerHost = host;
-          await votStorage.set("proxyWorkerHost", host);
-          this.events["change:proxyWorkerHost"].dispatch(host);
-        }
+      if (!Object.hasOwn(labels, value)) return;
+      this.proxyServerSelect.selectTitle = labels[value];
+      this.proxyWorkerHostTextfield.container.hidden = value !== "custom";
+      if (
+        value === "custom" &&
+        (!this.data.proxyWorkerHost ||
+          this.data.proxyWorkerHost === proxyWorkerHost)
+      ) {
+        this.data.proxyWorkerHost = umpApiHost;
+        this.proxyWorkerHostTextfield.value = umpApiHost;
+        await votStorage.set("proxyWorkerHost", umpApiHost);
       }
-      this.data.proxyServerPreset = value as typeof this.data.proxyServerPreset;
-      await votStorage.set("proxyServerPreset", value as any);
+      this.data.proxyServerPreset = value as ProxyPreset;
+      await votStorage.set("proxyServerPreset", this.data.proxyServerPreset);
       this.events["change:proxyWorkerHost"].dispatch(this.data.proxyWorkerHost);
     });
 
     this.proxyWorkerHostTextfield.addEventListener("change", async (value) => {
-      this.data.proxyWorkerHost = value || proxyWorkerHost;
-      await votStorage.set("proxyWorkerHost", this.data.proxyWorkerHost);
-
-      debug.log(
-        "proxyWorkerHost value changed. New value:",
-        this.data.proxyWorkerHost,
-      );
-
-      this.events["change:proxyWorkerHost"].dispatch(value);
+      if (this.data.proxyServerPreset !== "custom") return;
+      try {
+        const host = normalizeProxyHost(value);
+        this.data.proxyWorkerHost = host;
+        await votStorage.set("proxyWorkerHost", host);
+        this.events["change:proxyWorkerHost"].dispatch(host);
+      } catch (error) {
+        console.warn("[VOT] Invalid custom proxy address", error);
+        if (this.proxyWorkerHostTextfield) {
+          this.proxyWorkerHostTextfield.value = this.data.proxyWorkerHost;
+        }
+      }
     });
 
     this.proxyTranslationStatusSelect.addEventListener(
@@ -1763,6 +1759,7 @@ export class SettingsView {
           this.data.translateProxyEnabled,
         );
 
+        this.data.translateProxyEnabledDefault = false;
         await votStorage.set("translateProxyEnabledDefault", false);
 
         debug.log(

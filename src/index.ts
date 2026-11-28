@@ -9,14 +9,10 @@ import { startLightweightVideoProbe } from "./bootstrap/lightweightVideoProbe";
 import { ensureRuntimeActivated } from "./bootstrap/runtimeActivation";
 import { bindObserverListeners } from "./bootstrap/videoObserverBinding";
 import VOTClient, { VOTWorkerClient } from "./client";
-import {
-  authCallbackOrigin,
-  proxyWorkerHost,
-  votBackendUrl,
-  workerHost,
-} from "./config/config";
+import { authCallbackOrigin } from "./config/config";
 import { extraSites } from "./config/extraSites";
 import { GENERIC_PLAYER_SELECTOR } from "./config/playerSelectors";
+import { resolveProxyRouting } from "./config/proxyRouting";
 import { resolveVideoObserverPolicy } from "./config/videoObserverPolicy";
 import { resolveBootstrapMode } from "./core/bootstrapPolicy";
 import { CacheManager, VOTSessionStorageCache } from "./core/cacheManager";
@@ -1043,18 +1039,13 @@ export class VideoHandler {
     const mode = this.data?.translateProxyEnabled ?? 0;
     const preset = this.data?.proxyServerPreset ?? "builtin";
 
-    const proxyActive = mode !== 0;
-    const usesUMP =
-      proxyActive && (preset === "ump-protobuf" || preset === "custom");
-
-    const rawHost = (this.data?.proxyWorkerHost || proxyWorkerHost).trim();
-    const cleanHost = rawHost.replace(/^https?:\/\//i, "").replace(/\/+$/, "");
-
-    if (usesUMP && !cleanHost) {
-      throw new Error("UMP proxy host is empty");
-    }
-
-    const transportHost = proxyActive ? cleanHost : workerHost;
+    const routing = resolveProxyRouting(
+      mode,
+      preset,
+      this.data?.proxyWorkerHost,
+    );
+    const transportHost = routing.host;
+    const sessionKey = `${routing.client}:${transportHost}`;
 
     this.votOpts = {
       fetchFn: GM_fetch,
@@ -1063,15 +1054,16 @@ export class VideoHandler {
         forceGmXhr: true,
       },
       apiToken: this.data?.account?.token,
-      hostVOT: usesUMP ? `https://${cleanHost}` : votBackendUrl,
+      hostVOT: `https://${transportHost}`,
       host: transportHost,
     };
 
-    this.votClient = !proxyActive
-      ? new VOTClient(this.votOpts)
-      : usesUMP
-        ? new VOTProtobufEnvelopeClient(this.votOpts)
-        : new VOTWorkerClient<string>(this.votOpts);
+    this.votClient =
+      routing.client === "direct"
+        ? new VOTClient(this.votOpts)
+        : routing.client === "envelope"
+          ? new VOTProtobufEnvelopeClient(this.votOpts)
+          : new VOTWorkerClient<string>(this.votOpts);
 
     console.info("[FORK][VOT routing]", {
       preset,
@@ -1080,20 +1072,18 @@ export class VideoHandler {
       host: transportHost,
       hostVOT: this.votOpts.hostVOT,
     });
-    this.votClient.sessions = await this.votSessionStorage.restore(
-      transportHost,
-      this.votClient.sessions,
+    const client = this.votClient;
+    client.sessions = await this.votSessionStorage.restore(
+      sessionKey,
+      client.sessions,
     );
 
-    const originalGetSession = this.votClient.getSession.bind(this.votClient);
-    this.votClient.getSession = async (
+    const originalGetSession = client.getSession.bind(client);
+    client.getSession = async (
       module: SessionModule,
     ): Promise<ClientSession> => {
       const session = await originalGetSession(module);
-      await this.votSessionStorage.persist(
-        transportHost,
-        this.votClient.sessions,
-      );
+      await this.votSessionStorage.persist(sessionKey, client.sessions);
       return session;
     };
 
